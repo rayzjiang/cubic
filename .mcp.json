@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+      "AfterEffectsMCP": {
+        "command": "node",                                                  
+        "args": ["/Users/raymondjiang/Desktop/Coding/cubic/server/mcp/build/index.js"]
+      } 
+    } 
+  } 
