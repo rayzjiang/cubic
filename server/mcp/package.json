@@ -1,0 +1,27 @@
+{
+  "name": "after-effects-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Adobe After Effects",
+  "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external && copyfiles -u 1 \"src/scripts/**/*\" build",
+    "install-bridge": "cp build/scripts/mcp-bridge-auto.jsx \"/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/mcp-bridge-auto.jsx\"",
+    "start": "node build/index.js",
+    "postinstall": "npm run build",
+    "test": "node test-integration.mjs",
+    "test:write": "node test-integration.mjs --write",
+    "test:write-no-cleanup": "node test-integration.mjs --write --no-cleanup"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "node-fetch": "^3.3.2",
+    "zod": "^3.22.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "copyfiles": "^2.4.1",
+    "esbuild": "^0.27.4",
+    "typescript": "^5.2.2"
+  }
+}
