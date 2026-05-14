@@ -1,33 +1,154 @@
-// applyEffectTemplate.jsx
-// Applies predefined effect templates to layers
+// effects.jsx
+// CRUD: C ✓  R ✗ missing  U ✗ missing  D ✗ missing
 
-function applyEffectTemplate(args) {
-    try {
-        // Extract parameters
-        var compIndex = args.compIndex || 1; // Default to first comp
-        var layerIndex = args.layerIndex || 1; // Default to first layer
-        var templateName = args.templateName; // Name of the template to apply
-        var customSettings = args.customSettings || {}; // Optional customizations
-        
-        if (!templateName) {
-            throw new Error("You must specify a templateName");
+// R: getLayerEffects — MISSING
+// TODO: Return all effects applied to a layer.
+//       Args: compIndex, layerIndex.
+//       For each effect return: index (1-based), name, matchName, enabled,
+//       and a flat list of its properties (name, value).
+//       Use layer.property("Effects").numProperties and iterate with .property(i).
+
+// helper used by applyEffect and applyEffectTemplate
+function applyEffectSettings(effect, settings) {
+    if (!settings) return;
+    var hasKeys = false;
+    for (var k in settings) { if (settings.hasOwnProperty(k)) { hasKeys = true; break; } }
+    if (!hasKeys) return;
+
+    for (var propName in settings) {
+        if (settings.hasOwnProperty(propName)) {
+            try {
+                var property = null;
+
+                try {
+                    property = effect.property(propName);
+                } catch (e) {
+                    for (var i = 1; i <= effect.numProperties; i++) {
+                        var prop = effect.property(i);
+                        if (prop.name === propName) {
+                            property = prop;
+                            break;
+                        }
+                    }
+                }
+
+                if (property && property.setValue) {
+                    property.setValue(settings[propName]);
+                }
+            } catch (e) {
+                $.writeln("Error setting effect property '" + propName + "': " + e.toString());
+            }
         }
-        
-        // Find the composition by index
+    }
+}
+
+// C: applyEffect
+function applyEffect(args) {
+    try {
+        var compIndex = args.compIndex || 1;
+        var layerIndex = args.layerIndex || 1;
+        var effectName = args.effectName;
+        var effectMatchName = args.effectMatchName;
+        var effectCategory = args.effectCategory || "";
+        var presetPath = args.presetPath;
+        var effectSettings = args.effectSettings || {};
+
+        if (!effectName && !effectMatchName && !presetPath) {
+            throw new Error("You must specify either effectName, effectMatchName, or presetPath");
+        }
+
         var comp = app.project.item(compIndex);
         if (!comp || !(comp instanceof CompItem)) {
             throw new Error("Composition not found at index " + compIndex);
         }
-        
-        // Find the layer by index
+
         var layer = comp.layer(layerIndex);
         if (!layer) {
             throw new Error("Layer not found at index " + layerIndex + " in composition '" + comp.name + "'");
         }
-        
-        // Template definitions
+
+        var effectResult;
+
+        if (presetPath) {
+            var presetFile = new File(presetPath);
+            if (!presetFile.exists) {
+                throw new Error("Effect preset file not found: " + presetPath);
+            }
+
+            layer.applyPreset(presetFile);
+            effectResult = {
+                type: "preset",
+                name: presetPath.split('/').pop().split('\\').pop(),
+                applied: true
+            };
+        }
+        else if (effectMatchName) {
+            var effect = layer.Effects.addProperty(effectMatchName);
+            effectResult = {
+                type: "effect",
+                name: effect.name,
+                matchName: effect.matchName,
+                index: effect.propertyIndex
+            };
+
+            applyEffectSettings(effect, effectSettings);
+        }
+        else {
+            var effect = layer.Effects.addProperty(effectName);
+            effectResult = {
+                type: "effect",
+                name: effect.name,
+                matchName: effect.matchName,
+                index: effect.propertyIndex
+            };
+
+            applyEffectSettings(effect, effectSettings);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Effect applied successfully",
+            effect: effectResult,
+            layer: {
+                name: layer.name,
+                index: layerIndex
+            },
+            composition: {
+                name: comp.name,
+                index: compIndex
+            }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({
+            status: "error",
+            message: error.toString()
+        }, null, 2);
+    }
+}
+
+// C: applyEffectTemplate
+function applyEffectTemplate(args) {
+    try {
+        var compIndex = args.compIndex || 1;
+        var layerIndex = args.layerIndex || 1;
+        var templateName = args.templateName;
+        var customSettings = args.customSettings || {};
+
+        if (!templateName) {
+            throw new Error("You must specify a templateName");
+        }
+
+        var comp = app.project.item(compIndex);
+        if (!comp || !(comp instanceof CompItem)) {
+            throw new Error("Composition not found at index " + compIndex);
+        }
+
+        var layer = comp.layer(layerIndex);
+        if (!layer) {
+            throw new Error("Layer not found at index " + layerIndex + " in composition '" + comp.name + "'");
+        }
+
         var templates = {
-            // Blur effects
             "gaussian-blur": {
                 effectMatchName: "ADBE Gaussian Blur 2",
                 settings: {
@@ -41,8 +162,6 @@ function applyEffectTemplate(args) {
                     "Blur Length": customSettings.length || 10
                 }
             },
-            
-            // Color correction effects
             "color-balance": {
                 effectMatchName: "ADBE Color Balance (HLS)",
                 settings: {
@@ -61,10 +180,7 @@ function applyEffectTemplate(args) {
             },
             "curves": {
                 effectMatchName: "ADBE CurvesCustom",
-                // Curves are complex and would need special handling
             },
-            
-            // Stylistic effects
             "glow": {
                 effectMatchName: "ADBE Glow",
                 settings: {
@@ -83,8 +199,6 @@ function applyEffectTemplate(args) {
                     "Softness": customSettings.softness || 10
                 }
             },
-            
-            // Common effect chains
             "cinematic-look": {
                 effects: [
                     {
@@ -122,22 +236,18 @@ function applyEffectTemplate(args) {
                 ]
             }
         };
-        
-        // Check if the requested template exists
+
         var template = templates[templateName];
         if (!template) {
             var availableTemplates = Object.keys(templates).join(", ");
             throw new Error("Template '" + templateName + "' not found. Available templates: " + availableTemplates);
         }
-        
+
         var appliedEffects = [];
-        
-        // Apply single effect or multiple effects based on template structure
+
         if (template.effectMatchName) {
-            // Single effect template
             var effect = layer.Effects.addProperty(template.effectMatchName);
-            
-            // Apply settings
+
             for (var propName in template.settings) {
                 try {
                     var property = effect.property(propName);
@@ -148,18 +258,16 @@ function applyEffectTemplate(args) {
                     $.writeln("Warning: Could not set " + propName + " on effect " + effect.name + ": " + e);
                 }
             }
-            
+
             appliedEffects.push({
                 name: effect.name,
                 matchName: effect.matchName
             });
         } else if (template.effects) {
-            // Multiple effects template
             for (var i = 0; i < template.effects.length; i++) {
                 var effectData = template.effects[i];
                 var effect = layer.Effects.addProperty(effectData.effectMatchName);
-                
-                // Apply settings
+
                 for (var propName in effectData.settings) {
                     try {
                         var property = effect.property(propName);
@@ -170,14 +278,14 @@ function applyEffectTemplate(args) {
                         $.writeln("Warning: Could not set " + propName + " on effect " + effect.name + ": " + e);
                     }
                 }
-                
+
                 appliedEffects.push({
                     name: effect.name,
                     matchName: effect.matchName
                 });
             }
         }
-        
+
         return JSON.stringify({
             status: "success",
             message: "Effect template '" + templateName + "' applied successfully",
@@ -199,20 +307,43 @@ function applyEffectTemplate(args) {
     }
 }
 
-// Read arguments from the temp args file written by the launcher
-var argsFile = new File($.fileName.replace(/[^\\\/]*$/, '') + "../temp/args.json");
-var args = {};
-if (argsFile.exists) {
-    argsFile.open("r");
-    var _content = argsFile.read();
-    argsFile.close();
-    if (_content) {
-        try { args = JSON.parse(_content); } catch (_e) { args = {}; }
+// U: setEffectProperty — MISSING
+// TODO: Set a property value on an existing effect by effect index or name.
+//       Args: compIndex, layerIndex, effectIndex (or effectName), propertyName, value.
+//       Use layer.property("Effects").property(effectIndex).property(propertyName).setValue(value).
+//       Return the updated effect name, index, and property that changed.
+
+// D: deleteEffect — MISSING
+// TODO: Remove an effect from a layer by effect index or name.
+//       Args: compIndex, layerIndex, effectIndex (or effectName).
+//       Use layer.property("Effects").property(effectIndex).remove().
+//       Return the deleted effect's name and index for confirmation.
+
+// test: bridgeTestEffects
+function bridgeTestEffects(args) {
+    try {
+        var compIndex = (args && args.compIndex) ? args.compIndex : 1;
+        var layerIndex = (args && args.layerIndex) ? args.layerIndex : 1;
+
+        var blurRes = JSON.parse(applyEffect({
+            compIndex: compIndex,
+            layerIndex: layerIndex,
+            effectMatchName: "ADBE Gaussian Blur 2",
+            effectSettings: { "Blurriness": 5 }
+        }));
+
+        var shadowRes = JSON.parse(applyEffectTemplate({
+            compIndex: compIndex,
+            layerIndex: layerIndex,
+            templateName: "drop-shadow"
+        }));
+
+        return JSON.stringify({
+            status: "success",
+            message: "Bridge test effects applied.",
+            results: [blurRes, shadowRes]
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", message: e.toString() }, null, 2);
     }
 }
-
-// Run the function and write the result
-var result = applyEffectTemplate(args);
-
-// Write the result so it can be captured by the Node.js process
-$.write(result); 

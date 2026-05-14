@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external && copyfiles -u 1 \"src/scripts/**/*\" build",
-    "install-bridge": "cp build/scripts/mcp-bridge-auto.jsx \"/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/mcp-bridge-auto.jsx\"",
+    "install-bridge": "cp build/scripts/*.jsx \"/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/\"",
     "start": "node build/index.js",
     "postinstall": "npm run build",
     "test": "node test-integration.mjs",
