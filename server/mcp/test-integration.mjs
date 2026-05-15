@@ -4,19 +4,23 @@
 // Usage:
 //   node test-integration.mjs                    # read-only tests
 //   node test-integration.mjs --write            # read + write tests (creates per-suite comps)
-//   node test-integration.mjs --write --cleanup  # write tests, then delete layers from test comps
-//   node test-integration.mjs --cleanup-only     # delete layers from all __MCP_TEST_* comps, no tests
+//   node test-integration.mjs --write --cleanup  # write tests, then delete all test comps + orphaned solids
+//   node test-integration.mjs --cleanup-only     # delete all __MCP_TEST_* comps + orphaned solids, no tests
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
 // Available suites: compositions, layers, keyframes, masks, effects, batch
 //
 // After --write, each suite leaves a named comp in your project for visual inspection:
-//   __MCP_TEST_compositions__, __MCP_TEST_layers__, __MCP_TEST_keyframes__,
-//   __MCP_TEST_masks__, __MCP_TEST_effects__, __MCP_TEST_batch__
 //
-// Run --cleanup or --cleanup-only when you're done verifying. Comps themselves
-// are not deleted (AE has no batch-delete API) — remove them manually afterward.
+//   __MCP_TEST_compositions__  — verify comp exists in project panel, frameRate shows 24fps
+//   __MCP_TEST_layers__        — open comp: should show camera + shape + text + solid in timeline
+//   __MCP_TEST_keyframes__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
+//   __MCP_TEST_masks__         — select the blue solid: masks panel should show rect + triangle + modified rect masks
+//   __MCP_TEST_effects__       — open Effect Controls on white solid: Gaussian Blur, red Drop Shadow, template effects stacked
+//   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
+//
+// Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
 import * as fs from 'fs';
 

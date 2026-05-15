@@ -268,7 +268,9 @@ function executeCommand(command, args) {
 
         logToPanel("Command completed: " + command);
         statusText.text = "Command completed: " + command;
-        updateCommandStatus("completed");
+        // Do NOT call updateCommandStatus("completed") here — it reads+rewrites the command
+        // file AFTER Node.js may have already written the next command as "pending", which
+        // would clobber the new command's status and cause it to be skipped on the next poll.
 
     } catch (error) {
         var errorMsg = "ERROR in executeCommand for '" + command + "': " + error.toString() + (error.line ? " (line: " + error.line + ")" : "");
@@ -294,8 +296,7 @@ function executeCommand(command, args) {
         } catch (writeError) {
             logToPanel("CRITICAL: Failed to write error to result file: " + writeError.toString());
         }
-
-        updateCommandStatus("error");
+        // Same reason — do not call updateCommandStatus("error") here.
     }
 }
 
