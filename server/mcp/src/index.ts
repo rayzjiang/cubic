@@ -194,7 +194,7 @@ server.registerPrompt(
 // ============================================================
 
 const LayerIdentifierSchema = {
-  compIndex: z.number().int().positive().describe("1-based index of the target composition in the project panel."),
+  compName: z.string().describe("Name of the target composition."),
   layerIndex: z.number().int().positive().describe("1-based index of the target layer within the composition.")
 };
 
@@ -226,9 +226,11 @@ server.registerTool(
       "setLayerProperties",
       "setLayerKeyframe",
       "setLayerExpression",
+      "getLayerEffects",
       "applyEffect",
       "applyEffectTemplate",
-      "bridgeTestEffects",
+      "setEffectProperty",
+      "deleteEffect",
       "createCamera",
       "batchSetLayerProperties",
       "setCompositionProperties",
@@ -236,7 +238,9 @@ server.registerTool(
       "deleteUnusedSolids",
       "duplicateLayer",
       "deleteLayer",
+      "getLayerMasks",
       "setLayerMask",
+      "deleteLayerMask",
       "moveLayer",
       "setKeyframeEasing",
       "getLayerExpressions",
@@ -297,7 +301,7 @@ server.registerTool(
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** setLayerMask
-**Effects:** applyEffect, applyEffectTemplate, bridgeTestEffects
+**Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
 **Batch:** batch — run multiple commands in one round-trip (strongly preferred)
 
 ## Effect Templates
@@ -323,7 +327,7 @@ server.registerTool(
   async () => {
     try {
       clearResultsFile();
-      writeCommandFile("bridgeTestEffects", {});
+      writeCommandFile("getProjectInfo", {});
       return {
         content: [{ type: "text", text: `Bridge test queued. Call getResults after ~2 seconds.` }]
       };
@@ -514,7 +518,7 @@ server.registerTool(
   {
     description: "Apply an effect to a layer in After Effects",
     inputSchema: {
-      compIndex: z.number().int().positive().describe("1-based composition index."),
+      compName: z.string().describe("Name of the target composition."),
       layerIndex: z.number().int().positive().describe("1-based layer index."),
       effectName: z.string().optional().describe("Display name of the effect (e.g. 'Gaussian Blur')."),
       effectMatchName: z.string().optional().describe("Internal AE match name (e.g. 'ADBE Gaussian Blur 2'). Preferred over effectName."),
@@ -528,7 +532,7 @@ server.registerTool(
       clearResultsFile();
       writeCommandFile("applyEffect", parameters);
       return {
-        content: [{ type: "text", text: `applyEffect queued for layer ${parameters.layerIndex} in comp ${parameters.compIndex}. Call getResults after ~2 seconds.` }]
+        content: [{ type: "text", text: `applyEffect queued for layer ${parameters.layerIndex} in comp "${parameters.compName}". Call getResults after ~2 seconds.` }]
       };
     } catch (error) {
       return { content: [{ type: "text", text: `Error queuing applyEffect: ${String(error)}` }], isError: true };
@@ -541,7 +545,7 @@ server.registerTool(
   {
     description: "Apply a predefined effect template to a layer in After Effects",
     inputSchema: {
-      compIndex: z.number().int().positive().describe("1-based composition index."),
+      compName: z.string().describe("Name of the target composition."),
       layerIndex: z.number().int().positive().describe("1-based layer index."),
       templateName: z.enum([
         "gaussian-blur", "directional-blur", "color-balance", "brightness-contrast",

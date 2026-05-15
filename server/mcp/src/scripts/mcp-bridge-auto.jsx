@@ -92,10 +92,14 @@ function dispatchCommand(command, args) {
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setKeyframeEasing":        return setKeyframeEasing(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
+        case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);
+        case "deleteLayerMask":          return deleteLayerMask(args);
+        case "getLayerEffects":          return getLayerEffects(args);
         case "applyEffect":              return applyEffect(args);
         case "applyEffectTemplate":      return applyEffectTemplate(args);
-        case "bridgeTestEffects":        return bridgeTestEffects(args);
+        case "setEffectProperty":        return setEffectProperty(args);
+        case "deleteEffect":             return deleteEffect(args);
         case "batch":                    return batch(args);
         default:                         return JSON.stringify({ success: false, error: "Unknown command: " + command });
     }

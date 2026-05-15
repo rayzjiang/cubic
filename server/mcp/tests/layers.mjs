@@ -1,8 +1,21 @@
 // layers.mjs — tests for layers.jsx
-// Covers: getLayerInfo, createTextLayer, createShapeLayer, createSolidLayer, createCamera,
-//         duplicateLayer, setLayerProperties, batchSetLayerProperties, moveLayer, deleteLayer
 //
-// Layer stack after all creates (AE adds new layers at index 1 each time):
+// Covers:
+//   getLayerInfo           (R  — all fields: name, index, type, scale, rotation,
+//                                opacity, effectsCount, masksCount, inPoint, outPoint)
+//   createTextLayer        (C)
+//   createShapeLayer       (C)
+//   createSolidLayer       (C)
+//   createCamera           (C)
+//   duplicateLayer         (C)
+//   setLayerProperties     (U  — opacity, scale, text, font, changedProperties array)
+//   batchSetLayerProperties (U — multiple layers in one call)
+//   moveLayer              (U  — reorders layer stack by name)
+//   deleteLayer            (D  — removes layer, returns name + index)
+//
+// Missing: none — full CRUD covered.
+//
+// Layer stack after all creates (AE inserts new layers at index 1 each time):
 //   createTextLayer  → text=1
 //   createShapeLayer → shape=1, text=2
 //   createSolidLayer → solid=1, shape=2, text=3
@@ -13,6 +26,10 @@
 //
 // After duplicateLayer (text) + deleteLayer (dup):
 //   camera=1, shape=2, text=3, solid=4  ← stable for downstream suites
+//
+// Visual verification (after --write, open __MCP_TEST_layers__ in After Effects):
+//   Timeline should show (top to bottom): Camera, Test Shape, MCP Test (text), Test Solid.
+//   Select the text layer — Opacity=100%, Scale=100%. Shape layer Opacity=75%.
 
 import {
   test, send,
@@ -25,15 +42,23 @@ const COMP_NAME = '__MCP_TEST_layers__';
 export async function run(ctx, opts) {
   console.log(bold('\nLayers'));
 
-  // ── Read ──────────────────────────────────────────────────────────────────
+  // ── Read (always runs) ────────────────────────────────────────────────────
 
-  await test('getLayerInfo — layers array with name + index', async () => {
+  await test('getLayerInfo — layers array with name, index, type, scale, rotation, opacity, effectsCount, masksCount', async () => {
     const r = await send('getLayerInfo', { compIndex: 1 });
     if (r.error) return `skipped — ${r.error}`;
     assertArray(r, 'layers');
     if (r.layers.length > 0) {
-      assertField(r.layers[0], 'name', 'string');
-      assertField(r.layers[0], 'index', 'number');
+      const l = r.layers[0];
+      assertField(l, 'name', 'string');
+      assertField(l, 'index', 'number');
+      assertField(l, 'type', 'string');
+      assertField(l, 'effectsCount', 'number');
+      assertField(l, 'masksCount', 'number');
+      // scale/rotation/opacity may be null for cameras/lights but field must be present
+      if (!('scale'    in l)) throw new Error('missing field "scale"');
+      if (!('rotation' in l)) throw new Error('missing field "rotation"');
+      if (!('opacity'  in l)) throw new Error('missing field "opacity"');
     }
     return `${r.layers.length} layer(s) in comp 1`;
   });
@@ -113,9 +138,34 @@ export async function run(ctx, opts) {
     ctx.textLayerIndex   = 4;
   });
 
-  // ── Update ────────────────────────────────────────────────────────────────
+  // ── Read (write-mode: verify new getLayerInfo fields on known layers) ─────
 
-  // Stack: camera=1, solid=2, shape=3, text=4
+  await test('getLayerInfo — type detection + scale/rotation/opacity/effectsCount/masksCount', async () => {
+    const r = await send('getLayerInfo', { compIndex: compIndex });
+    assertNoError(r);
+    assertArray(r, 'layers');
+    if (r.layers.length < 4) throw new Error(`expected 4 layers, got ${r.layers.length}`);
+
+    const text = r.layers.find(l => l.index === ctx.textLayerIndex);
+    if (!text) throw new Error('text layer not found');
+    assertValue(text, 'type', 'text');
+    assertArray(text, 'scale');
+    assertField(text, 'rotation', 'number');
+    assertField(text, 'opacity', 'number');
+    assertField(text, 'effectsCount', 'number');
+    assertField(text, 'masksCount', 'number');
+
+    const camera = r.layers.find(l => l.index === ctx.cameraLayerIndex);
+    if (!camera) throw new Error('camera layer not found');
+    assertValue(camera, 'type', 'camera');
+    // cameras don't have Scale/Opacity — fields must exist but may be null
+    if (!('scale'   in camera)) throw new Error('camera missing field "scale"');
+    if (!('opacity' in camera)) throw new Error('camera missing field "opacity"');
+
+    return `text type=${text.type} scale=[${text.scale}] opacity=${text.opacity}`;
+  });
+
+  // ── Update ────────────────────────────────────────────────────────────────
 
   await test('setLayerProperties — sets opacity + scale, reports changedProperties', async () => {
     const r = await send('setLayerProperties', {
@@ -146,12 +196,12 @@ export async function run(ctx, opts) {
   // moveLayer: move solid (index 2) after text (index 4) → camera=1, shape=2, text=3, solid=4
   await test('moveLayer — moves solid below text, returns success', async () => {
     const r = await send('moveLayer', {
-      compIndex: compIndex,
+      compName: COMP_NAME,
       layerIndex: ctx.solidLayerIndex,  // 2
       targetIndex: ctx.textLayerIndex,  // 4
       position: 'after'
     });
-    if (r.success === false) throw new Error(r.message);
+    assertNoError(r);
     ctx.shapeLayerIndex = 2;
     ctx.textLayerIndex  = 3;
     ctx.solidLayerIndex = 4;

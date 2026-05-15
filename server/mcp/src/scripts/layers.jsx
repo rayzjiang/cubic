@@ -33,6 +33,10 @@ function getLayerInfo(args) {
             layerType = layer.adjustmentLayer ? "adjustment" : "solid";
         }
 
+        var scaleProp   = layer.property("Scale");
+        var opacityProp = layer.property("Opacity");
+        var rotProp     = layer.threeDLayer ? layer.property("Z Rotation") : layer.property("Rotation");
+
         var layerInfo = {
             index: layer.index,
             name: layer.name,
@@ -41,9 +45,9 @@ function getLayerInfo(args) {
             locked: layer.locked,
             threeDLayer: layer.threeDLayer,
             position: layer.property("Position").value,
-            scale: layer.property("Scale").value,
-            rotation: layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value,
-            opacity: layer.property("Opacity").value,
+            scale: scaleProp   ? scaleProp.value   : null,
+            rotation: rotProp  ? rotProp.value      : null,
+            opacity: opacityProp ? opacityProp.value : null,
             inPoint: layer.inPoint,
             outPoint: layer.outPoint,
             effectsCount: layer.property("Effects") ? layer.property("Effects").numProperties : 0,

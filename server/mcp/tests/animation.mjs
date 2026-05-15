@@ -1,12 +1,22 @@
-// keyframes.mjs — tests for animation.jsx
-// Covers: getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
-//         setLayerExpression, getLayerExpressions
+// animation.mjs — tests for animation.jsx
 //
-// Creates its own __MCP_TEST_keyframes__ comp so results are visually isolated.
-// Visual result after run: spinning text (Rotation expression) that fades in
-// (Opacity 0→100) and slides across screen (Position left→right).
-// removePropertyKeyframes is verified on Rotation keyframes which exist but are
-// overridden by the expression, so the visual is unaffected.
+// Covers:
+//   getLayerExpressions    (R  — expressions)
+//   setLayerExpression     (C/U — expressions; set + remove via empty string)
+//   getLayerKeyframes      (R  — keyframes)
+//   setLayerKeyframe       (C  — keyframes)
+//   setKeyframeEasing      (U  — keyframes)
+//   removePropertyKeyframes (D — keyframes)
+//
+// Missing: none — all CRUD covered for both keyframes and expressions.
+//
+// Visual verification (after --write, open __MCP_TEST_animation__ in After Effects):
+//   Play 0–4 s:
+//     • Text spins continuously (Rotation expression: time * 90)
+//     • Text fades in from invisible to fully opaque over the first 2 s (Opacity keyframes)
+//     • Text slides left-to-right across the frame (Position keyframes, easy-eased)
+//   Rotation keyframes were set then removed; the expression still drives rotation.
+//   Scrub the timeline — no stray keyframes on Rotation, only Position and Opacity.
 
 import {
   test, send,
@@ -14,23 +24,22 @@ import {
   bold, yellow
 } from './helpers.mjs';
 
-const COMP_NAME = '__MCP_TEST_keyframes__';
+const COMP_NAME = '__MCP_TEST_animation__';
 
 export async function run(ctx, opts) {
-  console.log(bold('\nKeyframes & Expressions'));
+  console.log(bold('\nAnimation'));
 
   if (!opts.write) return;
 
   // ── Setup ─────────────────────────────────────────────────────────────────
 
-  let ci, li;
+  let li;
 
-  const setupOk = await test('setup — create keyframes test comp + text layer', async () => {
+  const setupOk = await test('setup — create animation test comp + text layer', async () => {
     const cr = await send('createComposition', {
       name: COMP_NAME, width: 1920, height: 1080, frameRate: 30, duration: 10, pixelAspect: 1
     });
     assertField(cr, 'composition', 'object');
-    ci = cr.composition.itemIndex;
 
     const lr = await send('createTextLayer', {
       compName: COMP_NAME, text: 'MCP Test', fontSize: 120,
@@ -38,11 +47,11 @@ export async function run(ctx, opts) {
     });
     assertNoError(lr);
     li = 1; // first layer added lands at index 1
-    return `comp ${ci}, layer ${li}`;
+    return `layer ${li}`;
   });
 
   if (!setupOk) {
-    console.log(yellow('  Keyframe tests skipped — setup failed'));
+    console.log(yellow('  Animation tests skipped — setup failed'));
     return;
   }
 
@@ -50,7 +59,7 @@ export async function run(ctx, opts) {
 
   await test('setLayerExpression — Rotation: time*90 (spin, stays on layer)', async () => {
     const r = await send('setLayerExpression', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Rotation', expressionString: 'time * 90'
     });
     assertNoError(r);
@@ -62,7 +71,7 @@ export async function run(ctx, opts) {
 
   await test('getLayerExpressions — finds Rotation expression', async () => {
     const r = await send('getLayerExpressions', {
-      compIndex: ci, layerIndex: li
+      compName: COMP_NAME, layerIndex: li
     });
     assertNoError(r);
     assertArray(r, 'expressions');
@@ -76,12 +85,12 @@ export async function run(ctx, opts) {
 
   await test('setLayerExpression — Opacity: set then remove via empty string', async () => {
     const set = await send('setLayerExpression', {
-      compIndex: ci, layerIndex: li, propertyName: 'Opacity', expressionString: 'value'
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Opacity', expressionString: 'value'
     });
     assertNoError(set);
 
     const remove = await send('setLayerExpression', {
-      compIndex: ci, layerIndex: li, propertyName: 'Opacity', expressionString: ''
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Opacity', expressionString: ''
     });
     assertNoError(remove);
     if (!remove.message.toLowerCase().includes('remov')) {
@@ -94,7 +103,7 @@ export async function run(ctx, opts) {
 
   await test('setLayerKeyframe — Position @ 0s: left edge', async () => {
     const r = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Position', timeInSeconds: 0, value: [200, 540]
     });
     assertNoError(r);
@@ -104,7 +113,7 @@ export async function run(ctx, opts) {
 
   await test('setLayerKeyframe — Position @ 4s: right edge', async () => {
     const r = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Position', timeInSeconds: 4, value: [1720, 540]
     });
     assertNoError(r);
@@ -112,7 +121,7 @@ export async function run(ctx, opts) {
 
   await test('setLayerKeyframe — Opacity @ 0s: 0%', async () => {
     const r = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Opacity', timeInSeconds: 0, value: 0
     });
     assertNoError(r);
@@ -120,17 +129,37 @@ export async function run(ctx, opts) {
 
   await test('setLayerKeyframe — Opacity @ 2s: 100%', async () => {
     const r = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Opacity', timeInSeconds: 2, value: 100
     });
     assertNoError(r);
+  });
+
+  // ── Read keyframes ─────────────────────────────────────────────────────────
+
+  await test('getLayerKeyframes — Position: 2 keyframes with correct times', async () => {
+    const r = await send('getLayerKeyframes', {
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Position'
+    });
+    assertNoError(r);
+    assertArray(r, 'keyframes');
+    assertField(r, 'count', 'number');
+    if (r.count !== 2) throw new Error(`expected 2 keyframes, got ${r.count}`);
+    const k0 = r.keyframes[0];
+    assertField(k0, 'keyIndex', 'number');
+    assertField(k0, 'time', 'number');
+    assertField(k0, 'inInterpolationType', 'number');
+    assertField(k0, 'outInterpolationType', 'number');
+    if (k0.time !== 0) throw new Error(`expected time=0 at keyframe 1, got ${k0.time}`);
+    if (r.keyframes[1].time !== 4) throw new Error(`expected time=4 at keyframe 2, got ${r.keyframes[1].time}`);
+    return `${r.count} keyframe(s) at t=${r.keyframes.map(k => k.time + 's').join(', ')}`;
   });
 
   // ── Easing (stays on layer) ───────────────────────────────────────────────
 
   await test('setKeyframeEasing — easyEase on all Position keyframes', async () => {
     const r = await send('setKeyframeEasing', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Position', easeType: 'easyEase'
     });
     assertNoError(r);
@@ -142,29 +171,29 @@ export async function run(ctx, opts) {
 
   await test('setKeyframeEasing — easeIn on Opacity keyframe 1', async () => {
     const r = await send('setKeyframeEasing', {
-      compIndex: ci, layerIndex: li,
+      compName: COMP_NAME, layerIndex: li,
       propertyName: 'Opacity', easeType: 'easeIn', keyIndex: 1
     });
     assertNoError(r);
   });
 
-  // ── removePropertyKeyframes (Rotation keyframes — overridden by expression) ─
+  // ── removePropertyKeyframes (Rotation — overridden by expression, visual unaffected) ──
 
   await test('setLayerKeyframe — Rotation @ 0s and 4s (overridden by expression)', async () => {
     const r0 = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 0, value: 0
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 0, value: 0
     });
     assertNoError(r0);
     const r4 = await send('setLayerKeyframe', {
-      compIndex: ci, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 4, value: 720
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 4, value: 720
     });
     assertNoError(r4);
-    return '2 keyframes set (expression takes precedence)';
+    return '2 keyframes set (expression takes precedence visually)';
   });
 
   await test('removePropertyKeyframes — clears Rotation keyframes (expression unaffected)', async () => {
     const r = await send('removePropertyKeyframes', {
-      compIndex: ci, layerIndex: li, propertyName: 'Rotation'
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation'
     });
     assertNoError(r);
     assertField(r, 'removed', 'number');

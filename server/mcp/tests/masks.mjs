@@ -1,12 +1,23 @@
 // masks.mjs — tests for masks.jsx
-// Covers: setLayerMask (C/U)
-// Missing coverage (not yet implemented): getLayerMasks (R), deleteLayerMask (D)
 //
-// Creates its own __MCP_TEST_masks__ comp so mask results stay visible.
+// Covers:
+//   getLayerMasks   (R  — all mask fields: index, name, mode, vertices, closed,
+//                         feather, opacity, expansion)
+//   setLayerMask    (C  — new mask via maskRect with feather + opacity + name)
+//   setLayerMask    (C  — new mask via maskPath, triangle shape)
+//   setLayerMask    (U  — modify existing mask by maskIndex)
+//   deleteLayerMask (D  — remove mask by name, confirmed by count drop)
+//
+// Missing: none — full CRUD covered.
+//
+// Visual verification (after --write, open __MCP_TEST_masks__ in After Effects):
+//   Select the blue solid layer and open the Masks panel (Layer > Mask).
+//   Should show exactly 1 remaining mask: "Test Rect Mask" (add mode, expanded 5px).
+//   "Test Path Mask" (triangle) should be gone — it was deleted by the final test.
 
 import {
   test, send,
-  assertNoError, assertField, assertValue,
+  assertNoError, assertField, assertArray, assertValue,
   bold, yellow
 } from './helpers.mjs';
 
@@ -40,7 +51,7 @@ export async function run(ctx, opts) {
     return;
   }
 
-  // ── Masks ─────────────────────────────────────────────────────────────────
+  // ── Create ────────────────────────────────────────────────────────────────
 
   await test('setLayerMask — new mask via maskRect, returns mask index + mode', async () => {
     const r = await send('setLayerMask', {
@@ -61,7 +72,7 @@ export async function run(ctx, opts) {
     return `mask index ${ctx.maskIndex}`;
   });
 
-  await test('setLayerMask — custom path mask via maskPath (triangle)', async () => {
+  await test('setLayerMask — new mask via maskPath (triangle)', async () => {
     const r = await send('setLayerMask', {
       compName: COMP_NAME,
       layerIndex: li,
@@ -73,9 +84,38 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertField(r, 'mask', 'object');
     assertValue(r.mask, 'mode', 'subtract');
+    ctx.pathMaskName = 'Test Path Mask';
   });
 
-  await test('setLayerMask — modify existing mask (maskIndex)', async () => {
+  // ── Read ──────────────────────────────────────────────────────────────────
+
+  await test('getLayerMasks — 2 masks with name, mode, vertices, feather, opacity, expansion', async () => {
+    const r = await send('getLayerMasks', {
+      compName: COMP_NAME, layerIndex: li
+    });
+    assertNoError(r);
+    assertArray(r, 'masks');
+    assertField(r, 'count', 'number');
+    if (r.count !== 2) throw new Error(`expected 2 masks, got ${r.count}`);
+    const rect = r.masks.find(m => m.name === 'Test Rect Mask');
+    if (!rect) throw new Error('Test Rect Mask not found');
+    assertField(rect, 'index', 'number');
+    assertField(rect, 'mode', 'number'); // MaskMode enum value
+    assertArray(rect, 'vertices');
+    if (rect.vertices.length !== 4) throw new Error(`expected 4 vertices (rect), got ${rect.vertices.length}`);
+    assertField(rect, 'closed');
+    assertField(rect, 'feather');
+    assertField(rect, 'opacity', 'number');
+    assertField(rect, 'expansion', 'number');
+    const tri = r.masks.find(m => m.name === 'Test Path Mask');
+    if (!tri) throw new Error('Test Path Mask not found');
+    if (tri.vertices.length !== 3) throw new Error(`expected 3 vertices (triangle), got ${tri.vertices.length}`);
+    return `${r.count} masks — rect has ${rect.vertices.length} vertices, triangle has ${tri.vertices.length}`;
+  });
+
+  // ── Update ────────────────────────────────────────────────────────────────
+
+  await test('setLayerMask — modify existing mask (maskIndex), sets expansion', async () => {
     if (!ctx.maskIndex) {
       throw new Error('maskIndex not set — first setLayerMask test must have passed');
     }
@@ -90,5 +130,28 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertField(r, 'mask', 'object');
     assertValue(r.mask, 'index', ctx.maskIndex);
+  });
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+
+  await test('deleteLayerMask — remove triangle mask by name, count drops to 1', async () => {
+    const r = await send('deleteLayerMask', {
+      compName: COMP_NAME,
+      layerIndex: li,
+      maskName: ctx.pathMaskName
+    });
+    assertNoError(r);
+    assertField(r, 'deleted', 'object');
+    assertField(r.deleted, 'name', 'string');
+    assertField(r.deleted, 'index', 'number');
+    if (r.deleted.name !== ctx.pathMaskName) {
+      throw new Error(`expected deleted name "${ctx.pathMaskName}", got "${r.deleted.name}"`);
+    }
+
+    // confirm count dropped
+    const check = await send('getLayerMasks', { compName: COMP_NAME, layerIndex: li });
+    assertNoError(check);
+    if (check.count !== 1) throw new Error(`expected 1 mask remaining, got ${check.count}`);
+    return `deleted "${r.deleted.name}", ${check.count} mask remaining`;
   });
 }
