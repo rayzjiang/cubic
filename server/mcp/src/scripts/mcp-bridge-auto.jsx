@@ -60,6 +60,7 @@ if (typeof JSON.stringify !== "function") {
 //@include "keyframes.jsx"
 //@include "masks.jsx"
 //@include "effects.jsx"
+//@include "footage.jsx"
 
 
 // ============================================================
@@ -74,6 +75,8 @@ function dispatchCommand(command, args) {
         case "getLayerInfo":             return getLayerInfo(args);
         case "createComposition":        return createComposition(args);
         case "setCompositionProperties": return setCompositionProperties(args);
+        case "deleteComposition":        return deleteComposition(args);
+        case "deleteUnusedSolids":       return deleteUnusedSolids();
         case "createTextLayer":          return createTextLayer(args);
         case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);

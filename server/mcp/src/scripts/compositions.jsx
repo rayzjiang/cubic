@@ -1,5 +1,5 @@
 // compositions.jsx
-// CRUD: C ✓  R ✓  U ✓  D ✗ missing
+// CRUD: C ✓  R ✓  U ✓  D ✓
 
 // R: getProjectInfo
 function getProjectInfo() {
@@ -106,9 +106,13 @@ function createComposition(args) {
         if (args.backgroundColor) {
             newComp.bgColor = bgColor;
         }
+        var itemIndex = 0;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            if (app.project.item(i).id === newComp.id) { itemIndex = i; break; }
+        }
         return JSON.stringify({
             status: "success", message: "Composition created successfully",
-            composition: { name: newComp.name, id: newComp.id, width: newComp.width, height: newComp.height, pixelAspect: newComp.pixelAspect, duration: newComp.duration, frameRate: newComp.frameRate, bgColor: newComp.bgColor }
+            composition: { name: newComp.name, id: newComp.id, itemIndex: itemIndex, width: newComp.width, height: newComp.height, pixelAspect: newComp.pixelAspect, duration: newComp.duration, frameRate: newComp.frameRate, bgColor: newComp.bgColor }
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
@@ -144,7 +148,27 @@ function setCompositionProperties(args) {
     }
 }
 
-// D: deleteComposition — MISSING
-// TODO: Remove a composition from the project by name or index.
-//       Use comp.remove(). Return the deleted comp's name and id for confirmation.
-//       Guard against deleting a comp that is used as a precomp inside another comp.
+// D: deleteComposition
+function deleteComposition(args) {
+    try {
+        var comp = null;
+        if (args.compName) {
+            for (var i = 1; i <= app.project.numItems; i++) {
+                var item = app.project.item(i);
+                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
+            }
+        } else if (args.compIndex) {
+            var candidate = app.project.item(parseInt(args.compIndex));
+            if (candidate instanceof CompItem) { comp = candidate; }
+        }
+        if (!comp) {
+            return JSON.stringify({ status: "error", message: "Composition not found: " + (args.compName || args.compIndex) }, null, 2);
+        }
+        var name = comp.name;
+        var id   = comp.id;
+        comp.remove();
+        return JSON.stringify({ status: "success", deleted: { name: name, id: id } }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}

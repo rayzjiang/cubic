@@ -232,6 +232,8 @@ server.registerTool(
       "createCamera",
       "batchSetLayerProperties",
       "setCompositionProperties",
+      "deleteComposition",
+      "deleteUnusedSolids",
       "duplicateLayer",
       "deleteLayer",
       "setLayerMask",

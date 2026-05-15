@@ -11,7 +11,7 @@
     "postinstall": "npm run build",
     "test": "node test-integration.mjs",
     "test:write": "node test-integration.mjs --write",
-    "test:write-no-cleanup": "node test-integration.mjs --write --no-cleanup"
+    "test:clean": "node test-integration.mjs --cleanup-only"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
