@@ -115,15 +115,15 @@ export async function run(ctx, opts) {
       commands: [
         {
           command: 'setLayerKeyframe',
-          args: { compIndex: ci, layerIndex: li, propertyName: 'Scale', timeInSeconds: 0, value: [50, 50] }
+          args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Scale', timeInSeconds: 0, value: [50, 50] }
         },
         {
           command: 'setLayerKeyframe',
-          args: { compIndex: ci, layerIndex: li, propertyName: 'Scale', timeInSeconds: 3, value: [100, 100] }
+          args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Scale', timeInSeconds: 3, value: [100, 100] }
         },
         {
           command: 'setKeyframeEasing',
-          args: { compIndex: ci, layerIndex: li, propertyName: 'Scale', easeType: 'easyEase' }
+          args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Scale', easeType: 'easyEase' }
         }
       ]
     });
@@ -137,15 +137,15 @@ export async function run(ctx, opts) {
   // Expression overrides any keyframes so the visual is unaffected.
   await test('batch — write: setLayerExpression + removePropertyKeyframes via batch', async () => {
     const setExpr = await send('setLayerExpression', {
-      compIndex: ci, layerIndex: li, propertyName: 'Rotation', expressionString: 'time * 30'
+      compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation', expressionString: 'time * 30'
     });
     assertNoError(setExpr);
 
     // Set two Rotation keyframes (overridden by expression but exist on timeline)
     const setKfs = await send('batch', {
       commands: [
-        { command: 'setLayerKeyframe', args: { compIndex: ci, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 0, value: 0 } },
-        { command: 'setLayerKeyframe', args: { compIndex: ci, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 3, value: 360 } }
+        { command: 'setLayerKeyframe', args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 0, value: 0 } },
+        { command: 'setLayerKeyframe', args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation', timeInSeconds: 3, value: 360 } }
       ]
     });
     if (setKfs.failed > 0) throw new Error('failed to set Rotation keyframes');
@@ -153,7 +153,7 @@ export async function run(ctx, opts) {
     // Remove them via batch
     const r = await send('batch', {
       commands: [
-        { command: 'removePropertyKeyframes', args: { compIndex: ci, layerIndex: li, propertyName: 'Rotation' } }
+        { command: 'removePropertyKeyframes', args: { compName: COMP_NAME, layerIndex: li, propertyName: 'Rotation' } }
       ]
     });
     if (r.failed > 0) throw new Error('removePropertyKeyframes via batch failed');

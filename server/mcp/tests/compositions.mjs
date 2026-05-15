@@ -1,5 +1,10 @@
 // compositions.mjs — tests for compositions.jsx
-// Covers: getProjectInfo, listCompositions, createComposition, setCompositionProperties
+//
+// Tests:
+//   Read  — getProjectInfo, listCompositions
+//   Write — createComposition, setCompositionProperties, deleteComposition
+// Missing: —
+// Visual:  —
 
 import {
   test, send,
@@ -80,5 +85,17 @@ export async function run(ctx, opts) {
     assertField(r.composition, 'name', 'string');
     assertArray(r, 'changedProperties');
     assertIncludes(r, 'changedProperties', 'frameRate');
+  });
+
+  await test('deleteComposition — removes comp, no longer in listCompositions', async () => {
+    const r = await send('deleteComposition', { compName: COMP_NAME });
+    assertNoError(r);
+    assertField(r, 'deleted', 'object');
+    assertField(r.deleted, 'name', 'string');
+
+    const list = await send('listCompositions');
+    const still = list.compositions.find(c => c.name === COMP_NAME);
+    if (still) throw new Error(`"${COMP_NAME}" still present in listCompositions after deletion`);
+    return `deleted "${r.deleted.name}"`;
   });
 }
