@@ -24,15 +24,30 @@ function getLayerInfo(args) {
 
     for (var i = 1; i <= activeComp.numLayers; i++) {
         var layer = activeComp.layer(i);
+        var layerType = "unknown";
+        if (layer instanceof TextLayer) { layerType = "text"; }
+        else if (layer instanceof ShapeLayer) { layerType = "shape"; }
+        else if (layer instanceof CameraLayer) { layerType = "camera"; }
+        else if (layer instanceof LightLayer) { layerType = "light"; }
+        else if (layer instanceof AVLayer) {
+            layerType = layer.adjustmentLayer ? "adjustment" : "solid";
+        }
+
         var layerInfo = {
             index: layer.index,
             name: layer.name,
+            type: layerType,
             enabled: layer.enabled,
             locked: layer.locked,
             threeDLayer: layer.threeDLayer,
             position: layer.property("Position").value,
+            scale: layer.property("Scale").value,
+            rotation: layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value,
+            opacity: layer.property("Opacity").value,
             inPoint: layer.inPoint,
-            outPoint: layer.outPoint
+            outPoint: layer.outPoint,
+            effectsCount: layer.property("Effects") ? layer.property("Effects").numProperties : 0,
+            masksCount: layer.property("Masks") ? layer.property("Masks").numProperties : 0
         };
 
         result.layers.push(layerInfo);
@@ -366,17 +381,10 @@ function setLayerProperties(args) {
                 }
 
                 if (updated) {
-                    try {
-                        sourceTextProp.setValue(currentTextDocument);
-                        logToPanel("Applied changes to Text Document for layer: " + layer.name);
-                    } catch (e) {
-                        logToPanel("ERROR applying Text Document changes: " + e.toString());
-                    }
+                    sourceTextProp.setValue(currentTextDocument);
                 }
                 textDocument = currentTextDocument;
 
-            } else {
-                logToPanel("Warning: Could not access Source Text property for layer: " + layer.name);
             }
         }
 
@@ -473,11 +481,6 @@ function setLayerProperties(args) {
             returnLayerInfo.fillColor = textDocument.fillColor;
         }
 
-        logToPanel("Final check before return:");
-        logToPanel("  Changed Properties: " + changedProperties.join(", "));
-        logToPanel("  Return Layer Info Font: " + (returnLayerInfo.fontFamily || "N/A"));
-        logToPanel("  TextDocument Font: " + (textDocument ? textDocument.font : "N/A"));
-
         return JSON.stringify({
             status: "success", message: "Layer properties updated successfully",
             layer: returnLayerInfo
@@ -564,26 +567,30 @@ function batchSetLayerProperties(args) {
 // U: moveLayer
 function moveLayer(args) {
     try {
-        var comp = app.project.items[args.compIndex];
-        if (!comp || !(comp instanceof CompItem)) {
-            return JSON.stringify({ success: false, message: "Composition not found at index " + args.compIndex });
+        var compName = args.compName || "";
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
         }
-        var layer = comp.layers[args.layerIndex];
-        if (!layer) {
-            return JSON.stringify({ success: false, message: "Layer not found at index " + args.layerIndex });
+        if (!comp) {
+            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
         }
-        var target = comp.layers[args.targetIndex];
-        if (!target) {
-            return JSON.stringify({ success: false, message: "Target layer not found at index " + args.targetIndex });
-        }
+
+        var layer = comp.layer(args.layerIndex);
+        if (!layer) { throw new Error("Layer not found at index " + args.layerIndex); }
+        var target = comp.layer(args.targetIndex);
+        if (!target) { throw new Error("Target layer not found at index " + args.targetIndex); }
+
         if (args.position === "before") {
             layer.moveBefore(target);
         } else {
             layer.moveAfter(target);
         }
-        return JSON.stringify({ success: true, message: "Layer moved successfully." });
+        return JSON.stringify({ status: "success", message: "Layer moved successfully." });
     } catch (e) {
-        return JSON.stringify({ success: false, message: e.toString() });
+        return JSON.stringify({ status: "error", message: e.toString() });
     }
 }
 

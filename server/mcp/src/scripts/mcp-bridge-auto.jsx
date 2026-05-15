@@ -57,7 +57,7 @@ if (typeof JSON.stringify !== "function") {
 // ============================================================
 //@include "compositions.jsx"
 //@include "layers.jsx"
-//@include "keyframes.jsx"
+//@include "animation.jsx"
 //@include "masks.jsx"
 //@include "effects.jsx"
 //@include "footage.jsx"
@@ -87,8 +87,9 @@ function dispatchCommand(command, args) {
         case "moveLayer":                return moveLayer(args);
         case "deleteLayer":              return deleteLayer(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
-        case "setLayerKeyframe":         return setLayerKeyframe(args.compIndex, args.layerIndex, args.propertyName, args.timeInSeconds, args.value);
-        case "setLayerExpression":       return setLayerExpression(args.compIndex, args.layerIndex, args.propertyName, args.expressionString);
+        case "setLayerKeyframe":         return setLayerKeyframe(args);
+        case "setLayerExpression":       return setLayerExpression(args);
+        case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setKeyframeEasing":        return setKeyframeEasing(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
         case "setLayerMask":             return setLayerMask(args);

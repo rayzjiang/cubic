@@ -1,5 +1,5 @@
-// keyframes.mjs — tests for keyframes.jsx
-// Covers: setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
+// keyframes.mjs — tests for animation.jsx
+// Covers: getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
 //         setLayerExpression, getLayerExpressions
 //
 // Creates its own __MCP_TEST_keyframes__ comp so results are visually isolated.

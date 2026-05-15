@@ -240,6 +240,7 @@ server.registerTool(
       "moveLayer",
       "setKeyframeEasing",
       "getLayerExpressions",
+      "getLayerKeyframes",
       "removePropertyKeyframes",
       "batch"
     ];
@@ -293,7 +294,7 @@ server.registerTool(
 
 **Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties
 **Layers:** getLayerInfo, createTextLayer, createShapeLayer, createSolidLayer, createCamera, duplicateLayer, setLayerProperties, batchSetLayerProperties, moveLayer, deleteLayer
-**Keyframes:** setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
+**Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** setLayerMask
 **Effects:** applyEffect, applyEffectTemplate, bridgeTestEffects

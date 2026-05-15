@@ -16,7 +16,7 @@
 //   __MCP_TEST_compositions__  — verify comp exists in project panel, frameRate shows 24fps
 //   __MCP_TEST_layers__        — open comp: should show camera + shape + text + solid in timeline
 //   __MCP_TEST_keyframes__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
-//   __MCP_TEST_masks__         — select the blue solid: masks panel should show rect + triangle + modified rect masks
+//   __MCP_TEST_masks__         — select the blue solid: masks panel should show 2 masks (rect add + triangle subtract); rect was modified by test 3
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: Gaussian Blur, red Drop Shadow, template effects stacked
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
 //
@@ -35,7 +35,6 @@ import { BRIDGE_DIR, send, results, printSummary, bold, yellow, red, dim } from 
 
 // ─── Args ─────────────────────────────────────────────────────────────────────
 
-const write       = process.argv.includes('--write') || process.argv.includes('--cleanup-only');
 const cleanup     = process.argv.includes('--cleanup') || process.argv.includes('--cleanup-only');
 const cleanupOnly = process.argv.includes('--cleanup-only');
 const suiteArg    = (process.argv.find(a => a.startsWith('--suite=')) ?? '').replace('--suite=', '') || null;
