@@ -26,6 +26,15 @@ function getLayerMasks(args) {
         }
         if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + args.layerIndex)); }
 
+        var modeLabels = {};
+        modeLabels[MaskMode.NONE]       = "none";
+        modeLabels[MaskMode.ADD]        = "add";
+        modeLabels[MaskMode.SUBTRACT]   = "subtract";
+        modeLabels[MaskMode.INTERSECT]  = "intersect";
+        modeLabels[MaskMode.LIGHTEN]    = "lighten";
+        modeLabels[MaskMode.DARKEN]     = "darken";
+        modeLabels[MaskMode.DIFFERENCE] = "difference";
+
         var masksGroup = layer.property("Masks");
         var masks = [];
         for (var m = 1; m <= masksGroup.numProperties; m++) {
@@ -34,7 +43,7 @@ function getLayerMasks(args) {
             masks.push({
                 index: m,
                 name: mask.name,
-                mode: mask.maskMode,
+                mode: modeLabels[mask.maskMode] || mask.maskMode,
                 vertices: path.vertices,
                 closed: path.closed,
                 feather: mask.property("Mask Feather").value,

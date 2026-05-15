@@ -16,10 +16,18 @@ function resolveEffectsComp(compName) {
     return comp;
 }
 
-function resolveEffectsLayer(comp, layerIndex) {
-    if (layerIndex === undefined || layerIndex === null) { throw new Error("layerIndex is required"); }
-    if (layerIndex < 1 || layerIndex > comp.numLayers) { throw new Error("Layer index out of bounds: " + layerIndex); }
-    return comp.layer(layerIndex);
+function resolveEffectsLayer(comp, layerIndex, layerName) {
+    if (layerIndex !== undefined && layerIndex !== null) {
+        if (layerIndex < 1 || layerIndex > comp.numLayers) { throw new Error("Layer index out of bounds: " + layerIndex); }
+        return comp.layer(layerIndex);
+    }
+    if (layerName) {
+        for (var i = 1; i <= comp.numLayers; i++) {
+            if (comp.layer(i).name === layerName) { return comp.layer(i); }
+        }
+        throw new Error("Layer not found with name '" + layerName + "'");
+    }
+    throw new Error("layerIndex or layerName is required");
 }
 
 // Applies a settings dict to an effect — used by applyEffect and applyEffectTemplate
@@ -54,7 +62,7 @@ function applyEffectSettings(effect, settings) {
 function getLayerEffects(args) {
     try {
         var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex);
+        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
 
         var effectsGroup = layer.property("Effects");
         var effects = [];
@@ -92,7 +100,7 @@ function getLayerEffects(args) {
 function applyEffect(args) {
     try {
         var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex);
+        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
 
         var effectName = args.effectName;
         var effectMatchName = args.effectMatchName;
@@ -141,7 +149,7 @@ function applyEffect(args) {
 function applyEffectTemplate(args) {
     try {
         var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex);
+        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
 
         var templateName = args.templateName;
         var customSettings = args.customSettings || {};
@@ -151,35 +159,35 @@ function applyEffectTemplate(args) {
         var templates = {
             "gaussian-blur": {
                 effectMatchName: "ADBE Gaussian Blur 2",
-                settings: { "Blurriness": customSettings.blurriness || 20 }
+                settings: { "Blurriness": customSettings.blurriness !== undefined ? customSettings.blurriness : 20 }
             },
             "directional-blur": {
                 effectMatchName: "ADBE Directional Blur",
-                settings: { "Direction": customSettings.direction || 0, "Blur Length": customSettings.length || 10 }
+                settings: { "Direction": customSettings.direction !== undefined ? customSettings.direction : 0, "Blur Length": customSettings.length !== undefined ? customSettings.length : 10 }
             },
             "color-balance": {
                 effectMatchName: "ADBE Color Balance (HLS)",
-                settings: { "Hue": customSettings.hue || 0, "Lightness": customSettings.lightness || 0, "Saturation": customSettings.saturation || 0 }
+                settings: { "Hue": customSettings.hue !== undefined ? customSettings.hue : 0, "Lightness": customSettings.lightness !== undefined ? customSettings.lightness : 0, "Saturation": customSettings.saturation !== undefined ? customSettings.saturation : 0 }
             },
             "brightness-contrast": {
                 effectMatchName: "ADBE Brightness & Contrast 2",
-                settings: { "Brightness": customSettings.brightness || 0, "Contrast": customSettings.contrast || 0, "Use Legacy": false }
+                settings: { "Brightness": customSettings.brightness !== undefined ? customSettings.brightness : 0, "Contrast": customSettings.contrast !== undefined ? customSettings.contrast : 0, "Use Legacy": false }
             },
             "curves": {
                 effectMatchName: "ADBE CurvesCustom"
             },
             "glow": {
                 effectMatchName: "ADBE Glow",
-                settings: { "Glow Threshold": customSettings.threshold || 50, "Glow Radius": customSettings.radius || 15, "Glow Intensity": customSettings.intensity || 1 }
+                settings: { "Glow Threshold": customSettings.threshold !== undefined ? customSettings.threshold : 50, "Glow Radius": customSettings.radius !== undefined ? customSettings.radius : 15, "Glow Intensity": customSettings.intensity !== undefined ? customSettings.intensity : 1 }
             },
             "drop-shadow": {
                 effectMatchName: "ADBE Drop Shadow",
                 settings: {
-                    "Shadow Color": customSettings.color || [0, 0, 0, 1],
-                    "Opacity": customSettings.opacity || 50,
-                    "Direction": customSettings.direction || 135,
-                    "Distance": customSettings.distance || 10,
-                    "Softness": customSettings.softness || 10
+                    "Shadow Color": customSettings.color !== undefined ? customSettings.color : [0, 0, 0, 1],
+                    "Opacity": customSettings.opacity !== undefined ? customSettings.opacity : 50,
+                    "Direction": customSettings.direction !== undefined ? customSettings.direction : 135,
+                    "Distance": customSettings.distance !== undefined ? customSettings.distance : 10,
+                    "Softness": customSettings.softness !== undefined ? customSettings.softness : 10
                 }
             },
             "cinematic-look": {
@@ -249,7 +257,7 @@ function applyEffectTemplate(args) {
 function setEffectProperty(args) {
     try {
         var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex);
+        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
 
         var effectsGroup = layer.property("Effects");
         var eff = null;
@@ -295,7 +303,7 @@ function setEffectProperty(args) {
 function deleteEffect(args) {
     try {
         var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex);
+        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
 
         var effectsGroup = layer.property("Effects");
         var eff = null;

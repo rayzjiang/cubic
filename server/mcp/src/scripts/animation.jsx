@@ -115,6 +115,11 @@ function getLayerKeyframes(args) {
             throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
 
+        var interpLabels = {};
+        interpLabels[KeyframeInterpolationType.LINEAR] = "linear";
+        interpLabels[KeyframeInterpolationType.BEZIER] = "bezier";
+        interpLabels[KeyframeInterpolationType.HOLD]   = "hold";
+
         var keyframes = [];
         for (var k = 1; k <= property.numKeys; k++) {
             var inType  = property.keyInInterpolationType(k);
@@ -124,7 +129,9 @@ function getLayerKeyframes(args) {
                 time: property.keyTime(k),
                 value: property.keyValue(k),
                 inInterpolationType: inType,
-                outInterpolationType: outType
+                inInterpolationLabel: interpLabels[inType] || "unknown",
+                outInterpolationType: outType,
+                outInterpolationLabel: interpLabels[outType] || "unknown"
             });
         }
 
