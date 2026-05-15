@@ -1,10 +1,13 @@
 // compositions.mjs — tests for compositions.jsx
 //
-// Tests:
-//   Read  — getProjectInfo, listCompositions
-//   Write — createComposition, setCompositionProperties, deleteComposition
-// Missing: —
-// Visual:  —
+// Covers:
+//   getProjectInfo          (R)
+//   listCompositions        (R)
+//   createComposition       (C)
+//   setCompositionProperties (U)
+//   deleteComposition       (D)
+//
+// Missing: none — full CRUD covered.
 
 import {
   test, send,

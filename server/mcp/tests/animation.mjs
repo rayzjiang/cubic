@@ -149,7 +149,9 @@ export async function run(ctx, opts) {
     assertField(k0, 'keyIndex', 'number');
     assertField(k0, 'time', 'number');
     assertField(k0, 'inInterpolationType', 'number');
+    assertField(k0, 'inInterpolationLabel', 'string');
     assertField(k0, 'outInterpolationType', 'number');
+    assertField(k0, 'outInterpolationLabel', 'string');
     if (k0.time !== 0) throw new Error(`expected time=0 at keyframe 1, got ${k0.time}`);
     if (r.keyframes[1].time !== 4) throw new Error(`expected time=4 at keyframe 2, got ${r.keyframes[1].time}`);
     return `${r.count} keyframe(s) at t=${r.keyframes.map(k => k.time + 's').join(', ')}`;

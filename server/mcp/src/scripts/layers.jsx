@@ -519,7 +519,7 @@ function setLayerProperties(args) {
         if (threeDLayer !== undefined && threeDLayer !== null) { layer.threeDLayer = !!threeDLayer; changedProperties.push("threeDLayer"); }
         if (position !== undefined && position !== null) {
             var posProp = layer.property("Position");
-            if (posProp.numKeys > 0) { while (posProp.numKeys > 0) { posProp.removeKey(1); } }
+            if (posProp.numKeys > 0) { throw new Error("position has keyframes — use setLayerKeyframe instead"); }
             posProp.setValue(position);
             changedProperties.push("position");
         }

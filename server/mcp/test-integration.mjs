@@ -13,11 +13,11 @@
 //
 // After --write, each suite leaves a named comp in your project for visual inspection:
 //
-//   __MCP_TEST_compositions__  — verify comp exists in project panel, frameRate shows 24fps
-//   __MCP_TEST_layers__        — open comp: should show camera + shape + text + solid in timeline
+//   __MCP_TEST_compositions__  — comp is deleted at end of suite; nothing to inspect
+//   __MCP_TEST_layers__        — open comp: null + light + camera + shape + text + solid in timeline; text parented to null
 //   __MCP_TEST_animation__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
-//   __MCP_TEST_masks__         — select the blue solid: masks panel should show 2 masks (rect add + triangle subtract); rect was modified by test 3
-//   __MCP_TEST_effects__       — open Effect Controls on white solid: Gaussian Blur, red Drop Shadow, template effects stacked
+//   __MCP_TEST_masks__         — select the blue solid: masks panel should show 1 mask (Test Rect Mask, add mode); triangle was deleted
+//   __MCP_TEST_effects__       — open Effect Controls on white solid: 4 effects (Gaussian Blur ×2, Curves, Vibrance); Drop Shadow was deleted
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.

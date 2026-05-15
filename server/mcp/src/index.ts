@@ -299,11 +299,11 @@ server.registerTool(
 
 ## Available Commands (via runScript or dedicated tools)
 
-**Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties
-**Layers:** getLayerInfo, createTextLayer, createShapeLayer, createSolidLayer, createCamera, duplicateLayer, setLayerProperties, batchSetLayerProperties, moveLayer, deleteLayer
+**Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
+**Layers:** getLayerInfo, createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
-**Masks:** setLayerMask
+**Masks:** getLayerMasks, setLayerMask, deleteLayerMask
 **Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
 **Batch:** batch — run multiple commands in one round-trip (strongly preferred)
 

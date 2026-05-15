@@ -7,10 +7,13 @@
 //   createShapeLayer       (C)
 //   createSolidLayer       (C)
 //   createCamera           (C)
+//   createLightLayer       (C)
+//   createNullLayer        (C)
 //   duplicateLayer         (C)
 //   setLayerProperties     (U  — opacity, scale, text, font, changedProperties array)
 //   batchSetLayerProperties (U — multiple layers in one call)
 //   moveLayer              (U  — reorders layer stack by name)
+//   setLayerParent         (U  — parents text layer to null layer)
 //   deleteLayer            (D  — removes layer, returns name + index)
 //
 // Missing: none — full CRUD covered.
@@ -20,16 +23,18 @@
 //   createShapeLayer → shape=1, text=2
 //   createSolidLayer → solid=1, shape=2, text=3
 //   createCamera     → camera=1, solid=2, shape=3, text=4
+//   createLightLayer → light=1, camera=2, solid=3, shape=4, text=5
+//   createNullLayer  → null=1, light=2, camera=3, solid=4, shape=5, text=6
 //
 // After moveLayer (solid after text):
-//   camera=1, shape=2, text=3, solid=4
+//   null=1, light=2, camera=3, shape=4, text=5, solid=6
 //
 // After duplicateLayer (text) + deleteLayer (dup):
-//   camera=1, shape=2, text=3, solid=4  ← stable for downstream suites
+//   null=1, light=2, camera=3, shape=4, text=5, solid=6  ← stable for downstream suites
 //
 // Visual verification (after --write, open __MCP_TEST_layers__ in After Effects):
-//   Timeline should show (top to bottom): Camera, Test Shape, MCP Test (text), Test Solid.
-//   Select the text layer — Opacity=100%, Scale=100%. Shape layer Opacity=75%.
+//   Timeline (top to bottom): Test Null, Test Light, Test Camera, Test Shape, MCP Test (text), Test Solid.
+//   Text layer is parented to Test Null. Shape layer Opacity=75%, text layer Opacity=100%, Scale=100%.
 
 import {
   test, send,
@@ -143,13 +148,67 @@ export async function run(ctx, opts) {
     ctx.textLayerIndex   = 4;
   });
 
+  // Stack: light=1, camera=2, solid=3, shape=4, text=5
+  await test('createLightLayer — returns type=light, lightType string', async () => {
+    const r = await send('createLightLayer', {
+      compName: COMP_NAME, name: 'Test Light', lightType: 'point', intensity: 80
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertValue(r.layer, 'type', 'light');
+    assertField(r.layer, 'lightType', 'string');
+    ctx.lightLayerIndex  = 1;
+    ctx.cameraLayerIndex = 2;
+    ctx.solidLayerIndex  = 3;
+    ctx.shapeLayerIndex  = 4;
+    ctx.textLayerIndex   = 5;
+  });
+
+  // Stack: null=1, light=2, camera=3, solid=4, shape=5, text=6
+  await test('createNullLayer — returns type=null, position array', async () => {
+    const r = await send('createNullLayer', {
+      compName: COMP_NAME, name: 'Test Null', threeDLayer: true
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertValue(r.layer, 'type', 'null');
+    assertField(r.layer, 'threeDLayer', 'boolean');
+    if (r.layer.threeDLayer !== true) throw new Error('expected threeDLayer=true');
+    ctx.nullLayerIndex   = 1;
+    ctx.lightLayerIndex  = 2;
+    ctx.cameraLayerIndex = 3;
+    ctx.solidLayerIndex  = 4;
+    ctx.shapeLayerIndex  = 5;
+    ctx.textLayerIndex   = 6;
+  });
+
+  await test('setLayerParent — parents text layer to null, confirmed in getLayerInfo', async () => {
+    const r = await send('setLayerParent', {
+      compName: COMP_NAME,
+      layerIndex: ctx.textLayerIndex,
+      parentIndex: ctx.nullLayerIndex
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'parent', 'object');
+    assertField(r.layer.parent, 'name', 'string');
+
+    // verify parent is visible in getLayerInfo
+    const info = await send('getLayerInfo', { compName: COMP_NAME });
+    assertNoError(info);
+    const text = info.layers.find(l => l.index === ctx.textLayerIndex);
+    if (!text) throw new Error('text layer not found in getLayerInfo');
+    if (!text.parent) throw new Error('parent field is null — setLayerParent did not stick');
+    return `parent="${text.parent.name}"`;
+  });
+
   // ── Read (write-mode: verify new getLayerInfo fields on known layers) ─────
 
   await test('getLayerInfo — type detection + scale/rotation/opacity/effectsCount/masksCount', async () => {
     const r = await send('getLayerInfo', { compName: COMP_NAME });
     assertNoError(r);
     assertArray(r, 'layers');
-    if (r.layers.length < 4) throw new Error(`expected 4 layers, got ${r.layers.length}`);
+    if (r.layers.length < 6) throw new Error(`expected 6 layers, got ${r.layers.length}`);
 
     const text = r.layers.find(l => l.index === ctx.textLayerIndex);
     if (!text) throw new Error('text layer not found');
@@ -198,27 +257,30 @@ export async function run(ctx, opts) {
     if (failed.length > 0) throw new Error(`operation(s) failed: ${JSON.stringify(failed)}`);
   });
 
-  // moveLayer: move solid (index 2) after text (index 4) → camera=1, shape=2, text=3, solid=4
+  // moveLayer: move solid (index 4) after text (index 6) → null=1, light=2, camera=3, shape=4, text=5, solid=6
   await test('moveLayer — moves solid below text, returns success', async () => {
     const r = await send('moveLayer', {
       compName: COMP_NAME,
-      layerIndex: ctx.solidLayerIndex,  // 2
-      targetIndex: ctx.textLayerIndex,  // 4
+      layerIndex: ctx.solidLayerIndex,  // 4
+      targetIndex: ctx.textLayerIndex,  // 6
       position: 'after'
     });
     assertNoError(r);
-    ctx.shapeLayerIndex = 2;
-    ctx.textLayerIndex  = 3;
-    ctx.solidLayerIndex = 4;
+    ctx.nullLayerIndex   = 1;
+    ctx.lightLayerIndex  = 2;
+    ctx.cameraLayerIndex = 3;
+    ctx.shapeLayerIndex  = 4;
+    ctx.textLayerIndex   = 5;
+    ctx.solidLayerIndex  = 6;
   });
 
   // ── Duplicate + Delete ────────────────────────────────────────────────────
 
-  // Stack: camera=1, shape=2, text=3, solid=4
-  // duplicate() places copy directly below original → dup=4, text=3, solid=5
+  // Stack: null=1, light=2, camera=3, shape=4, text=5, solid=6
+  // duplicate() places copy directly below original → dup=6, text=5, solid=7
   await test('duplicateLayer — creates copy, returns original + duplicate indices', async () => {
     const r = await send('duplicateLayer', {
-      compName: COMP_NAME, layerIndex: ctx.textLayerIndex  // 3
+      compName: COMP_NAME, layerIndex: ctx.textLayerIndex  // 5
     });
     assertNoError(r);
     assertField(r, 'original', 'object');
@@ -236,11 +298,13 @@ export async function run(ctx, opts) {
     assertField(r, 'deleted', 'object');
     assertField(r.deleted, 'name', 'string');
     assertField(r.deleted, 'index', 'number');
-    // Restore stable indices for downstream suites: camera=1, shape=2, text=3, solid=4
-    ctx.cameraLayerIndex = 1;
-    ctx.shapeLayerIndex  = 2;
-    ctx.textLayerIndex   = 3;
-    ctx.solidLayerIndex  = 4;
+    // Restore stable indices for downstream suites: null=1, light=2, camera=3, shape=4, text=5, solid=6
+    ctx.nullLayerIndex   = 1;
+    ctx.lightLayerIndex  = 2;
+    ctx.cameraLayerIndex = 3;
+    ctx.shapeLayerIndex  = 4;
+    ctx.textLayerIndex   = 5;
+    ctx.solidLayerIndex  = 6;
     delete ctx.dupLayerIndex;
   });
 }
