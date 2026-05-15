@@ -3,11 +3,7 @@
 // Note: solid LAYERS are created via createSolidLayer in layers.jsx — this file
 // manages the footage sources in the project panel, not the layers that reference them.
 // CRUD: C ✗  R ✗  U ✗  D ✓
-/* Claude note: deleteUnusedSolids is correctly here. The function could eventually be generalized to
-  deleteUnusedFootage to cover imported files as well, but current scope is fine.
-
-  The file will naturally grow when you add importFootage, listFootage, replaceFootage. Don't
-  force it yet.*/
+// Expand to importFootage / listFootage / replaceFootage / deleteUnusedFootage as footage ops grow.
 
 // D: deleteUnusedSolids — removes all solid footage items not referenced by any comp
 function deleteUnusedSolids() {

@@ -70,13 +70,14 @@ if (typeof JSON.stringify !== "function") {
 // Routes a command name + args to the correct handler function
 function dispatchCommand(command, args) {
     switch (command) {
+        // compositions.jsx
         case "getProjectInfo":           return getProjectInfo();
         case "listCompositions":         return listCompositions();
-        case "getLayerInfo":             return getLayerInfo(args);
         case "createComposition":        return createComposition(args);
         case "setCompositionProperties": return setCompositionProperties(args);
         case "deleteComposition":        return deleteComposition(args);
-        case "deleteUnusedSolids":       return deleteUnusedSolids();
+        // layers.jsx
+        case "getLayerInfo":             return getLayerInfo(args);
         case "createTextLayer":          return createTextLayer(args);
         case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);
@@ -89,20 +90,26 @@ function dispatchCommand(command, args) {
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "deleteLayer":              return deleteLayer(args);
-        case "getLayerExpressions":      return getLayerExpressions(args);
-        case "setLayerKeyframe":         return setLayerKeyframe(args);
-        case "setLayerExpression":       return setLayerExpression(args);
+        // animation.jsx
         case "getLayerKeyframes":        return getLayerKeyframes(args);
+        case "setLayerKeyframe":         return setLayerKeyframe(args);
         case "setKeyframeEasing":        return setKeyframeEasing(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
+        case "getLayerExpressions":      return getLayerExpressions(args);
+        case "setLayerExpression":       return setLayerExpression(args);
+        // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);
         case "deleteLayerMask":          return deleteLayerMask(args);
+        // effects.jsx
         case "getLayerEffects":          return getLayerEffects(args);
         case "applyEffect":              return applyEffect(args);
         case "applyEffectTemplate":      return applyEffectTemplate(args);
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);
+        // footage.jsx
+        case "deleteUnusedSolids":       return deleteUnusedSolids();
+        // mcp-bridge-auto.jsx
         case "batch":                    return batch(args);
         default:                         return JSON.stringify({ status: "error", message: "Unknown command: " + command });
     }

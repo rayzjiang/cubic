@@ -112,6 +112,7 @@ function applyEffect(args) {
         }
 
         var effectResult;
+        var effect;
 
         if (presetPath) {
             var presetFile = new File(presetPath);
@@ -119,11 +120,11 @@ function applyEffect(args) {
             layer.applyPreset(presetFile);
             effectResult = { type: "preset", name: presetPath.split('/').pop().split('\\').pop(), applied: true };
         } else if (effectMatchName) {
-            var effect = layer.Effects.addProperty(effectMatchName);
+            effect = layer.Effects.addProperty(effectMatchName);
             effectResult = { type: "effect", name: effect.name, matchName: effect.matchName, index: effect.propertyIndex };
             applyEffectSettings(effect, effectSettings);
         } else {
-            var effect = layer.Effects.addProperty(effectName);
+            effect = layer.Effects.addProperty(effectName);
             effectResult = { type: "effect", name: effect.name, matchName: effect.matchName, index: effect.propertyIndex };
             applyEffectSettings(effect, effectSettings);
         }
