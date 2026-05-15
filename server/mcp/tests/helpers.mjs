@@ -76,9 +76,7 @@ export async function test(name, fn) {
 
 // Throws if response has any error shape.
 export function assertNoError(r) {
-  if (r.error)           throw new Error(`bridge returned error: ${r.error}`);
   if (r.status === 'error') throw new Error(`bridge error: ${r.message}`);
-  if (r.success === false)  throw new Error(`bridge returned success=false: ${r.message ?? r.error}`);
 }
 
 // Throws if field is missing or (optionally) the wrong JS type.

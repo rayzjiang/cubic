@@ -129,18 +129,22 @@ function setCompositionProperties(args) {
             if (item instanceof CompItem && item.name === compName) { comp = item; break; }
         }
         if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+            throw new Error("No composition found with name '" + compName + "'");
         }
         var changed = [];
+        if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
         if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
         if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = args.frameRate; changed.push("frameRate"); }
         if (args.width !== undefined && args.width !== null && args.height !== undefined && args.height !== null) {
             comp.width = args.width; comp.height = args.height; changed.push("dimensions");
         }
+        if (args.backgroundColor !== undefined && args.backgroundColor !== null) {
+            comp.bgColor = [args.backgroundColor.r / 255, args.backgroundColor.g / 255, args.backgroundColor.b / 255];
+            changed.push("backgroundColor");
+        }
         return JSON.stringify({
             status: "success",
-            composition: { name: comp.name, duration: comp.duration, frameRate: comp.frameRate, width: comp.width, height: comp.height },
+            composition: { name: comp.name, duration: comp.duration, frameRate: comp.frameRate, width: comp.width, height: comp.height, bgColor: comp.bgColor },
             changedProperties: changed
         }, null, 2);
     } catch (error) {

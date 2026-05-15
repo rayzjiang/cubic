@@ -81,10 +81,13 @@ function dispatchCommand(command, args) {
         case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);
         case "createCamera":             return createCamera(args);
+        case "createLightLayer":         return createLightLayer(args);
+        case "createNullLayer":          return createNullLayer(args);
         case "duplicateLayer":           return duplicateLayer(args);
         case "setLayerProperties":       return setLayerProperties(args);
         case "batchSetLayerProperties":  return batchSetLayerProperties(args);
         case "moveLayer":                return moveLayer(args);
+        case "setLayerParent":           return setLayerParent(args);
         case "deleteLayer":              return deleteLayer(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);
@@ -101,7 +104,7 @@ function dispatchCommand(command, args) {
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);
         case "batch":                    return batch(args);
-        default:                         return JSON.stringify({ success: false, error: "Unknown command: " + command });
+        default:                         return JSON.stringify({ status: "error", message: "Unknown command: " + command });
     }
 }
 
@@ -110,13 +113,13 @@ function batch(args) {
     var commands = args.commands;
 
     if (!commands) {
-        return JSON.stringify({ success: false, message: "Missing 'commands' array." });
+        return JSON.stringify({ status: "error", message: "Missing 'commands' array." });
     }
     if (typeof commands.length === "undefined") {
-        return JSON.stringify({ success: false, message: "'commands' must be an array." });
+        return JSON.stringify({ status: "error", message: "'commands' must be an array." });
     }
     if (commands.length === 0) {
-        return JSON.stringify({ success: true, message: "Empty batch.", total: 0, executed: 0, succeeded: 0, failed: 0, results: [] });
+        return JSON.stringify({ status: "success", message: "Empty batch.", total: 0, executed: 0, succeeded: 0, failed: 0, results: [] });
     }
 
     var stopOnError = args.stopOnError === true;
@@ -128,7 +131,7 @@ function batch(args) {
         var entry = commands[i];
 
         if (!entry || typeof entry.command !== "string" || entry.command === "") {
-            var errEntry = { index: i, command: null, success: false, message: "Missing or invalid 'command' field." };
+            var errEntry = { index: i, command: null, success: false, status: "error", message: "Missing or invalid 'command' field." };
             results.push(errEntry);
             failed++;
             if (stopOnError) break;
@@ -137,7 +140,7 @@ function batch(args) {
 
         // Block nested batch to prevent infinite recursion
         if (entry.command === "batch") {
-            var nestedErr = { index: i, command: "batch", success: false, message: "Nested batch commands are not supported." };
+            var nestedErr = { index: i, command: "batch", success: false, status: "error", message: "Nested batch commands are not supported." };
             results.push(nestedErr);
             failed++;
             if (stopOnError) break;
@@ -150,12 +153,12 @@ function batch(args) {
         try {
             resultStr = dispatchCommand(entry.command, cmdArgs);
         } catch (e) {
-            resultStr = JSON.stringify({ success: false, message: "Uncaught error: " + e.toString() });
+            resultStr = JSON.stringify({ status: "error", message: "Uncaught error: " + e.toString() });
         }
 
         try {
             resultObj = JSON.parse(resultStr);
-            cmdSuccess = !(resultObj.success === false || resultObj.status === "error" || resultObj.error !== undefined);
+            cmdSuccess = resultObj.status !== "error";
         } catch (parseErr) {
             resultObj = { raw: resultStr };
             cmdSuccess = false;
@@ -167,6 +170,7 @@ function batch(args) {
             index: i,
             command: entry.command,
             success: cmdSuccess,
+            status: cmdSuccess ? "success" : "error",
             result: resultObj
         });
 
@@ -174,7 +178,7 @@ function batch(args) {
     }
 
     return JSON.stringify({
-        success: failed === 0,
+        status: failed === 0 ? "success" : "error",
         total: commands.length,
         executed: results.length,
         succeeded: succeeded,
