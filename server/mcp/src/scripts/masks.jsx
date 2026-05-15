@@ -1,39 +1,57 @@
 // masks.jsx
 // CRUD: C/U ✓  R ✓  D ✓
 
-// R: getLayerMasks
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+function resolveMasksComp(compName) {
+    var comp = null;
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+    }
+    if (!comp) {
+        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+    }
+    return comp;
+}
+
+function resolveMasksLayer(comp, layerIndex, layerName) {
+    if (layerIndex !== undefined && layerIndex !== null) {
+        if (layerIndex < 1 || layerIndex > comp.numLayers) { throw new Error("Layer index out of bounds: " + layerIndex); }
+        return comp.layer(layerIndex);
+    }
+    if (layerName) {
+        for (var i = 1; i <= comp.numLayers; i++) {
+            if (comp.layer(i).name === layerName) { return comp.layer(i); }
+        }
+        throw new Error("Layer not found with name '" + layerName + "'");
+    }
+    throw new Error("layerIndex or layerName is required");
+}
+
+var MASK_MODE_LABELS = null;
+function getMaskModeLabels() {
+    if (!MASK_MODE_LABELS) {
+        MASK_MODE_LABELS = {};
+        MASK_MODE_LABELS[MaskMode.NONE]       = "none";
+        MASK_MODE_LABELS[MaskMode.ADD]        = "add";
+        MASK_MODE_LABELS[MaskMode.SUBTRACT]   = "subtract";
+        MASK_MODE_LABELS[MaskMode.INTERSECT]  = "intersect";
+        MASK_MODE_LABELS[MaskMode.LIGHTEN]    = "lighten";
+        MASK_MODE_LABELS[MaskMode.DARKEN]     = "darken";
+        MASK_MODE_LABELS[MaskMode.DIFFERENCE] = "difference";
+    }
+    return MASK_MODE_LABELS;
+}
+
+// ── R: getLayerMasks ──────────────────────────────────────────────────────────
+
 function getLayerMasks(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layer = null;
-        if (args.layerIndex !== undefined && args.layerIndex !== null) {
-            if (args.layerIndex > 0 && args.layerIndex <= comp.numLayers) { layer = comp.layer(args.layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + args.layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + args.layerIndex)); }
-
-        var modeLabels = {};
-        modeLabels[MaskMode.NONE]       = "none";
-        modeLabels[MaskMode.ADD]        = "add";
-        modeLabels[MaskMode.SUBTRACT]   = "subtract";
-        modeLabels[MaskMode.INTERSECT]  = "intersect";
-        modeLabels[MaskMode.LIGHTEN]    = "lighten";
-        modeLabels[MaskMode.DARKEN]     = "darken";
-        modeLabels[MaskMode.DIFFERENCE] = "difference";
+        var comp  = resolveMasksComp(args.compName || "");
+        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName);
+        var modeLabels = getMaskModeLabels();
 
         var masksGroup = layer.property("Masks");
         var masks = [];
@@ -63,43 +81,22 @@ function getLayerMasks(args) {
     }
 }
 
-// C/U: setLayerMask
+// ── C/U: setLayerMask ─────────────────────────────────────────────────────────
+
 function setLayerMask(args) {
     try {
-        var compName = args.compName || "";
-        var layerIndex = args.layerIndex;
-        var layerName = args.layerName || "";
-        var maskIndex = args.maskIndex; // optional — if provided, modify existing mask
-        var maskPath = args.maskPath; // array of [x, y] points defining the mask shape
-        var maskRect = args.maskRect; // shorthand: {top, left, width, height} for rectangular masks
-        var maskMode = args.maskMode || "add"; // "add", "subtract", "intersect", "none"
-        var maskFeather = args.maskFeather; // optional [x, y] feather
-        var maskOpacity = args.maskOpacity; // optional 0-100
-        var maskExpansion = args.maskExpansion; // optional pixels
-        var maskName = args.maskName; // optional rename
+        var comp  = resolveMasksComp(args.compName || "");
+        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName || "");
 
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
+        var maskIndex     = args.maskIndex;
+        var maskPath      = args.maskPath;
+        var maskRect      = args.maskRect;
+        var maskMode      = args.maskMode || "add";
+        var maskFeather   = args.maskFeather;
+        var maskOpacity   = args.maskOpacity;
+        var maskExpansion = args.maskExpansion;
+        var maskName      = args.maskName;
 
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found: " + (layerName || "index " + layerIndex)); }
-
-        // Build the mask shape
         var shapePoints = [];
         if (maskRect) {
             var t = maskRect.top || 0;
@@ -115,9 +112,7 @@ function setLayerMask(args) {
 
         var myShape = new Shape();
         var vertices = [];
-        for (var p = 0; p < shapePoints.length; p++) {
-            vertices.push(shapePoints[p]);
-        }
+        for (var p = 0; p < shapePoints.length; p++) { vertices.push(shapePoints[p]); }
         myShape.vertices = vertices;
         myShape.closed = true;
 
@@ -139,76 +134,33 @@ function setLayerMask(args) {
         }
 
         var modes = {
-            "none": MaskMode.NONE,
-            "add": MaskMode.ADD,
-            "subtract": MaskMode.SUBTRACT,
-            "intersect": MaskMode.INTERSECT,
-            "lighten": MaskMode.LIGHTEN,
-            "darken": MaskMode.DARKEN,
-            "difference": MaskMode.DIFFERENCE
+            "none": MaskMode.NONE, "add": MaskMode.ADD, "subtract": MaskMode.SUBTRACT,
+            "intersect": MaskMode.INTERSECT, "lighten": MaskMode.LIGHTEN,
+            "darken": MaskMode.DARKEN, "difference": MaskMode.DIFFERENCE
         };
-        if (modes[maskMode] !== undefined) {
-            mask.maskMode = modes[maskMode];
-            changed.push("maskMode");
-        }
-
-        if (maskFeather !== undefined && maskFeather !== null) {
-            mask.property("Mask Feather").setValue(maskFeather);
-            changed.push("maskFeather");
-        }
-        if (maskOpacity !== undefined && maskOpacity !== null) {
-            mask.property("Mask Opacity").setValue(maskOpacity);
-            changed.push("maskOpacity");
-        }
-        if (maskExpansion !== undefined && maskExpansion !== null) {
-            mask.property("Mask Expansion").setValue(maskExpansion);
-            changed.push("maskExpansion");
-        }
-        if (maskName) {
-            mask.name = maskName;
-            changed.push("maskName");
-        }
+        if (modes[maskMode] !== undefined) { mask.maskMode = modes[maskMode]; changed.push("maskMode"); }
+        if (maskFeather   !== undefined && maskFeather   !== null) { mask.property("Mask Feather").setValue(maskFeather);     changed.push("maskFeather"); }
+        if (maskOpacity   !== undefined && maskOpacity   !== null) { mask.property("Mask Opacity").setValue(maskOpacity);     changed.push("maskOpacity"); }
+        if (maskExpansion !== undefined && maskExpansion !== null) { mask.property("Mask Expansion").setValue(maskExpansion); changed.push("maskExpansion"); }
+        if (maskName) { mask.name = maskName; changed.push("maskName"); }
 
         return JSON.stringify({
             status: "success",
             message: "Mask set successfully",
             layer: { name: layer.name, index: layer.index },
-            mask: {
-                name: mask.name,
-                index: mask.propertyIndex,
-                mode: maskMode,
-                changedProperties: changed
-            }
+            mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed }
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
     }
 }
 
-// D: deleteLayerMask
+// ── D: deleteLayerMask ────────────────────────────────────────────────────────
+
 function deleteLayerMask(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layer = null;
-        if (args.layerIndex !== undefined && args.layerIndex !== null) {
-            if (args.layerIndex > 0 && args.layerIndex <= comp.numLayers) { layer = comp.layer(args.layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + args.layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + args.layerIndex)); }
+        var comp  = resolveMasksComp(args.compName || "");
+        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName);
 
         var masksGroup = layer.property("Masks");
         var mask = null;
@@ -225,7 +177,7 @@ function deleteLayerMask(args) {
         }
         if (!mask) { throw new Error("Mask not found: " + (args.maskName || "index " + args.maskIndex)); }
 
-        var deletedName = mask.name;
+        var deletedName  = mask.name;
         var deletedIndex = mask.propertyIndex;
         mask.remove();
 

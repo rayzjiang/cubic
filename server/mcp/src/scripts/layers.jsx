@@ -13,14 +13,10 @@ function getLayerInfo(args) {
                 if (ci_item instanceof CompItem && ci_item.name === args.compName) { activeComp = ci_item; break; }
             }
             if (!activeComp) { throw new Error("No composition found with name '" + args.compName + "'"); }
-        } else if (args && args.compIndex) {
-            var candidate = project.item(parseInt(args.compIndex));
-            if (candidate instanceof CompItem) { activeComp = candidate; }
-            else { throw new Error("Item at compIndex " + args.compIndex + " is not a composition"); }
         } else if (app.project.activeItem instanceof CompItem) {
             activeComp = app.project.activeItem;
         } else {
-            throw new Error("No composition specified and no active composition");
+            throw new Error("compName is required — project item indices are unreliable");
         }
 
         var result = { layers: [] };
@@ -636,10 +632,15 @@ function batchSetLayerProperties(args) {
             }
             if (op.opacity !== undefined && op.opacity !== null) { layer.property("Opacity").setValue(op.opacity); changed.push("opacity"); }
             if (op.blendMode !== undefined && op.blendMode !== null) {
-                var bModes = {"normal":BlendingMode.NORMAL,"add":BlendingMode.ADD,"multiply":BlendingMode.MULTIPLY,"screen":BlendingMode.SCREEN,"overlay":BlendingMode.OVERLAY,"softLight":BlendingMode.SOFT_LIGHT,"hardLight":BlendingMode.HARD_LIGHT,"darken":BlendingMode.DARKEN,"lighten":BlendingMode.LIGHTEN,"difference":BlendingMode.DIFFERENCE};
+                var bModes = {"normal":BlendingMode.NORMAL,"add":BlendingMode.ADD,"multiply":BlendingMode.MULTIPLY,"screen":BlendingMode.SCREEN,"overlay":BlendingMode.OVERLAY,"softLight":BlendingMode.SOFT_LIGHT,"hardLight":BlendingMode.HARD_LIGHT,"colorDodge":BlendingMode.COLOR_DODGE,"colorBurn":BlendingMode.COLOR_BURN,"darken":BlendingMode.DARKEN,"lighten":BlendingMode.LIGHTEN,"difference":BlendingMode.DIFFERENCE,"exclusion":BlendingMode.EXCLUSION,"hue":BlendingMode.HUE,"saturation":BlendingMode.SATURATION,"color":BlendingMode.COLOR,"luminosity":BlendingMode.LUMINOSITY};
                 if (bModes[op.blendMode] !== undefined) { layer.blendingMode = bModes[op.blendMode]; changed.push("blendMode"); }
             }
             if (op.startTime !== undefined && op.startTime !== null) { layer.startTime = op.startTime; changed.push("startTime"); }
+            if (op.duration !== undefined && op.duration !== null && op.duration > 0) {
+                var opStartTime = (op.startTime !== undefined && op.startTime !== null) ? op.startTime : layer.startTime;
+                layer.outPoint = opStartTime + op.duration;
+                changed.push("duration");
+            }
             if (op.outPoint !== undefined && op.outPoint !== null) { layer.outPoint = op.outPoint; changed.push("outPoint"); }
 
             results.push({
@@ -672,10 +673,27 @@ function moveLayer(args) {
             else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
         }
 
-        var layer = comp.layer(args.layerIndex);
-        if (!layer) { throw new Error("Layer not found at index " + args.layerIndex); }
-        var target = comp.layer(args.targetIndex);
-        if (!target) { throw new Error("Target layer not found at index " + args.targetIndex); }
+        var layer = null;
+        if (args.layerIndex !== undefined && args.layerIndex !== null) {
+            if (args.layerIndex > 0 && args.layerIndex <= comp.numLayers) { layer = comp.layer(args.layerIndex); }
+            else { throw new Error("Layer index out of bounds: " + args.layerIndex); }
+        } else if (args.layerName) {
+            for (var j = 1; j <= comp.numLayers; j++) {
+                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
+            }
+        }
+        if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + args.layerIndex)); }
+
+        var target = null;
+        if (args.targetIndex !== undefined && args.targetIndex !== null) {
+            if (args.targetIndex > 0 && args.targetIndex <= comp.numLayers) { target = comp.layer(args.targetIndex); }
+            else { throw new Error("Target layer index out of bounds: " + args.targetIndex); }
+        } else if (args.targetName) {
+            for (var k = 1; k <= comp.numLayers; k++) {
+                if (comp.layer(k).name === args.targetName) { target = comp.layer(k); break; }
+            }
+        }
+        if (!target) { throw new Error("Target layer not found: " + (args.targetName || "index " + args.targetIndex)); }
 
         if (args.position === "before") {
             layer.moveBefore(target);

@@ -45,8 +45,13 @@ export async function run(ctx, opts) {
   // ── Read (always runs) ────────────────────────────────────────────────────
 
   await test('getLayerInfo — layers array with name, index, type, scale, rotation, opacity, effectsCount, masksCount', async () => {
-    const r = await send('getLayerInfo', { compIndex: 1 });
-    if (r.error) return `skipped — ${r.error}`;
+    const list = await send('listCompositions');
+    assertNoError(list);
+    if (list.compositions.length === 0) return 'skipped — no compositions in project';
+    const compName = list.compositions[0].name;
+
+    const r = await send('getLayerInfo', { compName });
+    assertNoError(r);
     assertArray(r, 'layers');
     if (r.layers.length > 0) {
       const l = r.layers[0];
@@ -60,7 +65,7 @@ export async function run(ctx, opts) {
       if (!('rotation' in l)) throw new Error('missing field "rotation"');
       if (!('opacity'  in l)) throw new Error('missing field "opacity"');
     }
-    return `${r.layers.length} layer(s) in comp 1`;
+    return `"${compName}" — ${r.layers.length} layer(s)`;
   });
 
   if (!opts.write) return;
@@ -141,7 +146,7 @@ export async function run(ctx, opts) {
   // ── Read (write-mode: verify new getLayerInfo fields on known layers) ─────
 
   await test('getLayerInfo — type detection + scale/rotation/opacity/effectsCount/masksCount', async () => {
-    const r = await send('getLayerInfo', { compIndex: compIndex });
+    const r = await send('getLayerInfo', { compName: COMP_NAME });
     assertNoError(r);
     assertArray(r, 'layers');
     if (r.layers.length < 4) throw new Error(`expected 4 layers, got ${r.layers.length}`);

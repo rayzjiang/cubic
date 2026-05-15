@@ -100,7 +100,7 @@ export async function run(ctx, opts) {
     const rect = r.masks.find(m => m.name === 'Test Rect Mask');
     if (!rect) throw new Error('Test Rect Mask not found');
     assertField(rect, 'index', 'number');
-    assertField(rect, 'mode', 'number'); // MaskMode enum value
+    assertField(rect, 'mode', 'string');
     assertArray(rect, 'vertices');
     if (rect.vertices.length !== 4) throw new Error(`expected 4 vertices (rect), got ${rect.vertices.length}`);
     assertField(rect, 'closed');
