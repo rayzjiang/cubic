@@ -9,13 +9,13 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, keyframes, masks, effects, batch
+// Available suites: compositions, layers, animation, masks, effects, batch
 //
 // After --write, each suite leaves a named comp in your project for visual inspection:
 //
 //   __MCP_TEST_compositions__  — verify comp exists in project panel, frameRate shows 24fps
 //   __MCP_TEST_layers__        — open comp: should show camera + shape + text + solid in timeline
-//   __MCP_TEST_keyframes__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
+//   __MCP_TEST_animation__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
 //   __MCP_TEST_masks__         — select the blue solid: masks panel should show 2 masks (rect add + triangle subtract); rect was modified by test 3
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: Gaussian Blur, red Drop Shadow, template effects stacked
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
@@ -26,7 +26,7 @@ import * as fs from 'fs';
 
 import * as compositionsSuite from './tests/compositions.mjs';
 import * as layersSuite       from './tests/layers.mjs';
-import * as keyframesSuite    from './tests/keyframes.mjs';
+import * as animationSuite    from './tests/animation.mjs';
 import * as masksSuite        from './tests/masks.mjs';
 import * as effectsSuite      from './tests/effects.mjs';
 import * as batchSuite        from './tests/batch.mjs';
@@ -46,7 +46,7 @@ const opts = { write: process.argv.includes('--write') };
 const suites = [
   { name: 'compositions', mod: compositionsSuite },
   { name: 'layers',       mod: layersSuite       },
-  { name: 'keyframes',    mod: keyframesSuite     },
+  { name: 'animation',    mod: animationSuite      },
   { name: 'masks',        mod: masksSuite         },
   { name: 'effects',      mod: effectsSuite       },
   { name: 'batch',        mod: batchSuite         },
