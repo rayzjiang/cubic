@@ -161,9 +161,10 @@ Restart AE. Only `Create Nulls From Paths.jsx` and `VR Comp Editor.jsx` (Adobe's
 
 All AE handler functions **must** live in a domain file (`src/scripts/*.jsx`), never in `mcp-bridge.jsx`. This keeps the dispatch module small and makes each domain independently readable and testable.
 
-`mcp-bridge.jsx` owns exactly three things — no more:
+`mcp-bridge.jsx` owns exactly four things — no more:
 - JSON polyfill
-- `dispatchCommand()` switch + `batch()`
+- `READ_ONLY_COMMANDS` allowlist
+- `dispatchCommand()` + `_dispatchSwitch()` + `batch()`
 - (No UI, no file I/O, no scheduling)
 
 **When to add to an existing domain vs. create a new one:**
@@ -184,10 +185,35 @@ All AE handler functions **must** live in a domain file (`src/scripts/*.jsx`), n
 ## Adding a new command
 
 1. Add the handler function to the appropriate domain file in `src/scripts/`
-2. Add a `case` for it in `dispatchCommand()` in `mcp-bridge.jsx`
-3. Add the name to `allowedScripts` in `src/index.ts`
-4. Optionally add a dedicated MCP tool in `src/index.ts` (for commands that benefit from typed Zod schemas)
-5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
+2. Add a `case` for it in `_dispatchSwitch()` in `mcp-bridge.jsx`
+3. If read-only (getter), add the name to `READ_ONLY_COMMANDS` in `mcp-bridge.jsx` so it skips the undo group
+4. Add the name to `allowedScripts` in `src/index.ts`
+5. Optionally add a dedicated MCP tool in `src/index.ts` (for commands that benefit from typed Zod schemas)
+6. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
+
+## Undo groups (Cubic undo)
+
+Every mutating bridge command is automatically wrapped in a named AE undo group so users can Cmd+Z a single Cubic operation as one step. Implemented in `src/scripts/mcp-bridge.jsx`.
+
+**How it works:**
+- `dispatchCommand` checks `READ_ONLY_COMMANDS`. If the command is a getter (or `batch`), it passes straight through to `_dispatchSwitch` — no undo group.
+- For mutating commands, it calls `app.beginUndoGroup("Cubic: " + command)`, runs `_dispatchSwitch` inside `try/finally`, then always calls `app.endUndoGroup()` — even if the handler throws. This prevents AE from being left with an open group that would corrupt subsequent Cmd+Z behavior.
+- `batch` wraps its entire loop in `app.beginUndoGroup("Cubic: batch (N commands)")` so all sub-commands collapse into one undo entry. Nested AE undo groups merge into the outermost one, so this works automatically.
+
+**Undo group naming:**
+| Command type | AE Edit menu shows |
+|---|---|
+| Single mutating command | `Undo Cubic: createTextLayer` |
+| Read-only command | no new entry |
+| Batch (N sub-commands) | `Undo Cubic: batch (N commands)` |
+
+**Read-only allowlist** (defined in `READ_ONLY_COMMANDS` at the top of the dispatch section):
+`getProjectInfo`, `listCompositions`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`
+
+**What's NOT yet implemented (deferred to later phases):**
+- **Autosave before Cubic runs** (Phase 2/3) — snapshot the project state before an agent turn starts, so you can restore to pre-Cubic state in one action rather than stepping through Cmd+Z.
+- **AI-session undo group** (Phase 2) — collapsing an entire multi-tool-call agent turn into a single undo entry. Requires the agent layer (Phase 2) to signal turn start/end to the bridge.
+- **Cubic-only undo history / dedicated keybind** (Phase 4) — a panel UI listing only Cubic operations with selective revert. Requires the UXP panel from Phase 4.
 
 ## Critical ExtendScript quirks
 
