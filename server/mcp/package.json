@@ -1,12 +1,15 @@
 {
   "name": "after-effects-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for Adobe After Effects",
+  "version": "2.0.0",
+  "description": "MCP server for Adobe After Effects (CEP WebSocket bridge)",
   "main": "build/index.js",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external && copyfiles -u 1 \"src/scripts/**/*\" build",
-    "install-bridge": "cp build/scripts/*.jsx \"/Applications/Adobe After Effects 2026/Scripts/ScriptUI Panels/\"",
+    "build:server": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external",
+    "build:plugin": "node scripts/build-cep-extension.mjs",
+    "build": "npm run build:server && npm run build:plugin",
+    "install-plugin": "node install-cep-extension.js",
+    "install-plugin:dry": "node install-cep-extension.js --dry-run",
     "start": "node build/index.js",
     "postinstall": "npm run build",
     "test": "node test-integration.mjs",
@@ -16,12 +19,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "node-fetch": "^3.3.2",
+    "ws": "^8.20.1",
     "zod": "^3.22.2"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
-    "copyfiles": "^2.4.1",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.27.4",
     "typescript": "^5.2.2"
   }
