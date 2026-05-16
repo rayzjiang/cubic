@@ -11,7 +11,7 @@
 //
 // Available suites: compositions, layers, animation, masks, effects, batch
 //
-// Requires: MCP server running (npm start) + MCP Bridge UXP panel open in After Effects
+// Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
 // After --write, each suite leaves a named comp in your project for visual inspection:
 //
@@ -106,7 +106,7 @@ async function main() {
     await checkConnection(5000);
   } catch {
     console.error(red(`\nCould not connect to WS bridge at ${WS_URL}`));
-    console.error('Start the MCP server (npm start) and open the MCP Bridge UXP panel in After Effects.');
+    console.error('Start the MCP server (npm start) and open the MCP Bridge CEP panel in After Effects (Window → Extensions → MCP Bridge).');
     process.exit(1);
   }
 
