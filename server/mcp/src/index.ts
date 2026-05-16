@@ -4,121 +4,14 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { z } from "zod";
-import { fileURLToPath } from 'url';
+import { bridge } from "./bridge/wsBridge.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
-  version: "1.0.0"
+  version: "2.0.0"
 });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const SCRIPTS_DIR = path.join(__dirname, "scripts");
-
-function getAETempDir(): string {
-  const homeDir = os.homedir();
-  const bridgeDir = path.join(homeDir, '.ae-mcp-bridge');
-  if (!fs.existsSync(bridgeDir)) {
-    fs.mkdirSync(bridgeDir, { recursive: true });
-  }
-  return bridgeDir;
-}
-
-function readResultsFromTempFile(): string {
-  try {
-    const tempFilePath = path.join(getAETempDir(), 'ae_mcp_result.json');
-
-    console.error(`Checking for results at: ${tempFilePath}`);
-
-    if (fs.existsSync(tempFilePath)) {
-      const stats = fs.statSync(tempFilePath);
-      console.error(`Result file exists, last modified: ${stats.mtime.toISOString()}`);
-
-      const content = fs.readFileSync(tempFilePath, 'utf8');
-      console.error(`Result file content length: ${content.length} bytes`);
-
-      const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
-      if (stats.mtime < thirtySecondsAgo) {
-        console.error(`WARNING: Result file is older than 30 seconds.`);
-        return JSON.stringify({
-          warning: "Result file appears to be stale (not recently updated).",
-          message: "This could indicate After Effects is not properly writing results or the MCP Bridge Auto panel isn't running.",
-          lastModified: stats.mtime.toISOString(),
-          originalContent: content
-        });
-      }
-
-      return content;
-    } else {
-      console.error(`Result file not found at: ${tempFilePath}`);
-      return JSON.stringify({ error: "No results file found. Please run a script in After Effects first." });
-    }
-  } catch (error) {
-    console.error("Error reading results file:", error);
-    return JSON.stringify({ error: `Failed to read results: ${String(error)}` });
-  }
-}
-
-async function waitForBridgeResult(expectedCommand?: string, timeoutMs: number = 5000, pollMs: number = 250): Promise<string> {
-  const start = Date.now();
-  const resultPath = path.join(getAETempDir(), 'ae_mcp_result.json');
-  let lastSize = -1;
-
-  while (Date.now() - start < timeoutMs) {
-    if (fs.existsSync(resultPath)) {
-      try {
-        const content = fs.readFileSync(resultPath, 'utf8');
-        if (content && content.length > 0 && content.length !== lastSize) {
-          lastSize = content.length;
-          try {
-            const parsed = JSON.parse(content);
-            if (!expectedCommand || parsed._commandExecuted === expectedCommand) {
-              return content;
-            }
-          } catch {
-            // not JSON yet; continue polling
-          }
-        }
-      } catch {
-        // transient read error; continue polling
-      }
-    }
-    await new Promise(r => setTimeout(r, pollMs));
-  }
-  return JSON.stringify({ error: `Timed out waiting for bridge result${expectedCommand ? ` for command '${expectedCommand}'` : ''}.` });
-}
-
-function writeCommandFile(command: string, args: Record<string, any> = {}): void {
-  try {
-    const commandFile = path.join(getAETempDir(), 'ae_command.json');
-    const commandData = {
-      command,
-      args,
-      timestamp: new Date().toISOString(),
-      status: "pending"
-    };
-    fs.writeFileSync(commandFile, JSON.stringify(commandData, null, 2));
-    console.error(`Command "${command}" written to ${commandFile}`);
-  } catch (error) {
-    console.error("Error writing command file:", error);
-  }
-}
-
-function clearResultsFile(): void {
-  try {
-    const resultFile = path.join(getAETempDir(), 'ae_mcp_result.json');
-    const resetData = {
-      status: "waiting",
-      message: "Waiting for new result from After Effects...",
-      timestamp: new Date().toISOString()
-    };
-    fs.writeFileSync(resultFile, JSON.stringify(resetData, null, 2));
-    console.error(`Results file cleared at ${resultFile}`);
-  } catch (error) {
-    console.error("Error clearing results file:", error);
-  }
-}
+const AE_MCP_PORT = parseInt(process.env.AE_MCP_PORT ?? "17923", 10);
 
 
 // ============================================================
@@ -130,16 +23,24 @@ server.registerResource(
   "aftereffects://compositions",
   {},
   async (uri) => {
-    clearResultsFile();
-    writeCommandFile("listCompositions", {});
-    const result = await waitForBridgeResult("listCompositions", 6000, 250);
-    return {
-      contents: [{
-        uri: uri.href,
-        mimeType: "application/json",
-        text: result
-      }]
-    };
+    try {
+      const result = await bridge.sendCommand("listCompositions", {}, 10000);
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: result
+        }]
+      };
+    } catch (e) {
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ error: String(e) })
+        }]
+      };
+    }
   }
 );
 
@@ -208,7 +109,7 @@ const KeyframeValueSchema = z.unknown().describe("The value for the keyframe (e.
 server.registerTool(
   "runScript",
   {
-    description: "Run a script command in After Effects via the bridge panel. Queue the command then call getResults after ~2 seconds.",
+    description: "Run a script command in After Effects via the UXP bridge. Results are returned synchronously.",
     inputSchema: {
       script: z.string().describe("Name of the bridge command to run"),
       parameters: z.record(z.string(), z.unknown()).optional().describe("Optional parameters for the command")
@@ -260,27 +161,23 @@ server.registerTool(
     }
 
     try {
-      clearResultsFile();
-      writeCommandFile(script, parameters);
-      return {
-        content: [{ type: "text", text: `Command "${script}" queued. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing command: ${String(error)}` }], isError: true };
+      const timeoutMs = script === "batch" ? 30000 : 10000;
+      const result = await bridge.sendCommand(script, parameters, timeoutMs);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
 
 server.registerTool(
   "getResults",
-  { description: "Get results from the last command executed in After Effects" },
-  async () => {
-    try {
-      return { content: [{ type: "text", text: readResultsFromTempFile() }] };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error getting results: ${String(error)}` }], isError: true };
-    }
-  }
+  {
+    description: "[DEPRECATED] Results are now returned synchronously by each tool. Returns the last cached result for backwards compatibility."
+  },
+  async () => ({
+    content: [{ type: "text", text: bridge.lastResult || JSON.stringify({ status: "no_result", message: "No result cached yet. Tools now return results directly." }) }]
+  })
 );
 
 server.registerTool(
@@ -289,13 +186,13 @@ server.registerTool(
   async () => ({
     content: [{
       type: "text",
-      text: `# After Effects MCP Integration
+      text: `# After Effects MCP Integration (UXP WebSocket Bridge)
 
 ## Workflow
-1. Open After Effects and dock the **mcp-bridge-auto.jsx** panel (Window menu).
-2. Call a tool to queue a command.
-3. Call \`getResults\` after ~2 seconds to read the output.
-4. Use \`runScript\` with \`batch\` to run multiple commands in one round-trip.
+1. Run \`npm start\` to start the MCP server (hosts WS bridge on 127.0.0.1:${AE_MCP_PORT}).
+2. Open After Effects and open the **MCP Bridge** CEP panel (Window → Extensions → MCP Bridge).
+3. Call any tool — results are returned synchronously, no \`getResults\` needed.
+4. Use \`runScript\` with \`batch\` to run multiple commands in one call.
 
 ## Available Commands (via runScript or dedicated tools)
 
@@ -305,7 +202,7 @@ server.registerTool(
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
 **Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
-**Batch:** batch — run multiple commands in one round-trip (strongly preferred)
+**Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations)
 
 ## Effect Templates
 gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, cinematic-look, text-pop
@@ -329,13 +226,10 @@ server.registerTool(
   { description: "Run the bridge test to verify MCP ↔ After Effects communication" },
   async () => {
     try {
-      clearResultsFile();
-      writeCommandFile("getProjectInfo", {});
-      return {
-        content: [{ type: "text", text: `Bridge test queued. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing bridge test: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("getProjectInfo", {}, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -416,13 +310,10 @@ server.registerTool(
   },
   async (params) => {
     try {
-      clearResultsFile();
-      writeCommandFile("createComposition", params);
-      return {
-        content: [{ type: "text", text: `createComposition queued. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing createComposition: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("createComposition", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -445,13 +336,10 @@ server.registerTool(
   },
   async (parameters) => {
     try {
-      clearResultsFile();
-      writeCommandFile("setLayerKeyframe", parameters);
-      return {
-        content: [{ type: "text", text: `setLayerKeyframe queued for "${parameters.propertyName}" on layer ${parameters.layerIndex}. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing setLayerKeyframe: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("setLayerKeyframe", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -468,13 +356,10 @@ server.registerTool(
   },
   async (parameters) => {
     try {
-      clearResultsFile();
-      writeCommandFile("setLayerExpression", parameters);
-      return {
-        content: [{ type: "text", text: `setLayerExpression queued for "${parameters.propertyName}" on layer ${parameters.layerIndex}. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing setLayerExpression: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("setLayerExpression", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -500,13 +385,10 @@ server.registerTool(
   },
   async (parameters) => {
     try {
-      clearResultsFile();
-      writeCommandFile("setKeyframeEasing", parameters);
-      return {
-        content: [{ type: "text", text: `setKeyframeEasing queued for "${parameters.propertyName}" on layer ${parameters.layerIndex}. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing setKeyframeEasing: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("setKeyframeEasing", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -532,13 +414,10 @@ server.registerTool(
   },
   async (parameters) => {
     try {
-      clearResultsFile();
-      writeCommandFile("applyEffect", parameters);
-      return {
-        content: [{ type: "text", text: `applyEffect queued for layer ${parameters.layerIndex} in comp "${parameters.compName}". Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing applyEffect: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("applyEffect", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -559,13 +438,10 @@ server.registerTool(
   },
   async (parameters) => {
     try {
-      clearResultsFile();
-      writeCommandFile("applyEffectTemplate", parameters);
-      return {
-        content: [{ type: "text", text: `applyEffectTemplate "${parameters.templateName}" queued for layer ${parameters.layerIndex}. Call getResults after ~2 seconds.` }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error queuing applyEffectTemplate: ${String(error)}` }], isError: true };
+      const result = await bridge.sendCommand("applyEffectTemplate", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
     }
   }
 );
@@ -577,7 +453,7 @@ server.registerTool(
 
 async function main() {
   console.error("After Effects MCP Server starting...");
-  console.error(`Scripts directory: ${SCRIPTS_DIR}`);
+  await bridge.start(AE_MCP_PORT);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("After Effects MCP Server running...");

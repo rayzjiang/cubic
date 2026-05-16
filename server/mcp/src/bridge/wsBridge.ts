@@ -1,0 +1,161 @@
+import { WebSocketServer, WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+interface PendingCommand {
+  resolve: (value: string) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+type BridgeEvent = 'connect' | 'disconnect';
+
+class AEBridge {
+  private wss: WebSocketServer | null = null;
+  private workerClient: WebSocket | null = null;
+  private pending: Map<string, PendingCommand> = new Map();
+  private eventHandlers: Map<BridgeEvent, Array<() => void>> = new Map();
+  private connectWaiters: Array<() => void> = [];
+  public lastResult: string = '';
+
+  async start(port: number): Promise<void> {
+    const actualPort = await this.bindWithFallback(port, 5);
+    const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
+    try {
+      fs.mkdirSync(bridgeDir, { recursive: true });
+      fs.writeFileSync(path.join(bridgeDir, 'port'), String(actualPort), 'utf8');
+    } catch { /* non-fatal */ }
+    console.error(`WS bridge listening on 127.0.0.1:${actualPort}`);
+  }
+
+  private bindWithFallback(port: number, retries: number): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const tryBind = (p: number, remaining: number) => {
+        const wss = new WebSocketServer({ host: '127.0.0.1', port: p });
+        wss.once('listening', () => {
+          this.wss = wss;
+          this.setupConnectionHandler();
+          resolve(p);
+        });
+        wss.once('error', (err: NodeJS.ErrnoException) => {
+          if (err.code === 'EADDRINUSE' && remaining > 0) {
+            tryBind(p + 1, remaining - 1);
+          } else {
+            reject(err);
+          }
+        });
+      };
+      tryBind(port, retries);
+    });
+  }
+
+  private setupConnectionHandler(): void {
+    this.wss!.on('connection', (ws) => {
+      ws.on('message', (data) => {
+        let msg: any;
+        try { msg = JSON.parse(data.toString()); } catch { return; }
+
+        if (msg.type === 'hello') {
+          // UXP plugin registering as the ExtendScript worker
+          if (this.workerClient && this.workerClient !== ws) {
+            this.workerClient.close(4000, 'superseded by new worker');
+          }
+          this.workerClient = ws;
+          for (const w of this.connectWaiters) w();
+          this.connectWaiters = [];
+          this.emit('connect');
+        } else if ('ok' in msg) {
+          // Response from UXP plugin to a pending command
+          const pending = this.pending.get(msg.id);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          this.pending.delete(msg.id);
+          if (msg.ok) {
+            this.lastResult = msg.result ?? '';
+            pending.resolve(msg.result ?? '');
+          } else {
+            pending.reject(new Error(msg.error ?? 'Unknown error from AE'));
+          }
+        } else if (msg.command !== undefined) {
+          // Command from an external caller (e.g. test helper or direct WS client)
+          this.routeExternalCommand(ws, msg as { id: string; command: string; args: object });
+        }
+      });
+
+      ws.on('close', () => {
+        if (this.workerClient === ws) {
+          this.workerClient = null;
+          this.emit('disconnect');
+          for (const [, pending] of this.pending) {
+            clearTimeout(pending.timer);
+            pending.reject(new Error('AE plugin disconnected'));
+          }
+          this.pending.clear();
+        }
+      });
+    });
+  }
+
+  private routeExternalCommand(
+    callerWs: WebSocket,
+    msg: { id: string; command: string; args: object }
+  ): void {
+    this.sendCommand(msg.command, msg.args, 30000)
+      .then(result => callerWs.send(JSON.stringify({ id: msg.id, ok: true, result })))
+      .catch(err => callerWs.send(JSON.stringify({ id: msg.id, ok: false, error: String(err) })));
+  }
+
+  async sendCommand(command: string, args: object = {}, timeoutMs = 10000): Promise<string> {
+    if (!this.workerClient || this.workerClient.readyState !== WebSocket.OPEN) {
+      await this.waitForWorker(3000);
+    }
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID();
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Command "${command}" timed out after ${timeoutMs}ms — AE may be busy`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      this.workerClient!.send(JSON.stringify({ id, command, args }));
+    });
+  }
+
+  private waitForWorker(ms: number): Promise<void> {
+    if (this.workerClient?.readyState === WebSocket.OPEN) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true;
+          reject(new Error(
+            'AE UXP plugin not connected — open the MCP Bridge panel in After Effects'
+          ));
+        }
+      }, ms);
+      this.connectWaiters.push(() => {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+  }
+
+  isConnected(): boolean {
+    return this.workerClient !== null && this.workerClient.readyState === WebSocket.OPEN;
+  }
+
+  on(event: BridgeEvent, handler: () => void): void {
+    const handlers = this.eventHandlers.get(event) ?? [];
+    handlers.push(handler);
+    this.eventHandlers.set(event, handlers);
+  }
+
+  private emit(event: BridgeEvent): void {
+    for (const h of this.eventHandlers.get(event) ?? []) h();
+  }
+}
+
+export const bridge = new AEBridge();

@@ -11,6 +11,8 @@
 //
 // Available suites: compositions, layers, animation, masks, effects, batch
 //
+// Requires: MCP server running (npm start) + MCP Bridge UXP panel open in After Effects
+//
 // After --write, each suite leaves a named comp in your project for visual inspection:
 //
 //   __MCP_TEST_compositions__  — comp is deleted at end of suite; nothing to inspect
@@ -22,8 +24,6 @@
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
-import * as fs from 'fs';
-
 import * as compositionsSuite from './tests/compositions.mjs';
 import * as layersSuite       from './tests/layers.mjs';
 import * as animationSuite    from './tests/animation.mjs';
@@ -31,7 +31,7 @@ import * as masksSuite        from './tests/masks.mjs';
 import * as effectsSuite      from './tests/effects.mjs';
 import * as batchSuite        from './tests/batch.mjs';
 
-import { BRIDGE_DIR, send, results, printSummary, bold, yellow, red, dim } from './tests/helpers.mjs';
+import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
 
 // ─── Args ─────────────────────────────────────────────────────────────────────
 
@@ -46,10 +46,10 @@ const opts = { write: process.argv.includes('--write') };
 const suites = [
   { name: 'compositions', mod: compositionsSuite },
   { name: 'layers',       mod: layersSuite       },
-  { name: 'animation',    mod: animationSuite      },
-  { name: 'masks',        mod: masksSuite         },
-  { name: 'effects',      mod: effectsSuite       },
-  { name: 'batch',        mod: batchSuite         },
+  { name: 'animation',    mod: animationSuite    },
+  { name: 'masks',        mod: masksSuite        },
+  { name: 'effects',      mod: effectsSuite      },
+  { name: 'batch',        mod: batchSuite        },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
@@ -85,7 +85,6 @@ async function cleanupTestComps() {
     }
   }
 
-  // Remove orphaned solid footage items left behind by deleted comps
   process.stdout.write('  Cleaning up unused solids ...');
   try {
     const r = await send('deleteUnusedSolids');
@@ -102,23 +101,27 @@ async function cleanupTestComps() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  if (!fs.existsSync(BRIDGE_DIR)) {
-    console.error(red(`\nBridge dir not found: ${BRIDGE_DIR}`));
-    console.error('Open After Effects with the bridge panel at least once to create it.');
+  // Preflight: verify the MCP server's WS bridge is reachable
+  try {
+    await checkConnection(5000);
+  } catch {
+    console.error(red(`\nCould not connect to WS bridge at ${WS_URL}`));
+    console.error('Start the MCP server (npm start) and open the MCP Bridge UXP panel in After Effects.');
     process.exit(1);
   }
 
   if (cleanupOnly) {
     console.log(bold('After Effects MCP — Cleanup'));
-    console.log(yellow('Requires: After Effects open + mcp-bridge-auto.jsx panel docked and active'));
+    console.log(yellow('Requires: After Effects open + MCP Bridge UXP panel active'));
     await cleanupTestComps();
+    await closeConnection();
     return;
   }
 
   console.log(bold('After Effects MCP — Integration Tests'));
-  console.log(`Bridge dir: ${BRIDGE_DIR}`);
+  console.log(`WS bridge: ${WS_URL}`);
   if (suiteArg) console.log(`Suite filter: ${suiteArg}`);
-  console.log(yellow('Requires: After Effects open + mcp-bridge-auto.jsx panel docked and active'));
+  console.log(yellow('Requires: After Effects open + MCP Bridge UXP panel active'));
 
   if (suiteArg && !suites.find(s => s.name === suiteArg)) {
     console.error(red(`\nUnknown suite "${suiteArg}". Available: ${suites.map(s => s.name).join(', ')}`));
@@ -145,6 +148,7 @@ async function main() {
     console.log(dim('  Run with --write to also test write operations (creates comps in your open project).'));
   }
 
+  await closeConnection();
   process.exit(failed > 0 ? 1 : 0);
 }
 
