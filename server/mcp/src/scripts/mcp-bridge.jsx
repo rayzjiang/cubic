@@ -58,9 +58,28 @@ if (typeof JSON.stringify !== "function") {
 // BATCH & DISPATCH
 // ============================================================
 
+var READ_ONLY_COMMANDS = {
+    getProjectInfo: 1, listCompositions: 1, getLayerInfo: 1,
+    getLayerKeyframes: 1, getLayerExpressions: 1,
+    getLayerMasks: 1, getLayerEffects: 1
+};
+
 // Routes a command name + args to the correct handler function.
 // Domain handler functions are defined in the files concatenated above this one.
 function dispatchCommand(command, args) {
+    // Read-only commands and batch (which owns its own outer group) skip the wrapper.
+    if (READ_ONLY_COMMANDS[command] === 1 || command === "batch") {
+        return _dispatchSwitch(command, args);
+    }
+    app.beginUndoGroup("Cubic: " + command);
+    try {
+        return _dispatchSwitch(command, args);
+    } finally {
+        app.endUndoGroup();
+    }
+}
+
+function _dispatchSwitch(command, args) {
     switch (command) {
         // compositions.jsx
         case "getProjectInfo":           return getProjectInfo();
@@ -126,6 +145,8 @@ function batch(args) {
     var succeeded = 0;
     var failed = 0;
 
+    app.beginUndoGroup("Cubic: batch (" + commands.length + " commands)");
+    try {
     for (var i = 0; i < commands.length; i++) {
         var entry = commands[i];
 
@@ -174,6 +195,9 @@ function batch(args) {
         });
 
         if (stopOnError && !cmdSuccess) break;
+    }
+    } finally {
+        app.endUndoGroup();
     }
 
     return JSON.stringify({

@@ -3,6 +3,13 @@ Product Name: Motion Copilot (Placeholder)
 Document Status: V2 (Refactored)
 Target Platform: Adobe After Effects (via UXP/CEP Panel)
 
+✅ Phase 0 — AE basics (enough to evaluate what you're building)
+✅ Phase 1 — MCP validated
+➡️ Phase 1.5 - **Fixing the MCP + adding all functionality that I need + Organizing it for CRUD for each operation
+Phase 2 — Build the LLM brain + agent architecture (system prompt + Claude API backend)
+Phase 3 (self-healing/correcting/bug checking loop)
+Phase 4 (UXP panel UI)
+
 1. The Vision & Problem Statement
 The industry standard for high-end SaaS and app launch videos (e.g., Anthropic, Duolingo, Apple) relies on "juicy" motion graphics—smooth easing, clean animations, kinetic typography, and physics-based bounces. Achieving this requires deep technical knowledge of After Effects, specifically the graph editor, JavaScript expressions, etc..
 Motion Copilot acts exactly like GitHub Copilot or Claude Code, but for video editing. Instead of generating flat, uneditable MP4s, it writes the code/JavaScript/ExtendScript/interactions necessary to build the actual After Effects project file natively. It gives general video editors an AI agent that lives in their workspace, reads their timeline, and instantly builds complex motion graphics that they can manually tweak.
