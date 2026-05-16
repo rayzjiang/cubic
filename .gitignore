@@ -63,7 +63,5 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log* 
 
-# CLAUDE.md file
-CLAUDE.md
 settings.local.json
 
