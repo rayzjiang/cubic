@@ -208,7 +208,7 @@ server.registerTool(
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
 **Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
 **Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
-**Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations)
+**Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations). Accepts an optional \`groupLabel\` (human-readable turn summary, e.g. "apply cinematic look to logo") that becomes the single Edit > Undo entry the user sees in AE — one ⌘Z reverts the entire turn.
 
 ## Context tip
 Call getSelectedLayers at the start of each interactive turn — it returns the layers the user has highlighted in the AE timeline (like highlighted code in VSCode). Use this as the primary targeting signal before falling back to prompts.

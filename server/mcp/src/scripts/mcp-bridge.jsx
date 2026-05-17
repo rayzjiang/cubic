@@ -151,7 +151,14 @@ function batch(args) {
     var succeeded = 0;
     var failed = 0;
 
-    app.beginUndoGroup("Cubic: batch (" + commands.length + " commands)");
+    // Use the caller-supplied label when present (the agent passes a human-readable
+    // summary like "Cubic: apply cinematic look to logo", which appears in AE's Edit
+    // menu as the single undo entry for the entire turn). Falls back to a generic
+    // label when no summary is provided.
+    var batchLabel = (typeof args.groupLabel === "string" && args.groupLabel.length > 0)
+        ? ("Cubic: " + args.groupLabel)
+        : ("Cubic: batch (" + commands.length + " commands)");
+    app.beginUndoGroup(batchLabel);
     try {
     for (var i = 0; i < commands.length; i++) {
         var entry = commands[i];
