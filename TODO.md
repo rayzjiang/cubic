@@ -14,7 +14,8 @@ Phase 5 (Post MVP stuff?)
 - [x] Critical: migrate mcp architecture to CEP extension instead of nonstop 2 second polling + file reading
 - [x] Wrap each command in an undo group
     - [ ] **Note: will eventually need to add: Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
-- [ ] Finish MCP functionality - Identify potential missing functionality that I would need for my product (see CRUD screenshot above)
+- [x] Finish MCP functionality - Identify potential missing functionality that I would need for my product (see CRUD screenshot above)
+    - [ ] 
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands
 
 ## Phase 1

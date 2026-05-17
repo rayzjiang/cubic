@@ -470,6 +470,10 @@ function setLayerProperties(args) {
         var enabled = args.enabled;
         if (enabled !== undefined && enabled !== null) { layer.enabled = !!enabled; changedProperties.push("enabled"); }
 
+        // --- Selected ---
+        var selected = args.selected;
+        if (selected !== undefined && selected !== null) { layer.selected = !!selected; changedProperties.push("selected"); }
+
         // --- Blend Mode ---
         var blendMode = args.blendMode;
         if (blendMode !== undefined && blendMode !== null) {
@@ -752,6 +756,66 @@ function setLayerParent(args) {
         return JSON.stringify({
             status: "success", message: "Layer parent set successfully",
             layer: { name: layer.name, index: layer.index, parent: { name: parentLayer.name, index: parentLayer.index } }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// R: getSelectedLayers — returns layers the user has highlighted in the AE timeline
+// Accepts optional compName to target a specific comp (useful for tests/scripts).
+// Without compName, falls back to app.project.activeItem (the live user-context case).
+function getSelectedLayers(args) {
+    try {
+        var activeItem = null;
+        if (args && args.compName) {
+            for (var ci = 1; ci <= app.project.numItems; ci++) {
+                var ci_it = app.project.item(ci);
+                if (ci_it instanceof CompItem && ci_it.name === args.compName) { activeItem = ci_it; break; }
+            }
+            if (!activeItem) { throw new Error("No composition '" + args.compName + "'"); }
+        } else {
+            activeItem = app.project.activeItem;
+        }
+        if (!(activeItem instanceof CompItem)) {
+            return JSON.stringify({
+                status: "success",
+                activeComp: null,
+                selectedLayers: [],
+                count: 0,
+                message: "No active composition"
+            }, null, 2);
+        }
+
+        var selected = activeItem.selectedLayers;
+        var layers = [];
+        for (var i = 0; i < selected.length; i++) {
+            var layer = selected[i];
+            var layerType = "unknown";
+            if (layer instanceof TextLayer)        { layerType = "text"; }
+            else if (layer instanceof ShapeLayer)  { layerType = "shape"; }
+            else if (layer instanceof CameraLayer) { layerType = "camera"; }
+            else if (layer instanceof LightLayer)  { layerType = "light"; }
+            else if (layer instanceof AVLayer) {
+                layerType = layer.nullLayer ? "null" : (layer.adjustmentLayer ? "adjustment" : "solid");
+            }
+            layers.push({
+                index: layer.index,
+                name: layer.name,
+                type: layerType,
+                enabled: layer.enabled,
+                threeDLayer: layer.threeDLayer,
+                inPoint: layer.inPoint,
+                outPoint: layer.outPoint,
+                parent: layer.parent ? { name: layer.parent.name, index: layer.parent.index } : null
+            });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            activeComp: { name: activeItem.name, id: activeItem.id, numLayers: activeItem.numLayers },
+            selectedLayers: layers,
+            count: layers.length
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", message: error.toString() }, null, 2);

@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch
+// Available suites: compositions, layers, animation, masks, effects, batch, footage
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -21,6 +21,7 @@
 //   __MCP_TEST_masks__         — select the blue solid: masks panel should show 1 mask (Test Rect Mask, add mode); triangle was deleted
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: 4 effects (Gaussian Blur ×2, Curves, Vibrance); Drop Shadow was deleted
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
+//   __MCP_TEST_footage__       — project panel: imported PNG; timeline: "Test Footage Layer" + "Test Footage Layer 2"
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
@@ -30,8 +31,10 @@ import * as animationSuite    from './tests/animation.mjs';
 import * as masksSuite        from './tests/masks.mjs';
 import * as effectsSuite      from './tests/effects.mjs';
 import * as batchSuite        from './tests/batch.mjs';
+import * as footageSuite      from './tests/footage.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
+import { unlinkSync, existsSync } from 'node:fs';
 
 // ─── Args ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,7 @@ const suites = [
   { name: 'masks',        mod: masksSuite        },
   { name: 'effects',      mod: effectsSuite      },
   { name: 'batch',        mod: batchSuite        },
+  { name: 'footage',      mod: footageSuite      },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
@@ -96,6 +100,29 @@ async function cleanupTestComps() {
   } catch (e) {
     console.log(red(` failed — ${e.message}`));
   }
+
+  // Remove any imported test footage items left by the footage suite.
+  // Delete the project item FIRST (before the disk file) to prevent AE from
+  // showing "file not found" dialogs on future undo operations.
+  try {
+    const items = await send('listProjectItems', { type: 'footage' });
+    const testFootage = (items.items ?? []).filter(i =>
+      typeof i.path === 'string' && i.path.includes('mcp_test_footage_')
+    );
+    let removedCount = 0;
+    for (const item of testFootage) {
+      // 1. Remove from AE project panel
+      try { await send('deleteProjectItem', { itemId: item.id }); } catch (_) {}
+      // 2. Delete disk file
+      if (item.path && existsSync(item.path)) {
+        try { unlinkSync(item.path); } catch (_) {}
+      }
+      removedCount++;
+    }
+    if (removedCount > 0) {
+      console.log(`  Removed ${removedCount} temp footage item(s) from project + disk`);
+    }
+  } catch (_) {}
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

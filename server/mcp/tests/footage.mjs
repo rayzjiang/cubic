@@ -1,0 +1,180 @@
+// footage.mjs — tests for footage.jsx
+//
+// Covers:
+//   listProjectItems   (R  — enumerate project panel with optional type filter)
+//   importFootage      (C  — import a file from disk, returns item metadata)
+//   addFootageToComp   (C  — place imported item as a layer in a comp)
+//   deleteUnusedSolids (D  — already covered here as cleanup; full test in batch.mjs)
+//
+// Missing: replaceFootageSource (post-MVP)
+//
+// Visual verification (after --write, open __MCP_TEST_footage__ in After Effects):
+//   Project panel: "mcp_test_footage_<ts>.png" should appear as a footage item.
+//   Timeline: one layer named "Test Footage Layer" whose source is the imported PNG.
+
+import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  test, send,
+  assertNoError, assertField, assertArray, assertValue,
+  bold, yellow
+} from './helpers.mjs';
+
+const COMP_NAME = '__MCP_TEST_footage__';
+
+// 1×1 transparent PNG (base64) — generated inline so the test has no external deps.
+const TINY_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+export async function run(ctx, opts) {
+  console.log(bold('\nFootage'));
+
+  // ── Read (always runs — no write flag needed) ─────────────────────────────
+
+  await test('listProjectItems — returns items array with id, name, type, itemIndex', async () => {
+    const r = await send('listProjectItems');
+    assertNoError(r);
+    assertArray(r, 'items');
+    assertField(r, 'count', 'number');
+    if (r.items.length > 0) {
+      const item = r.items[0];
+      assertField(item, 'id', 'number');
+      assertField(item, 'name', 'string');
+      assertField(item, 'type', 'string');
+      assertField(item, 'itemIndex', 'number');
+    }
+    return `${r.count} item(s) in project`;
+  });
+
+  await test('listProjectItems — type filter "composition" returns only comps', async () => {
+    const r = await send('listProjectItems', { type: 'composition' });
+    assertNoError(r);
+    assertArray(r, 'items');
+    const wrong = r.items.filter(i => i.type !== 'composition');
+    if (wrong.length > 0) {
+      throw new Error(`type filter "composition" returned non-comp items: ${JSON.stringify(wrong.map(i => i.name))}`);
+    }
+    return `${r.count} comp(s)`;
+  });
+
+  if (!opts.write) return;
+
+  // ── Setup ─────────────────────────────────────────────────────────────────
+
+  // Write a 1×1 PNG to disk; stored in ctx so cleanup can remove it.
+  const tempPath = join(tmpdir(), `mcp_test_footage_${Date.now()}.png`);
+  ctx.footageTempPath = tempPath;
+
+  const setupOk = await test('setup — create footage test comp + write temp PNG to disk', async () => {
+    const pngBuf = Buffer.from(TINY_PNG_B64, 'base64');
+    writeFileSync(tempPath, pngBuf);
+    if (!existsSync(tempPath)) throw new Error(`Failed to write temp PNG: ${tempPath}`);
+
+    const cr = await send('createComposition', {
+      name: COMP_NAME, width: 1920, height: 1080, frameRate: 30, duration: 10, pixelAspect: 1
+    });
+    assertField(cr, 'composition', 'object');
+    return `comp created, temp PNG at ${tempPath}`;
+  });
+
+  if (!setupOk) {
+    console.log(yellow('  Footage write tests skipped — setup failed'));
+    return;
+  }
+
+  // ── Create: importFootage ─────────────────────────────────────────────────
+
+  const importOk = await test('importFootage — imports PNG from disk, returns item id + path', async () => {
+    const r = await send('importFootage', { filePath: tempPath });
+    assertNoError(r);
+    assertField(r, 'item', 'object');
+    assertField(r.item, 'id', 'number');
+    assertField(r.item, 'name', 'string');
+    assertField(r.item, 'path', 'string');
+    assertValue(r.item, 'type', 'footage');
+    ctx.importedItemId   = r.item.id;
+    ctx.importedItemName = r.item.name;
+    return `item "${r.item.name}" id=${r.item.id}`;
+  });
+
+  if (!importOk) {
+    console.log(yellow('  addFootageToComp + downstream tests skipped — importFootage failed'));
+    return;
+  }
+
+  // ── Read: verify imported item appears in listProjectItems ────────────────
+
+  await test('listProjectItems — imported PNG appears as "footage" item', async () => {
+    const r = await send('listProjectItems', { type: 'footage' });
+    assertNoError(r);
+    assertArray(r, 'items');
+    const match = r.items.find(i => i.id === ctx.importedItemId);
+    if (!match) throw new Error(`Imported item id=${ctx.importedItemId} not found in listProjectItems`);
+    assertValue(match, 'type', 'footage');
+    return `found "${match.name}" in project panel`;
+  });
+
+  // ── Create: addFootageToComp ──────────────────────────────────────────────
+
+  await test('addFootageToComp — places imported PNG as a layer in the comp', async () => {
+    const r = await send('addFootageToComp', {
+      compName: COMP_NAME,
+      itemId: ctx.importedItemId,
+      name: 'Test Footage Layer',
+      position: [960, 540]
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'index', 'number');
+    assertField(r.layer, 'name', 'string');
+    assertField(r, 'composition', 'object');
+    ctx.footageLayerIndex = r.layer.index;
+
+    // Verify layer exists in comp
+    const info = await send('getLayerInfo', { compName: COMP_NAME });
+    assertNoError(info);
+    const layer = info.layers.find(l => l.index === ctx.footageLayerIndex);
+    if (!layer) throw new Error(`Layer index ${ctx.footageLayerIndex} not found in getLayerInfo`);
+    return `layer "${r.layer.name}" at index ${r.layer.index}`;
+  });
+
+  await test('addFootageToComp — by itemName resolves correctly', async () => {
+    const r = await send('addFootageToComp', {
+      compName: COMP_NAME,
+      itemName: ctx.importedItemName,
+      name: 'Test Footage Layer 2'
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'index', 'number');
+    return `layer index ${r.layer.index}`;
+  });
+
+  // ── Teardown: remove imported footage item from project panel ─────────────
+  // Must delete the project item BEFORE deleting the disk file — if the disk
+  // file is deleted first, AE will show "file not found" dialogs on any future
+  // undo operations that reference the import.
+  await test('teardown — delete imported footage item from project panel', async () => {
+    if (!ctx.importedItemId) return 'skipped — no item to delete';
+    const r = await send('deleteProjectItem', { itemId: ctx.importedItemId });
+    assertNoError(r);
+    assertField(r, 'deleted', 'object');
+    ctx.importedItemId = null; // mark as cleaned up so test-integration cleanup skips it
+    return `deleted "${r.deleted.name}"`;
+  });
+
+  // ── Error cases ───────────────────────────────────────────────────────────
+
+  await test('importFootage — returns error for missing file', async () => {
+    const r = await send('importFootage', { filePath: '/nonexistent/path/missing.png' });
+    if (r.status !== 'error') throw new Error(`Expected error status, got "${r.status}"`);
+    return `error: "${r.message}"`;
+  });
+
+  await test('addFootageToComp — returns error when no source specified', async () => {
+    const r = await send('addFootageToComp', { compName: COMP_NAME });
+    if (r.status !== 'error') throw new Error(`Expected error status, got "${r.status}"`);
+    return `error: "${r.message}"`;
+  });
+}

@@ -6,6 +6,12 @@
 (function () {
   "use strict";
 
+  // Node.js child_process is available when --mixed-context is set in manifest.xml.
+  // Used to trigger undoAction via osascript (bypasses CEP evalScript undo restriction).
+  const childProcess = (function () {
+    try { return require("child_process"); } catch (_) { return null; }
+  })();
+
   const statusEl = document.getElementById("status");
   const errorEl = document.getElementById("error-box");
   const reconnectBtn = document.getElementById("reconnect-btn");
@@ -102,7 +108,60 @@
     backoffMs = Math.min(backoffMs * 2, 10000);
   }
 
+  // undoAction: send ⌘Z to the After Effects process via osascript.
+  // AE silently ignores app.executeCommand(Undo) when called from within an active
+  // evalScript — the command runs but nothing reverts. osascript delivers a genuine
+  // UI event that AE processes the same way as a user pressing ⌘Z.
+  // Requires --mixed-context in manifest.xml (enables Node.js require in CEP panel).
+  function handleUndoAction(id, args) {
+    const stepsRaw = (args && args.steps) ? parseInt(args.steps, 10) : 1;
+    const steps = Math.max(1, Math.min(20, isNaN(stepsRaw) ? 1 : stepsRaw));
+
+    // Build a multi-line AppleScript passed as individual -e args (no shell escaping needed).
+    const scriptLines = [
+      'tell application "System Events"',
+      '    tell process "After Effects"',
+      '        repeat ' + steps + ' times',
+      '            keystroke "z" using {command down}',
+      '            delay 0.05',
+      '        end repeat',
+      '    end tell',
+      'end tell'
+    ];
+    const osaArgs = scriptLines.reduce(function (acc, line) { acc.push('-e', line); return acc; }, []);
+
+    childProcess.execFile(
+      '/usr/bin/osascript', osaArgs,
+      { timeout: steps * 300 + 3000 },
+      function (err, _stdout, stderr) {
+        const executed = err ? 0 : steps;
+        // Wait 400 ms before responding. osascript exits as soon as the keystroke is
+        // *delivered* to AE's input queue, but AE processes UI events asynchronously.
+        // Without this gap, the test's next WS command (getLayerInfo evalScript) can
+        // arrive and run in AE before AE's event loop has consumed the Cmd+Z.
+        setTimeout(function () {
+          sendResponse(id, true, JSON.stringify({
+            status: err ? 'error' : 'success',
+            message: err
+              ? 'undoAction osascript failed: ' + (stderr || String(err))
+              : 'Undid ' + executed + ' action(s)',
+            requested: steps,
+            executed: executed,
+            _via: 'osascript'
+          }), null);
+        }, err ? 0 : 400);
+      }
+    );
+  }
+
   async function executeCommand(id, command, args) {
+    // undoAction is handled via osascript (not evalScript) on macOS when Node.js is
+    // available. See handleUndoAction() above for the full explanation.
+    if (command === 'undoAction' && childProcess) {
+      handleUndoAction(id, args);
+      return;
+    }
+
     const footer = "(function(){\n" +
       "  try {\n" +
       "    var __r = dispatchCommand(" + JSON.stringify(command) + ", eval(\"(\" + " + JSON.stringify(JSON.stringify(args)) + " + \")\"));\n" +

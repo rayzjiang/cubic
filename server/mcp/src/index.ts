@@ -150,7 +150,13 @@ server.registerTool(
       "getLayerExpressions",
       "getLayerKeyframes",
       "removePropertyKeyframes",
-      "batch"
+      "batch",
+      "getSelectedLayers",
+      "listProjectItems",
+      "importFootage",
+      "addFootageToComp",
+      "deleteProjectItem",
+      "undoAction"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -197,12 +203,17 @@ server.registerTool(
 ## Available Commands (via runScript or dedicated tools)
 
 **Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
-**Layers:** getLayerInfo, createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Project:** undoAction — undo the most recent N actions (1–20); use in the self-healing retry loop
+**Layers:** getLayerInfo, getSelectedLayers, createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
 **Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
+**Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
 **Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations)
+
+## Context tip
+Call getSelectedLayers at the start of each interactive turn — it returns the layers the user has highlighted in the AE timeline (like highlighted code in VSCode). Use this as the primary targeting signal before falling back to prompts.
 
 ## Effect Templates
 gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, cinematic-look, text-pop
@@ -439,6 +450,101 @@ server.registerTool(
   async (parameters) => {
     try {
       const result = await bridge.sendCommand("applyEffectTemplate", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — selection & context
+// ============================================================
+
+server.registerTool(
+  "getSelectedLayers",
+  {
+    description: "Get the layers the user currently has highlighted in the After Effects timeline — the agent's primary context signal, equivalent to highlighted code in VSCode. Call this first before acting on user intent.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target a specific composition by name. Omit to read from the currently active composition (the default for interactive use).")
+    }
+  },
+  async () => {
+    try {
+      const result = await bridge.sendCommand("getSelectedLayers", {}, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — footage / project panel
+// ============================================================
+
+server.registerTool(
+  "importFootage",
+  {
+    description: "Import a file (image, video, audio) from disk into the After Effects project panel.",
+    inputSchema: {
+      filePath: z.string().describe("Absolute path to the file on disk."),
+      sequence: z.boolean().optional().describe("If true and the file is part of a numbered image sequence, import as a sequence.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("importFootage", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "addFootageToComp",
+  {
+    description: "Place an existing project-panel item (footage, comp, or solid) onto a composition's timeline as a new layer.",
+    inputSchema: {
+      compName: z.string().describe("Target composition name."),
+      itemName: z.string().optional().describe("Source item name from the project panel."),
+      itemId: z.number().int().positive().optional().describe("Source item id (preferred over itemName — unambiguous when names collide)."),
+      itemIndex: z.number().int().positive().optional().describe("Source item index in the project panel (1-based)."),
+      position: z.array(z.number()).optional().describe("[x, y] or [x, y, z] position override."),
+      startTime: z.number().optional().describe("Layer start time in seconds."),
+      duration: z.number().positive().optional().describe("Layer duration in seconds."),
+      name: z.string().optional().describe("Rename the newly created layer.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("addFootageToComp", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — undo
+// ============================================================
+
+server.registerTool(
+  "undoAction",
+  {
+    description: "Undo the most recent N After Effects actions (clamped 1–20). Use this in the self-healing retry loop to roll back a bad LLM-generated operation before reattempting.",
+    inputSchema: {
+      steps: z.number().int().min(1).max(20).optional().describe("Number of undo steps. Defaults to 1.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("undoAction", params, 10000);
       return { content: [{ type: "text", text: result }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };

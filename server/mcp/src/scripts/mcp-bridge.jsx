@@ -61,7 +61,11 @@ if (typeof JSON.stringify !== "function") {
 var READ_ONLY_COMMANDS = {
     getProjectInfo: 1, listCompositions: 1, getLayerInfo: 1,
     getLayerKeyframes: 1, getLayerExpressions: 1,
-    getLayerMasks: 1, getLayerEffects: 1
+    getLayerMasks: 1, getLayerEffects: 1,
+    getSelectedLayers: 1, listProjectItems: 1,
+    // undoAction is not literally read-only but must NOT be wrapped in beginUndoGroup —
+    // calling Undo inside an open undo group produces undefined AE behavior.
+    undoAction: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -87,8 +91,10 @@ function _dispatchSwitch(command, args) {
         case "createComposition":        return createComposition(args);
         case "setCompositionProperties": return setCompositionProperties(args);
         case "deleteComposition":        return deleteComposition(args);
+        case "undoAction":               return undoAction(args);
         // layers.jsx
         case "getLayerInfo":             return getLayerInfo(args);
+        case "getSelectedLayers":        return getSelectedLayers(args);
         case "createTextLayer":          return createTextLayer(args);
         case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);
@@ -119,6 +125,10 @@ function _dispatchSwitch(command, args) {
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);
         // footage.jsx
+        case "listProjectItems":         return listProjectItems(args);
+        case "importFootage":            return importFootage(args);
+        case "addFootageToComp":         return addFootageToComp(args);
+        case "deleteProjectItem":         return deleteProjectItem(args);
         case "deleteUnusedSolids":       return deleteUnusedSolids();
         // mcp-bridge.jsx
         case "batch":                    return batch(args);

@@ -3,6 +3,7 @@
 // Covers:
 //   getLayerInfo           (R  — all fields: name, index, type, scale, rotation,
 //                                opacity, effectsCount, masksCount, inPoint, outPoint)
+//   getSelectedLayers      (R  — returns layers the user has selected; uses setLayerProperties.selected to simulate)
 //   createTextLayer        (C)
 //   createShapeLayer       (C)
 //   createSolidLayer       (C)
@@ -10,7 +11,7 @@
 //   createLightLayer       (C)
 //   createNullLayer        (C)
 //   duplicateLayer         (C)
-//   setLayerProperties     (U  — opacity, scale, text, font, changedProperties array)
+//   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array)
 //   batchSetLayerProperties (U — multiple layers in one call)
 //   moveLayer              (U  — reorders layer stack by name)
 //   setLayerParent         (U  — parents text layer to null layer)
@@ -306,5 +307,46 @@ export async function run(ctx, opts) {
     ctx.textLayerIndex   = 5;
     ctx.solidLayerIndex  = 6;
     delete ctx.dupLayerIndex;
+  });
+
+  // ── getSelectedLayers ─────────────────────────────────────────────────────
+
+  await test('setLayerProperties — selected flag appears in changedProperties', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.textLayerIndex, selected: true
+    });
+    assertNoError(r);
+    assertArray(r.layer, 'changedProperties');
+    if (!r.layer.changedProperties.includes('selected')) {
+      throw new Error('"selected" not in changedProperties');
+    }
+  });
+
+  await test('getSelectedLayers — returns selected layer with required fields', async () => {
+    // layer at textLayerIndex is already selected from the previous test
+    const r = await send('getSelectedLayers', { compName: COMP_NAME });
+    assertNoError(r);
+    assertField(r, 'activeComp', 'object');
+    assertField(r.activeComp, 'name', 'string');
+    assertField(r, 'count', 'number');
+    assertArray(r, 'selectedLayers');
+    if (r.count < 1) throw new Error('Expected at least 1 selected layer');
+    const sel = r.selectedLayers.find(l => l.index === ctx.textLayerIndex);
+    if (!sel) throw new Error(`Text layer (index ${ctx.textLayerIndex}) not in selectedLayers`);
+    assertField(sel, 'name', 'string');
+    assertField(sel, 'type', 'string');
+    assertField(sel, 'index', 'number');
+    return `${r.count} selected in "${r.activeComp.name}"`;
+  });
+
+  await test('getSelectedLayers — deselecting layer reduces count', async () => {
+    await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.textLayerIndex, selected: false
+    });
+    const r = await send('getSelectedLayers', { compName: COMP_NAME });
+    assertNoError(r);
+    const stillSelected = (r.selectedLayers ?? []).find(l => l.index === ctx.textLayerIndex);
+    if (stillSelected) throw new Error('Text layer should no longer be selected');
+    return `count now ${r.count}`;
   });
 }
