@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch, footage
+// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -22,6 +22,8 @@
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: 4 effects (Gaussian Blur ×2, Curves, Vibrance); Drop Shadow was deleted
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
 //   __MCP_TEST_footage__       — project panel: imported PNG; timeline: "Test Footage Layer" + "Test Footage Layer 2"
+//   __MCP_TEST_shapes__        — shape layers: Trim Paths End=100%, Repeater Copies=5, Round Corners Radius=20
+//   __MCP_TEST_text__          — "HELLO" text: Animator 1 "Scale Fade" end=50 rampUp, Animator 2 Opacity by characters
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
@@ -32,6 +34,8 @@ import * as masksSuite        from './tests/masks.mjs';
 import * as effectsSuite      from './tests/effects.mjs';
 import * as batchSuite        from './tests/batch.mjs';
 import * as footageSuite      from './tests/footage.mjs';
+import * as shapesSuite       from './tests/shapes.mjs';
+import * as textSuite         from './tests/text.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
 import { unlinkSync, existsSync } from 'node:fs';
@@ -54,6 +58,8 @@ const suites = [
   { name: 'effects',      mod: effectsSuite      },
   { name: 'batch',        mod: batchSuite        },
   { name: 'footage',      mod: footageSuite      },
+  { name: 'shapes',       mod: shapesSuite       },
+  { name: 'text',         mod: textSuite         },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────

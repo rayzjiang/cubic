@@ -364,6 +364,65 @@ function setKeyframeEasing(args) {
     }
 }
 
+// R: getLayerProperty — read a property value at optional time via path array
+function getLayerProperty(args) {
+    try {
+        var compName = args.compName || "";
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+        }
+        if (!comp) {
+            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+        }
+
+        var layerIndex = args.layerIndex;
+        var layer = null;
+        if (layerIndex !== undefined && layerIndex !== null) {
+            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
+            else { throw new Error("Layer index out of bounds: " + layerIndex); }
+        } else if (args.layerName) {
+            for (var j = 1; j <= comp.numLayers; j++) {
+                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
+            }
+        }
+        if (!layer) { throw new Error("Layer not found"); }
+
+        var propertyPath = args.propertyPath;
+        if (!propertyPath || typeof propertyPath.length === "undefined" || propertyPath.length === 0) {
+            throw new Error("propertyPath must be a non-empty array.");
+        }
+
+        var property = _resolvePropertyByPath(layer, propertyPath);
+
+        var propInfo = {
+            name: property.name,
+            path: propertyPath,
+            value: property.value,
+            numKeys: property.numKeys || 0,
+            isTimeVarying: (property.numKeys || 0) > 0
+        };
+
+        if (args.timeInSeconds !== undefined) {
+            propInfo.valueAtTime = property.valueAtTime(args.timeInSeconds, false);
+            propInfo.timeInSeconds = args.timeInSeconds;
+        }
+
+        if (property.canSetExpression !== undefined) {
+            propInfo.canSetExpression = property.canSetExpression;
+            propInfo.hasExpression = property.canSetExpression && property.expressionEnabled;
+            propInfo.expression = (property.canSetExpression && property.expressionEnabled) ? property.expression : "";
+            if (propInfo.hasExpression) { propInfo.isTimeVarying = true; }
+        }
+
+        return JSON.stringify({ status: "success", property: propInfo }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", message: e.toString() });
+    }
+}
+
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {

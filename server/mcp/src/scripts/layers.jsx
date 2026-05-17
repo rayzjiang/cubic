@@ -822,6 +822,467 @@ function getSelectedLayers(args) {
     }
 }
 
+// C: createLayer — unified dispatcher (type: text|shape|solid|adjustment|null|camera|light)
+function createLayer(args) {
+    var type = (args.type || "").toLowerCase();
+    var delegateArgs = {};
+    for (var k in args) {
+        if (args.hasOwnProperty(k) && k !== "type") { delegateArgs[k] = args[k]; }
+    }
+    switch (type) {
+        case "text":       return createTextLayer(delegateArgs);
+        case "shape":      return createShapeLayer(delegateArgs);
+        case "solid":      return createSolidLayer(delegateArgs);
+        case "adjustment": delegateArgs.isAdjustment = true; return createSolidLayer(delegateArgs);
+        case "null":       return createNullLayer(delegateArgs);
+        case "camera":     return createCamera(delegateArgs);
+        case "light":      return createLightLayer(delegateArgs);
+        default:
+            return JSON.stringify({ status: "error", message: "Unknown layer type: '" + type + "'. Use: text, shape, solid, adjustment, null, camera, light." }, null, 2);
+    }
+}
+
+// C: precompose — group layers into a nested sub-comp
+function precompose(args) {
+    try {
+        var compName = args.compName || "";
+        var layerIndices = args.layerIndices;
+        var newCompName = args.newCompName || "Precomp";
+        var moveAttributes = (args.moveAttributes !== false);
+        var openNewComp = args.openNewComp === true;
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw new Error("layerIndices must be a non-empty array.");
+        }
+
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+        }
+        if (!comp) {
+            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+        }
+
+        for (var k = 0; k < layerIndices.length; k++) {
+            if (layerIndices[k] < 1 || layerIndices[k] > comp.numLayers) {
+                throw new Error("Layer index out of bounds: " + layerIndices[k]);
+            }
+        }
+
+        var newComp = comp.layers.precompose(layerIndices, newCompName, moveAttributes);
+
+        if (openNewComp) { newComp.openInViewer(); }
+
+        var placeholderLayer = null;
+        for (var p = 1; p <= comp.numLayers; p++) {
+            var lyr = comp.layer(p);
+            if (lyr.source && lyr.source === newComp) { placeholderLayer = lyr; break; }
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Precomposed " + layerIndices.length + " layer(s) into '" + newCompName + "'.",
+            newComp: { name: newComp.name, id: newComp.id, width: newComp.width, height: newComp.height, duration: newComp.duration, numLayers: newComp.numLayers },
+            replacingLayer: placeholderLayer ? { index: placeholderLayer.index, name: placeholderLayer.name } : null
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setTrackMatte — set track matte type + optional explicit matte layer pointer (AE 22+)
+function setTrackMatte(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var matteType = args.matteType;
+        var matteTypes = {
+            "none": TrackMatteType.NO_TRACK_MATTE,
+            "alpha": TrackMatteType.ALPHA,
+            "alphaInverted": TrackMatteType.ALPHA_INVERTED,
+            "luma": TrackMatteType.LUMA,
+            "lumaInverted": TrackMatteType.LUMA_INVERTED
+        };
+        if (matteTypes[matteType] === undefined) {
+            throw new Error("Invalid matteType '" + matteType + "'. Use: none, alpha, alphaInverted, luma, lumaInverted.");
+        }
+
+        var matteLayerIndex = args.matteLayerIndex;
+        var matteLayerName = args.matteLayerName;
+        var mattingLayer = null;
+
+        if (matteLayerIndex !== undefined && matteLayerIndex !== null) {
+            if (matteLayerIndex < 1 || matteLayerIndex > comp.numLayers) {
+                throw new Error("matteLayerIndex out of bounds: " + matteLayerIndex);
+            }
+            mattingLayer = comp.layer(matteLayerIndex);
+        } else if (matteLayerName) {
+            for (var j = 1; j <= comp.numLayers; j++) {
+                if (comp.layer(j).name === matteLayerName) { mattingLayer = comp.layer(j); break; }
+            }
+            if (!mattingLayer) { throw new Error("Matte layer not found: " + matteLayerName); }
+        }
+
+        if (mattingLayer && matteTypes[matteType] !== TrackMatteType.NO_TRACK_MATTE) {
+            try {
+                layer.setTrackMatte(mattingLayer, matteTypes[matteType]);
+            } catch (apiErr) {
+                layer.trackMatteType = matteTypes[matteType];
+            }
+        } else {
+            layer.trackMatteType = matteTypes[matteType];
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Track matte set to '" + matteType + "' on layer '" + layer.name + "'.",
+            layer: { index: layer.index, name: layer.name, trackMatteType: matteType, matteLayerIndex: mattingLayer ? mattingLayer.index : null }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// C: addShapeOperator — add Trim Paths / Repeater / Rounded Corners to a shape layer's Contents group
+function addShapeOperator(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var type = args.type;
+        var matchNames = {
+            "trimPaths":      "ADBE Vector Filter - Trim",
+            "repeater":       "ADBE Vector Filter - Repeater",
+            "roundedCorners": "ADBE Vector Filter - RC"
+        };
+
+        if (!matchNames[type]) {
+            throw new Error("Invalid operator type '" + type + "'. Use: trimPaths, repeater, roundedCorners.");
+        }
+
+        var groupContents;
+        var groupPath = args.groupPath;
+        if (groupPath && groupPath.length > 0) {
+            var targetGroup = _resolvePropertyByPath(layer, groupPath);
+            var inner = targetGroup.property("Contents");
+            groupContents = inner || targetGroup;
+        } else {
+            var contents = layer.property("Contents");
+            if (!contents) { throw new Error("Layer has no Contents group — is it a shape layer?"); }
+            var firstGroup = contents.property(1);
+            if (!firstGroup) { throw new Error("Contents group is empty."); }
+            var firstContents = firstGroup.property("Contents");
+            groupContents = firstContents || firstGroup;
+        }
+
+        var operator = groupContents.addProperty(matchNames[type]);
+
+        var settings = args.settings;
+        if (settings) {
+            for (var propName in settings) {
+                if (settings.hasOwnProperty(propName)) {
+                    try {
+                        var prop = null;
+                        try { prop = operator.property(propName); } catch(e) {}
+                        if (!prop) {
+                            for (var pi = 1; pi <= operator.numProperties; pi++) {
+                                if (operator.property(pi).name === propName) { prop = operator.property(pi); break; }
+                            }
+                        }
+                        if (prop) {
+                            var v = settings[propName];
+                            if (typeof v === "string") { try { v = eval("(" + v + ")"); } catch(e) {} }
+                            prop.setValue(v);
+                        }
+                    } catch(e2) {}
+                }
+            }
+        }
+
+        var opProps = [];
+        for (var oi = 1; oi <= operator.numProperties; oi++) {
+            try { opProps.push({ name: operator.property(oi).name, value: operator.property(oi).value }); } catch(e3) {}
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Shape operator '" + type + "' added to layer '" + layer.name + "'.",
+            operator: { type: type, name: operator.name, matchName: matchNames[type], properties: opProps }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setShapeOperatorProperty — update a property on an existing shape operator
+function setShapeOperatorProperty(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var operatorPath = args.operatorPath;
+        var propertyName = args.propertyName;
+        var value = args.value;
+
+        if (!operatorPath || operatorPath.length === 0) { throw new Error("operatorPath must be a non-empty array."); }
+        if (!propertyName) { throw new Error("propertyName is required."); }
+
+        var operator = _resolvePropertyByPath(layer, operatorPath);
+
+        var prop = null;
+        try { prop = operator.property(propertyName); } catch(e) {}
+        if (!prop) {
+            for (var pi = 1; pi <= operator.numProperties; pi++) {
+                if (operator.property(pi).name === propertyName) { prop = operator.property(pi); break; }
+            }
+        }
+        if (!prop) { throw new Error("Property '" + propertyName + "' not found on operator."); }
+
+        if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
+        prop.setValue(value);
+
+        return JSON.stringify({
+            status: "success",
+            message: "Shape operator property '" + propertyName + "' set.",
+            operator: { path: operatorPath },
+            property: { name: prop.name, value: prop.value }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// C: addTextAnimator — add a text animator with one or more animated properties
+function addTextAnimator(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var textProp = layer.property("Text");
+        if (!textProp) { throw new Error("Layer '" + layer.name + "' is not a text layer."); }
+
+        var animators = textProp.property("Animators");
+        if (!animators) { throw new Error("Text layer has no Animators group."); }
+
+        var properties = args.properties;
+        if (!properties || typeof properties.length === "undefined" || properties.length === 0) {
+            throw new Error("properties must be a non-empty array of property names.");
+        }
+
+        var animator = animators.addProperty("ADBE Text Animator");
+        if (args.name) { animator.name = args.name; }
+
+        // AE's UI auto-creates Range Selector 1 when adding an animator; scripting doesn't.
+        try {
+            var selectorsGroup = animator.property("ADBE Text Selectors");
+            if (selectorsGroup && selectorsGroup.numProperties === 0) {
+                selectorsGroup.addProperty("ADBE Text Selector");
+            }
+        } catch (selErr) {}
+
+        var propMatchNames = {
+            "Position":        "ADBE Text Position 3D",
+            "Scale":           "ADBE Text Scale 3D",
+            "Skew":            "ADBE Text Skew",
+            "Rotation":        "ADBE Text Rotation",
+            "Opacity":         "ADBE Text Opacity",
+            "Fill Color":      "ADBE Text Fill Color",
+            "Stroke Color":    "ADBE Text Stroke Color",
+            "Tracking Amount": "ADBE Text Tracking Amount",
+            "Character Offset":"ADBE Text Character Offset",
+            "Line Anchor":     "ADBE Text Line Anchor",
+            "Line Spacing":    "ADBE Text Line Spacing"
+        };
+
+        var animatorProps = animator.property("ADBE Text Animator Properties");
+        var addedProperties = [];
+
+        for (var i = 0; i < properties.length; i++) {
+            var propName = properties[i];
+            var matchName = propMatchNames[propName] || propName;
+            try {
+                var addedProp = animatorProps.addProperty(matchName);
+                addedProperties.push({ name: propName, matchName: matchName });
+
+                if (args.initialValues && args.initialValues[propName] !== undefined) {
+                    var initVal = args.initialValues[propName];
+                    if (typeof initVal === "string") { try { initVal = eval("(" + initVal + ")"); } catch(e) {} }
+                    var curVal = addedProp.value;
+                    var finalVal;
+                    if (typeof curVal === "object" && typeof curVal.length === "number" && curVal.length >= 1) {
+                        finalVal = [];
+                        for (var vi = 0; vi < curVal.length; vi++) {
+                            finalVal[vi] = (initVal[vi] !== undefined) ? +initVal[vi] : +curVal[vi];
+                        }
+                    } else {
+                        finalVal = +initVal;
+                    }
+                    addedProp.setValue(finalVal);
+                }
+            } catch(propErr) {
+                addedProperties.push({ name: propName, matchName: matchName, error: propErr.toString() });
+            }
+        }
+
+        var animatorIndex = animators.numProperties;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Text animator '" + animator.name + "' added to layer '" + layer.name + "'.",
+            animator: {
+                index: animatorIndex,
+                name: animator.name,
+                propertyPath: ["Text", "Animators", animator.name],
+                properties: addedProperties
+            }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setTextAnimatorProperty — update an animated property value on a text animator
+function setTextAnimatorProperty(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var animatorIndex = args.animatorIndex;
+        var propertyName = args.propertyName;
+        var value = args.value;
+
+        if (!animatorIndex) { throw new Error("animatorIndex is required."); }
+        if (!propertyName)  { throw new Error("propertyName is required."); }
+
+        var textProp = layer.property("Text");
+        if (!textProp) { throw new Error("Layer is not a text layer."); }
+
+        var animators = textProp.property("Animators");
+        if (animatorIndex > animators.numProperties) {
+            throw new Error("animatorIndex " + animatorIndex + " out of bounds (" + animators.numProperties + " animators).");
+        }
+
+        var animator = animators.property(animatorIndex);
+        var animatorProps = animator.property("ADBE Text Animator Properties");
+
+        var prop = null;
+        try { prop = animatorProps.property(propertyName); } catch(e) {}
+        if (!prop) {
+            for (var pi = 1; pi <= animatorProps.numProperties; pi++) {
+                if (animatorProps.property(pi).name === propertyName) { prop = animatorProps.property(pi); break; }
+            }
+        }
+        if (!prop) { throw new Error("Property '" + propertyName + "' not found on animator " + animatorIndex + "."); }
+
+        if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
+        var curVal = prop.value;
+        var finalVal;
+        if (typeof curVal === "object" && typeof curVal.length === "number" && curVal.length >= 1) {
+            finalVal = [];
+            for (var vi = 0; vi < curVal.length; vi++) {
+                finalVal[vi] = (value[vi] !== undefined) ? +value[vi] : +curVal[vi];
+            }
+        } else {
+            finalVal = +value;
+        }
+        prop.setValue(finalVal);
+
+        return JSON.stringify({
+            status: "success",
+            message: "Text animator property '" + propertyName + "' set.",
+            animator: { index: animatorIndex, name: animator.name },
+            property: { name: prop.name, value: prop.value }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setTextAnimatorRangeSelector — configure the Range Selector on a text animator
+function setTextAnimatorRangeSelector(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var animatorIndex = args.animatorIndex;
+        var rangeSelectorIndex = args.rangeSelectorIndex || 1;
+
+        if (!animatorIndex) { throw new Error("animatorIndex is required."); }
+
+        var textProp = layer.property("Text");
+        if (!textProp) { throw new Error("Layer is not a text layer."); }
+
+        var animators = textProp.property("Animators");
+        if (animatorIndex > animators.numProperties) { throw new Error("animatorIndex out of bounds."); }
+
+        var animator = animators.property(animatorIndex);
+        var selectors = animator.property("ADBE Text Selectors");
+        if (rangeSelectorIndex > selectors.numProperties) {
+            throw new Error("rangeSelectorIndex " + rangeSelectorIndex + " out of bounds (" + selectors.numProperties + " selectors).");
+        }
+
+        var selector = selectors.property(rangeSelectorIndex);
+        var changed = [];
+
+        if (args.start !== undefined)  { selector.property("Start").setValue(args.start);   changed.push("start");  }
+        if (args.end !== undefined)    { selector.property("End").setValue(args.end);         changed.push("end");    }
+        if (args.offset !== undefined) { selector.property("Offset").setValue(args.offset); changed.push("offset"); }
+
+        var advanced = null;
+        try { advanced = selector.property("ADBE Text Range Advanced"); } catch(e) {}
+        if (advanced) {
+            if (args.units !== undefined) {
+                var unitMap = { "percentage": 1, "index": 2 };
+                if (unitMap[args.units] !== undefined) {
+                    advanced.property("ADBE Text Range Units").setValue(unitMap[args.units]);
+                    changed.push("units");
+                }
+            }
+            if (args.basedOn !== undefined) {
+                var basedOnMap = { "characters": 1, "charactersExcludingSpaces": 2, "words": 3, "lines": 4 };
+                if (basedOnMap[args.basedOn] !== undefined) {
+                    // AE uses "ADBE Text Selector Based On" (not "Range") — inconsistent naming; scan by display name as fallback.
+                    var basedOnProp = null;
+                    try { basedOnProp = advanced.property("ADBE Text Selector Based On"); } catch(e) {}
+                    if (!basedOnProp) { try { basedOnProp = advanced.property("ADBE Text Range Based On"); } catch(e) {} }
+                    if (!basedOnProp) {
+                        for (var bi = 1; bi <= advanced.numProperties; bi++) {
+                            try { if (advanced.property(bi).name === "Based On") { basedOnProp = advanced.property(bi); break; } } catch(e) {}
+                        }
+                    }
+                    if (basedOnProp) { basedOnProp.setValue(basedOnMap[args.basedOn]); changed.push("basedOn"); }
+                }
+            }
+            if (args.shape !== undefined) {
+                var shapeMap = { "square": 1, "rampUp": 2, "rampDown": 3, "triangle": 4, "round": 5, "smooth": 6 };
+                if (shapeMap[args.shape] !== undefined) {
+                    advanced.property("ADBE Text Range Shape").setValue(shapeMap[args.shape]);
+                    changed.push("shape");
+                }
+            }
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Range selector updated: " + (changed.length ? changed.join(", ") : "no fields changed") + ".",
+            animator: { index: animatorIndex, name: animator.name },
+            selector: {
+                index: rangeSelectorIndex,
+                name: selector.name,
+                start: selector.property("Start").value,
+                end: selector.property("End").value,
+                offset: selector.property("Offset").value
+            }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
 // D: deleteLayer
 function deleteLayer(args) {
     try {

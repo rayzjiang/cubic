@@ -19,6 +19,8 @@ Phase 5 (Post MVP stuff?)
     - [ ] see "*missing mcp feat overview claude code chat"
     - [ ] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
+- [ ] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**
+    - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
 
 ## Phase 1
 - [x] Evaluate + organize what functionalities we have + the CRUD of each

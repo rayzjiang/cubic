@@ -10,11 +10,14 @@
 //   createCamera           (C)
 //   createLightLayer       (C)
 //   createNullLayer        (C)
+//   createLayer            (C  — unified dispatcher: all 7 types including adjustment)
 //   duplicateLayer         (C)
 //   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array)
 //   batchSetLayerProperties (U — multiple layers in one call)
 //   moveLayer              (U  — reorders layer stack by name)
 //   setLayerParent         (U  — parents text layer to null layer)
+//   setTrackMatte          (U  — alpha/luma/none, adjacent + explicit matteLayerIndex)
+//   precompose             (C  — groups layers into nested sub-comp)
 //   deleteLayer            (D  — removes layer, returns name + index)
 //
 // Missing: none — full CRUD covered.
@@ -348,5 +351,182 @@ export async function run(ctx, opts) {
     const stillSelected = (r.selectedLayers ?? []).find(l => l.index === ctx.textLayerIndex);
     if (stillSelected) throw new Error('Text layer should no longer be selected');
     return `count now ${r.count}`;
+  });
+
+  // ── createLayer (unified dispatcher) ─────────────────────────────────────
+
+  await test('createLayer type=text — returns layer with type=text', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'createLayer test',
+      fontSize: 60, position: [960, 200], color: [0, 1, 0]
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertValue(r.layer, 'type', 'text');
+    ctx.createLayerTextIdx = r.layer.index;
+  });
+
+  await test('createLayer type=shape — returns layer with type=shape', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'shape', shapeType: 'ellipse',
+      size: [100, 100], fillColor: [0, 1, 0.5]
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'type', 'shape');
+  });
+
+  await test('createLayer type=solid — returns layer with type=solid', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [0.3, 0.3, 0.3], name: 'CL Solid'
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'type', 'solid');
+  });
+
+  await test('createLayer type=adjustment — returns isAdjustment=true', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'adjustment', name: 'CL Adjustment'
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    if (r.layer.isAdjustment !== true) throw new Error(`Expected isAdjustment=true, got ${r.layer.isAdjustment}`);
+  });
+
+  await test('createLayer type=null — returns layer with type=null', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'null', name: 'CL Null'
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'type', 'null');
+  });
+
+  await test('createLayer type=camera — returns zoom value', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'camera', name: 'CL Camera'
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'zoom', 'number');
+  });
+
+  await test('createLayer type=light — returns type=light', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'light', lightType: 'point', name: 'CL Light'
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'type', 'light');
+  });
+
+  await test('createLayer unknown type — returns error', async () => {
+    const r = await send('createLayer', {
+      compName: COMP_NAME, type: 'hologram'
+    });
+    assertValue(r, 'status', 'error');
+    if (!r.message || !r.message.includes('hologram')) throw new Error('Expected error mentioning invalid type name');
+  });
+
+  // ── precompose ────────────────────────────────────────────────────────────
+
+  await test('precompose — group 2 layers into a sub-comp', async () => {
+    // Create two fresh layers to precompose
+    const s1 = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [1, 0, 0], name: 'PC Red'
+    });
+    assertNoError(s1);
+    const s2 = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [0, 0, 1], name: 'PC Blue'
+    });
+    assertNoError(s2);
+
+    const idx1 = s2.layer.index; // most recently added = 1
+    const idx2 = s1.layer.index; // previous = 2
+
+    const r = await send('precompose', {
+      compName: COMP_NAME,
+      layerIndices: [idx1, idx2],
+      newCompName: '__MCP_TEST_precompose__',
+      moveAttributes: true
+    });
+    assertNoError(r);
+    assertField(r, 'newComp', 'object');
+    assertField(r.newComp, 'name', 'string');
+    assertField(r.newComp, 'numLayers', 'number');
+    if (r.newComp.numLayers < 1) throw new Error('Expected at least 1 layer inside the precomp');
+    assertField(r, 'replacingLayer', 'object');
+    assertField(r.replacingLayer, 'index', 'number');
+
+    // Verify the sub-comp exists in the project
+    const list = await send('listCompositions');
+    const found = (list.compositions ?? []).some(c => c.name === '__MCP_TEST_precompose__');
+    if (!found) throw new Error('New precomp not found in listCompositions');
+    return `precomp at layer index ${r.replacingLayer.index} with ${r.newComp.numLayers} layer(s)`;
+  });
+
+  await test('precompose — invalid layer index returns error', async () => {
+    const r = await send('precompose', {
+      compName: COMP_NAME,
+      layerIndices: [9999],
+      newCompName: 'Should Fail'
+    });
+    assertValue(r, 'status', 'error');
+  });
+
+  await test('precompose — empty layerIndices returns error', async () => {
+    const r = await send('precompose', {
+      compName: COMP_NAME,
+      layerIndices: [],
+      newCompName: 'Should Fail'
+    });
+    assertValue(r, 'status', 'error');
+  });
+
+  // ── setTrackMatte ─────────────────────────────────────────────────────────
+
+  await test('setTrackMatte — set alpha matte using layer directly above (adjacent)', async () => {
+    // Create matte (top) + content (below) layers adjacent to each other
+    const matte = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [1, 1, 1], name: 'TM Matte'
+    });
+    assertNoError(matte);
+    const content = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [0.2, 0.8, 0.2], name: 'TM Content'
+    });
+    assertNoError(content);
+    // After both creates: TM Content=1, TM Matte=2 — content layer is below matte
+    ctx.tmContentIdx = 1;
+    ctx.tmMatteIdx   = 2;
+
+    const r = await send('setTrackMatte', {
+      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'alpha'
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertValue(r.layer, 'trackMatteType', 'alpha');
+  });
+
+  await test('setTrackMatte — clear matte with matteType=none', async () => {
+    const r = await send('setTrackMatte', {
+      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'none'
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'trackMatteType', 'none');
+  });
+
+  await test('setTrackMatte — explicit matteLayerIndex (non-adjacent matte)', async () => {
+    // Use the already-created matte layer by explicit index reference
+    const r = await send('setTrackMatte', {
+      compName: COMP_NAME, layerIndex: ctx.tmContentIdx,
+      matteType: 'luma',
+      matteLayerIndex: ctx.tmMatteIdx
+    });
+    assertNoError(r);
+    assertValue(r.layer, 'trackMatteType', 'luma');
+  });
+
+  await test('setTrackMatte — invalid matteType returns error', async () => {
+    const r = await send('setTrackMatte', {
+      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'invalid'
+    });
+    assertValue(r, 'status', 'error');
   });
 }

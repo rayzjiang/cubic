@@ -55,6 +55,70 @@ if (typeof JSON.stringify !== "function") {
 
 
 // ============================================================
+// SHARED HELPERS
+// ============================================================
+
+// Resolves comp + layer from args { compName, layerIndex, layerName }.
+// Throws on not found. Returns { comp, layer }.
+function _resolveCompAndLayer(args) {
+    var compName = args.compName || "";
+    var comp = null;
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+    }
+    if (!comp) {
+        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+    }
+    var layerIndex = args.layerIndex;
+    var layer = null;
+    if (layerIndex !== undefined && layerIndex !== null) {
+        if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
+        else { throw new Error("Layer index out of bounds: " + layerIndex); }
+    } else if (args.layerName) {
+        for (var j = 1; j <= comp.numLayers; j++) {
+            if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
+        }
+    }
+    if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + layerIndex)); }
+    return { comp: comp, layer: layer };
+}
+
+// Walks a property path array on a layer (e.g. ["Contents","Group 1","Trim Paths 1","Start"]).
+// Throws with path context on missing step.
+function _resolvePropertyByPath(layer, propertyPath) {
+    if (!propertyPath || propertyPath.length === 0) {
+        throw new Error("propertyPath must be a non-empty array.");
+    }
+    // AE's UI flattens certain container groups; transparent fallback matches UI-level paths.
+    var IMPLICIT_CONTAINERS = ["Contents", "ADBE Text Animator Properties", "ADBE Text Selectors"];
+    var current = layer;
+    for (var i = 0; i < propertyPath.length; i++) {
+        var step = propertyPath[i];
+        var next = null;
+        try { next = current.property(step); } catch (e) {}
+        if (!next) {
+            for (var c = 0; c < IMPLICIT_CONTAINERS.length; c++) {
+                var container = null;
+                try { container = current.property(IMPLICIT_CONTAINERS[c]); } catch (e2) {}
+                if (container) {
+                    var via = null;
+                    try { via = container.property(step); } catch (e3) {}
+                    if (via) { next = via; break; }
+                }
+            }
+        }
+        if (!next) {
+            throw new Error("Property path not found at '" + step + "' (path so far: " + propertyPath.slice(0, i + 1).join(" > ") + ")");
+        }
+        current = next;
+    }
+    return current;
+}
+
+
+// ============================================================
 // BATCH & DISPATCH
 // ============================================================
 
@@ -62,7 +126,8 @@ var READ_ONLY_COMMANDS = {
     getProjectInfo: 1, listCompositions: 1, getLayerInfo: 1,
     getLayerKeyframes: 1, getLayerExpressions: 1,
     getLayerMasks: 1, getLayerEffects: 1,
-    getSelectedLayers: 1, listProjectItems: 1
+    getSelectedLayers: 1, listProjectItems: 1,
+    getLayerProperty: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -91,6 +156,7 @@ function _dispatchSwitch(command, args) {
         // layers.jsx
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
+        case "createLayer":              return createLayer(args);
         case "createTextLayer":          return createTextLayer(args);
         case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);
@@ -103,6 +169,13 @@ function _dispatchSwitch(command, args) {
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "deleteLayer":              return deleteLayer(args);
+        case "precompose":               return precompose(args);
+        case "setTrackMatte":            return setTrackMatte(args);
+        case "addShapeOperator":         return addShapeOperator(args);
+        case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
+        case "addTextAnimator":          return addTextAnimator(args);
+        case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
+        case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
         // animation.jsx
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);
@@ -110,6 +183,7 @@ function _dispatchSwitch(command, args) {
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
+        case "getLayerProperty":         return getLayerProperty(args);
         // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);

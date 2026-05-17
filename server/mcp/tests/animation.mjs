@@ -7,6 +7,7 @@
 //   setLayerKeyframe       (C  — keyframes)
 //   setKeyframeEasing      (U  — keyframes)
 //   removePropertyKeyframes (D — keyframes)
+//   getLayerProperty       (R  — path-based property read, at current time and at given time)
 //
 // Missing: none — all CRUD covered for both keyframes and expressions.
 //
@@ -201,5 +202,72 @@ export async function run(ctx, opts) {
     assertField(r, 'removed', 'number');
     if (r.removed < 2) throw new Error(`expected ≥2 keyframes removed, got ${r.removed}`);
     return `${r.removed} keyframe(s) removed`;
+  });
+
+  // ── getLayerProperty (path-based reads) ──────────────────────────────────
+
+  await test('getLayerProperty — read Position via Transform path', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['Transform', 'Position']
+    });
+    assertNoError(r);
+    assertField(r, 'property', 'object');
+    assertField(r.property, 'name', 'string');
+    assertField(r.property, 'value');
+    assertField(r.property, 'numKeys', 'number');
+    if (r.property.numKeys < 2) throw new Error(`Expected >=2 keyframes on Position (set earlier), got ${r.property.numKeys}`);
+    return `Position value=${JSON.stringify(r.property.value)}, numKeys=${r.property.numKeys}`;
+  });
+
+  await test('getLayerProperty — valueAtTime returns interpolated Position', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['Transform', 'Position'],
+      timeInSeconds: 1.0
+    });
+    assertNoError(r);
+    assertField(r.property, 'valueAtTime');
+    assertField(r.property, 'timeInSeconds', 'number');
+    return `Position at 1s=${JSON.stringify(r.property.valueAtTime)}`;
+  });
+
+  await test('getLayerProperty — Rotation has expression flag set', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['Transform', 'Rotation']
+    });
+    assertNoError(r);
+    if (r.property.hasExpression !== true) throw new Error('Expected hasExpression=true on Rotation (expression set earlier)');
+    if (!r.property.expression || r.property.expression.trim() === '') {
+      throw new Error('Expected non-empty expression string on Rotation');
+    }
+    return `expression="${r.property.expression.slice(0, 30)}"`;
+  });
+
+  await test('getLayerProperty — Opacity via shorthand Transform path', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['Transform', 'Opacity']
+    });
+    assertNoError(r);
+    assertField(r.property, 'value');
+    return `Opacity=${r.property.value}`;
+  });
+
+  await test('getLayerProperty — invalid path returns status=error', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['DoesNot', 'Exist', 'AtAll']
+    });
+    if (r.status !== 'error') throw new Error(`Expected error status, got ${r.status}`);
+  });
+
+  await test('getLayerProperty — empty propertyPath returns error', async () => {
+    const r = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: []
+    });
+    if (r.status !== 'error') throw new Error(`Expected error status, got ${r.status}`);
   });
 }

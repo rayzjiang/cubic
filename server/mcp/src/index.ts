@@ -155,7 +155,16 @@ server.registerTool(
       "listProjectItems",
       "importFootage",
       "addFootageToComp",
-      "deleteProjectItem"
+      "deleteProjectItem",
+      "createLayer",
+      "precompose",
+      "setTrackMatte",
+      "addShapeOperator",
+      "setShapeOperatorProperty",
+      "addTextAnimator",
+      "setTextAnimatorProperty",
+      "setTextAnimatorRangeSelector",
+      "getLayerProperty"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -202,7 +211,11 @@ server.registerTool(
 ## Available Commands (via runScript or dedicated tools)
 
 **Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
-**Layers:** getLayerInfo, getSelectedLayers, createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Layers:** getLayerInfo, getSelectedLayers, createLayer (preferred — unified, use \`type\` field), createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Nesting / Mattes:** precompose, setTrackMatte
+**Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners), setShapeOperatorProperty
+**Text Animators:** addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
+**Property Reads:** getLayerProperty (path-based — read any property before mutating)
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
@@ -520,6 +533,223 @@ server.registerTool(
   async (params) => {
     try {
       const result = await bridge.sendCommand("addFootageToComp", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — Tier-1 motion vocabulary
+// ============================================================
+
+server.registerTool(
+  "createLayer",
+  {
+    description: "Create a new layer in a composition. Use `type` to select the kind of layer — this is the preferred entry point for all layer creation.",
+    inputSchema: {
+      compName: z.string().describe("Target composition name."),
+      type: z.enum(["text", "shape", "solid", "adjustment", "null", "camera", "light"]).describe("Kind of layer to create."),
+      name: z.string().optional().describe("Layer name."),
+      position: z.array(z.number()).optional().describe("[x, y] or [x, y, z] position."),
+      startTime: z.number().optional().describe("Layer in-point in seconds."),
+      duration: z.number().positive().optional().describe("Layer duration in seconds."),
+      text: z.string().optional().describe("(text) The text string."),
+      fontSize: z.number().positive().optional().describe("(text) Font size in pixels."),
+      fontFamily: z.string().optional().describe("(text) Font family name."),
+      color: z.array(z.number()).optional().describe("(text/solid) Color as [r, g, b] 0–1."),
+      alignment: z.enum(["left", "center", "right"]).optional().describe("(text) Text alignment."),
+      shapeType: z.enum(["rectangle", "ellipse", "polygon", "star"]).optional().describe("(shape) Shape primitive."),
+      size: z.array(z.number()).optional().describe("(shape/solid) [width, height]."),
+      fillColor: z.array(z.number()).optional().describe("(shape) Fill color [r, g, b] 0–1."),
+      strokeColor: z.array(z.number()).optional().describe("(shape) Stroke color [r, g, b] 0–1."),
+      strokeWidth: z.number().optional().describe("(shape) Stroke width in pixels."),
+      roundness: z.number().optional().describe("(shape) Corner roundness for rectangles."),
+      points: z.number().int().optional().describe("(shape) Point count for polygon/star."),
+      zoom: z.number().optional().describe("(camera) Zoom / focal length."),
+      oneNode: z.boolean().optional().describe("(camera) If true, one-node camera with no point of interest."),
+      lightType: z.string().optional().describe("(light) Light type: point, spot, ambient, parallel."),
+      intensity: z.number().optional().describe("(light) Light intensity percentage.")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("createLayer", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "precompose",
+  {
+    description: "Group one or more layers into a nested sub-composition (precomp). The layers are replaced by a single placeholder layer in the parent comp.",
+    inputSchema: {
+      compName: z.string().describe("Parent composition name."),
+      layerIndices: z.array(z.number().int().positive()).describe("1-based indices of layers to precompose."),
+      newCompName: z.string().describe("Name for the new nested composition."),
+      moveAttributes: z.boolean().optional().describe("Move transforms/attributes into the new comp (default: true)."),
+      openNewComp: z.boolean().optional().describe("Open the new comp in the viewer after creation (default: false).")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("precompose", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setTrackMatte",
+  {
+    description: "Set or remove a track matte on a layer. Optionally specify an explicit matte layer (AE 22+); omit to rely on the layer directly above.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      matteType: z.enum(["none", "alpha", "alphaInverted", "luma", "lumaInverted"]).describe("Matte mode. Use 'none' to remove."),
+      matteLayerIndex: z.number().int().positive().optional().describe("1-based index of the layer to use as the matte (AE 22+). Omit to use the layer directly above."),
+      matteLayerName: z.string().optional().describe("Name of the matte layer (alternative to matteLayerIndex).")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("setTrackMatte", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "addShapeOperator",
+  {
+    description: "Add a shape operator (Trim Paths, Repeater, or Rounded Corners) to a shape layer's vector group. Use `type` to select which operator.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      type: z.enum(["trimPaths", "repeater", "roundedCorners"]).describe("Shape operator to add."),
+      groupPath: z.array(z.string()).optional().describe("Path into the shape Contents to reach the target group (e.g. ['Contents', 'Group 1']). Defaults to the first group in Contents."),
+      settings: z.record(z.string(), z.unknown()).optional().describe("Initial property values to set on the operator (e.g. { Start: 0, End: 50 } for trimPaths, { Copies: 5 } for repeater, { Radius: 20 } for roundedCorners).")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("addShapeOperator", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setShapeOperatorProperty",
+  {
+    description: "Update a single property on an existing shape operator (Trim Paths, Repeater, etc.) identified by its path within the layer's Contents tree.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      operatorPath: z.array(z.string()).describe("Path to the operator within the layer's Contents tree (e.g. ['Contents', 'Group 1', 'Trim Paths 1'])."),
+      propertyName: z.string().describe("Property name to set (e.g. 'Start', 'End', 'Offset' for Trim Paths; 'Copies' for Repeater; 'Radius' for Rounded Corners)."),
+      value: z.unknown().describe("New value for the property.")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("setShapeOperatorProperty", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "addTextAnimator",
+  {
+    description: "Add a text animator to a text layer. Specify which properties to animate (Scale, Opacity, Position, Rotation, etc.). Each call adds one animator with a default Range Selector.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      properties: z.array(z.string()).describe("Properties to animate, e.g. ['Scale', 'Opacity']. Supported: Position, Scale, Skew, Rotation, Opacity, Fill Color, Stroke Color, Tracking Amount, Character Offset, Line Anchor, Line Spacing."),
+      name: z.string().optional().describe("Name for the animator (defaults to AE's auto-name, e.g. 'Animator 1')."),
+      initialValues: z.record(z.string(), z.unknown()).optional().describe("Initial values for the animated properties, keyed by property name (e.g. { Scale: [0, 0, 100] }).")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("addTextAnimator", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setTextAnimatorProperty",
+  {
+    description: "Set the value of an animated property on a text animator.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      animatorIndex: z.number().int().positive().describe("1-based index of the animator within the Text > Animators group."),
+      propertyName: z.string().describe("Name of the animated property to update (e.g. 'Scale', 'Opacity')."),
+      value: z.unknown().describe("New value for the property.")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("setTextAnimatorProperty", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setTextAnimatorRangeSelector",
+  {
+    description: "Configure the Range Selector on a text animator — controls which characters are affected and by how much. All fields are optional; only provided fields are updated.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      animatorIndex: z.number().int().positive().describe("1-based index of the animator."),
+      rangeSelectorIndex: z.number().int().positive().optional().describe("1-based index of the Range Selector within the animator (default: 1)."),
+      start: z.number().optional().describe("Start of the range (0–100 in percentage mode, or character index in index mode)."),
+      end: z.number().optional().describe("End of the range."),
+      offset: z.number().optional().describe("Offset shifts the range along the text."),
+      units: z.enum(["percentage", "index"]).optional().describe("Unit mode for start/end/offset."),
+      basedOn: z.enum(["characters", "charactersExcludingSpaces", "words", "lines"]).optional().describe("What the range counts over."),
+      shape: z.enum(["square", "rampUp", "rampDown", "triangle", "round", "smooth"]).optional().describe("Falloff shape of the range selector.")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("setTextAnimatorRangeSelector", parameters, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "getLayerProperty",
+  {
+    description: "Read the current value (and optional value-at-time) of any layer property, including deeply nested ones like shape operator properties or text animator properties. Use this before mutating — the equivalent of Read before Edit.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      propertyPath: z.array(z.string()).describe("Path to the property as an array of names, e.g. ['Transform', 'Position'], ['Contents', 'Group 1', 'Trim Paths 1', 'End'], or ['Text', 'Animators', 'Animator 1', 'Scale']."),
+      timeInSeconds: z.number().optional().describe("If provided, also returns the interpolated value at this time (useful when the property has keyframes).")
+    }
+  },
+  async (parameters) => {
+    try {
+      const result = await bridge.sendCommand("getLayerProperty", parameters, 10000);
       return { content: [{ type: "text", text: result }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
