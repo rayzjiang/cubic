@@ -10,7 +10,8 @@
 //
 // Visual verification (after --write, open __MCP_TEST_footage__ in After Effects):
 //   Project panel: "mcp_test_footage_<ts>.png" should appear as a footage item.
-//   Timeline: one layer named "Test Footage Layer" whose source is the imported PNG.
+//   Timeline: "Test Footage Layer" + "Test Footage Layer 2" both sourced from the imported PNG.
+//   Run --cleanup when done; the global cleanup removes the footage item + disk file in the correct order.
 
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -151,20 +152,10 @@ export async function run(ctx, opts) {
     return `layer index ${r.layer.index}`;
   });
 
-  // ── Teardown: remove imported footage item from project panel ─────────────
-  // Must delete the project item BEFORE deleting the disk file — if the disk
-  // file is deleted first, AE will show "file not found" dialogs on any future
-  // undo operations that reference the import.
-  await test('teardown — delete imported footage item from project panel', async () => {
-    if (!ctx.importedItemId) return 'skipped — no item to delete';
-    const r = await send('deleteProjectItem', { itemId: ctx.importedItemId });
-    assertNoError(r);
-    assertField(r, 'deleted', 'object');
-    ctx.importedItemId = null; // mark as cleaned up so test-integration cleanup skips it
-    return `deleted "${r.deleted.name}"`;
-  });
-
   // ── Error cases ───────────────────────────────────────────────────────────
+  // Note: no teardown here — footage item stays in the project for visual inspection.
+  // The global --cleanup in test-integration.mjs removes the project item first (before
+  // the disk file) to prevent AE "file not found" dialogs on undo.
 
   await test('importFootage — returns error for missing file', async () => {
     const r = await send('importFootage', { filePath: '/nonexistent/path/missing.png' });

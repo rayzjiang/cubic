@@ -21,7 +21,7 @@
 //   __MCP_TEST_masks__         — select the blue solid: masks panel should show 1 mask (Test Rect Mask, add mode); triangle was deleted
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: 4 effects (Gaussian Blur ×2, Curves, Vibrance); Drop Shadow was deleted
 //   __MCP_TEST_batch__         — play 0-3s: text grows 50→100% (Scale) and spins (Rotation expr)
-//   __MCP_TEST_footage__       — project panel: imported PNG; timeline: "Test Footage Layer" + "Test Footage Layer 2"
+//   __MCP_TEST_footage__       — project panel: imported PNG; timeline: "Test Footage Layer" + "Test Footage Layer 2" (stays until --cleanup)
 //   __MCP_TEST_shapes__        — shape layers: Trim Paths End=100%, Repeater Copies=5, Round Corners Radius=20
 //   __MCP_TEST_text__          — "HELLO" text: Animator 1 "Scale Fade" end=50 rampUp, Animator 2 Opacity by characters
 //   __MCP_TEST_layer_time__    — "Shape Left" outPoint=2s, "Shape Left copy" inPoint=2s, "Trimmed Shape" inPoint=1s outPoint=3s
