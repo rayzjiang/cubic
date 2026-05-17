@@ -20,8 +20,8 @@ Phase 5 (Post MVP stuff?)
         - [x] Impl + add testing for tier 1
         - [x] Impl + add testing for tier 2
         - [x] Visually verify all tiers
-    - [ ] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
-    - [ ] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
+    - [x] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
+    - [x] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
 - [ ] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
