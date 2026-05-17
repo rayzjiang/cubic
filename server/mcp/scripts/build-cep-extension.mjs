@@ -24,6 +24,8 @@ const domainFiles = [
   'masks.jsx',
   'effects.jsx',
   'footage.jsx',
+  'markers.jsx',
+  'project.jsx',
   'mcp-bridge.jsx',   // JSON polyfill + dispatchCommand + batch
 ];
 

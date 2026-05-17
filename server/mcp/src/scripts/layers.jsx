@@ -1283,6 +1283,190 @@ function setTextAnimatorRangeSelector(args) {
     }
 }
 
+// U: splitLayer — split a layer at a given time by duplicating and trimming both halves
+function splitLayer(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var time = (args.time !== undefined && args.time !== null) ? parseFloat(args.time) : comp.time;
+
+        if (time <= layer.inPoint || time >= layer.outPoint) {
+            throw new Error("Split time " + time + "s is outside the layer's active range [" + layer.inPoint + ", " + layer.outPoint + "]");
+        }
+
+        var originalOutPoint = layer.outPoint;
+        var dup = layer.duplicate();
+        // duplicate() places dup above original; move original back above dup so left half renders on top
+        layer.moveBefore(dup);
+
+        layer.outPoint = time;
+        dup.inPoint = time;
+        dup.outPoint = originalOutPoint;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Layer split at " + time + "s.",
+            original: { index: layer.index, name: layer.name, inPoint: layer.inPoint, outPoint: layer.outPoint },
+            newLayer: { index: dup.index, name: dup.name, inPoint: dup.inPoint, outPoint: dup.outPoint }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: trimLayer — set the layer's in/out window and/or start time
+function trimLayer(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var mode = args.mode || "";
+        var inPoint = args.inPoint;
+        var outPoint = args.outPoint;
+
+        if (mode === "currentTimeIn") {
+            inPoint = comp.time;
+        } else if (mode === "currentTimeOut") {
+            outPoint = comp.time;
+        }
+
+        // Pre-validate before mutating
+        var newIn  = (inPoint  !== undefined && inPoint  !== null) ? parseFloat(inPoint)  : layer.inPoint;
+        var newOut = (outPoint !== undefined && outPoint !== null) ? parseFloat(outPoint) : layer.outPoint;
+        if (newIn >= newOut) {
+            throw new Error("inPoint (" + newIn + ") must be less than outPoint (" + newOut + ")");
+        }
+
+        if (args.startTime !== undefined && args.startTime !== null) { layer.startTime = parseFloat(args.startTime); }
+        if (inPoint  !== undefined && inPoint  !== null) { layer.inPoint  = parseFloat(inPoint);  }
+        if (outPoint !== undefined && outPoint !== null) { layer.outPoint = parseFloat(outPoint); }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Layer trimmed.",
+            layer: { index: layer.index, name: layer.name, startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setSelectedLayers — select layers by index or name; deselects all others by default
+function setSelectedLayers(args) {
+    try {
+        var compName = (args && args.compName) ? args.compName : "";
+        var comp = null;
+        if (compName) {
+            for (var ci = 1; ci <= app.project.numItems; ci++) {
+                var ci_it = app.project.item(ci);
+                if (ci_it instanceof CompItem && ci_it.name === compName) { comp = ci_it; break; }
+            }
+            if (!comp) { throw new Error("No composition '" + compName + "'"); }
+        } else {
+            comp = app.project.activeItem;
+        }
+        if (!(comp instanceof CompItem)) { throw new Error("No active composition. Pass compName or open a comp."); }
+
+        var clearOthers = (args.clearOthers !== false); // default true
+        if (clearOthers) {
+            for (var ci2 = 1; ci2 <= comp.numLayers; ci2++) { comp.layer(ci2).selected = false; }
+        }
+
+        var layerIndices = args.layerIndices;
+        if (typeof layerIndices === "string") { try { layerIndices = eval("(" + layerIndices + ")"); } catch(e) { layerIndices = null; } }
+        var layerNames = args.layerNames;
+        if (typeof layerNames === "string") { try { layerNames = eval("(" + layerNames + ")"); } catch(e) { layerNames = null; } }
+
+        if (layerIndices && layerIndices.length > 0) {
+            for (var ii = 0; ii < layerIndices.length; ii++) {
+                var idx = layerIndices[ii];
+                if (idx < 1 || idx > comp.numLayers) { throw new Error("Layer index out of bounds: " + idx); }
+                comp.layer(idx).selected = true;
+            }
+        } else if (layerNames && layerNames.length > 0) {
+            for (var ni = 0; ni < layerNames.length; ni++) {
+                var nm = layerNames[ni];
+                var found = false;
+                for (var li = 1; li <= comp.numLayers; li++) {
+                    if (comp.layer(li).name === nm) { comp.layer(li).selected = true; found = true; break; }
+                }
+                if (!found) { throw new Error("Layer not found: '" + nm + "'"); }
+            }
+        }
+
+        var selectedLayers = [];
+        for (var sl = 1; sl <= comp.numLayers; sl++) {
+            if (comp.layer(sl).selected) {
+                selectedLayers.push({ index: comp.layer(sl).index, name: comp.layer(sl).name });
+            }
+        }
+
+        return JSON.stringify({
+            status: "success",
+            activeComp: { name: comp.name, id: comp.id, numLayers: comp.numLayers },
+            selectedLayers: selectedLayers,
+            count: selectedLayers.length
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: centerAnchorPoint — move anchor to content center; adjust position so layer stays put
+function centerAnchorPoint(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var preservePosition = (args.preservePosition !== false); // default true
+
+        var rect = layer.sourceRectAtTime(comp.time, false);
+        var newAnchorX = rect.left + rect.width  / 2;
+        var newAnchorY = rect.top  + rect.height / 2;
+
+        var anchorProp = layer.property("Anchor Point");
+        var oldAnchor  = anchorProp.value; // read at comp.time before any changes
+
+        if (preservePosition) {
+            var posProp = layer.property("Position");
+            var oldPos  = posProp.value;   // read at comp.time before any changes
+            var scale   = layer.property("Scale").value;
+            var sx = scale[0] / 100;
+            var sy = scale[1] / 100;
+            var deltaX = (newAnchorX - oldAnchor[0]) * sx;
+            var deltaY = (newAnchorY - oldAnchor[1]) * sy;
+
+            // Clear keyframes first (matches setLayerProperties pattern)
+            if (anchorProp.numKeys > 0) { while (anchorProp.numKeys > 0) { anchorProp.removeKey(1); } }
+            anchorProp.setValue([newAnchorX, newAnchorY]);
+
+            if (posProp.numKeys > 0) { while (posProp.numKeys > 0) { posProp.removeKey(1); } }
+            if (layer.threeDLayer) {
+                posProp.setValue([oldPos[0] + deltaX, oldPos[1] + deltaY, oldPos[2]]);
+            } else {
+                posProp.setValue([oldPos[0] + deltaX, oldPos[1] + deltaY]);
+            }
+        } else {
+            if (anchorProp.numKeys > 0) { while (anchorProp.numKeys > 0) { anchorProp.removeKey(1); } }
+            anchorProp.setValue([newAnchorX, newAnchorY]);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Anchor point centered on content.",
+            layer: { index: layer.index, name: layer.name },
+            anchor: anchorProp.value,
+            position: layer.property("Position").value
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
 // D: deleteLayer
 function deleteLayer(args) {
     try {

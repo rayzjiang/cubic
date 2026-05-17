@@ -17,6 +17,9 @@ Phase 5 (Post MVP stuff?)
     - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
 - [ ] Finish MCP functionality - Identify potential missing functionality that I would need for my product
     - [ ] see "*missing mcp feat overview claude code chat"
+        - [ ] Impl + add testing for tier 1
+        - [ ] Impl + add testing for tier 2
+        - [ ] Visually verify all tiers
     - [ ] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
 - [ ] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**

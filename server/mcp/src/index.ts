@@ -164,7 +164,19 @@ server.registerTool(
       "addTextAnimator",
       "setTextAnimatorProperty",
       "setTextAnimatorRangeSelector",
-      "getLayerProperty"
+      "getLayerProperty",
+      "splitLayer",
+      "trimLayer",
+      "setSelectedLayers",
+      "centerAnchorPoint",
+      "getCurrentTime",
+      "setCurrentTime",
+      "addMarker",
+      "listMarkers",
+      "updateMarker",
+      "removeMarker",
+      "getProjectPath",
+      "saveProject"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -211,7 +223,10 @@ server.registerTool(
 ## Available Commands (via runScript or dedicated tools)
 
 **Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
-**Layers:** getLayerInfo, getSelectedLayers, createLayer (preferred — unified, use \`type\` field), createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Playhead:** getCurrentTime, setCurrentTime
+**Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (preferred — unified, use \`type\` field), createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Layer time ops:** splitLayer, trimLayer (inPoint/outPoint/startTime/mode)
+**Anchor:** centerAnchorPoint (move anchor to content center, position-compensated)
 **Nesting / Mattes:** precompose, setTrackMatte
 **Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners), setShapeOperatorProperty
 **Text Animators:** addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
@@ -220,7 +235,9 @@ server.registerTool(
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
 **Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
+**Markers:** addMarker, listMarkers, updateMarker, removeMarker (comp or layer; omit layerIndex for comp marker)
 **Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
+**Project:** getProjectPath, saveProject
 **Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations). Accepts an optional \`groupLabel\` (human-readable turn summary, e.g. "apply cinematic look to logo") that becomes the single Edit > Undo entry the user sees in AE — one ⌘Z reverts the entire turn.
 
 ## Context tip
@@ -484,6 +501,225 @@ server.registerTool(
   async () => {
     try {
       const result = await bridge.sendCommand("getSelectedLayers", {}, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setSelectedLayers",
+  {
+    description: "Select layers in the After Effects timeline, revealing to the user exactly what the agent just created or modified. Pairs with getSelectedLayers. Passing neither layerIndices nor layerNames clears the selection.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target composition by name. Omit to use the active composition."),
+      layerIndices: z.array(z.number().int().positive()).optional().describe("1-based indices of layers to select."),
+      layerNames: z.array(z.string()).optional().describe("Names of layers to select (alternative to layerIndices)."),
+      clearOthers: z.boolean().optional().describe("Deselect all other layers first (default: true).")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("setSelectedLayers", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — layer time ops
+// ============================================================
+
+server.registerTool(
+  "splitLayer",
+  {
+    description: "Split a layer at a specific time, creating two adjacent halves. Implemented via duplicate + inPoint/outPoint trim — equivalent to AE's Layer > Split Layer menu. Returns both resulting layers.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      time: z.number().optional().describe("Split time in seconds. Defaults to the composition's current playhead time.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("splitLayer", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "trimLayer",
+  {
+    description: "Set a layer's in-point, out-point, and/or start time. Use mode='currentTimeIn' or 'currentTimeOut' to snap an edge to the playhead. At least one of inPoint, outPoint, startTime, or mode is required.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      inPoint: z.number().optional().describe("New in-point in seconds (trims the left edge)."),
+      outPoint: z.number().optional().describe("New out-point in seconds (trims the right edge)."),
+      startTime: z.number().optional().describe("Shift the layer's position in the timeline (seconds)."),
+      mode: z.enum(["currentTimeIn", "currentTimeOut"]).optional().describe("Snap an edge to the composition's current playhead time.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("trimLayer", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "centerAnchorPoint",
+  {
+    description: "Move the anchor point to the center of the layer's content bounding box. By default adjusts Position so the layer stays visually in place — equivalent to AE's Layer > Transform > Center Anchor Point in Layer Content.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      preservePosition: z.boolean().optional().describe("Adjust Position to keep the layer visually in place (default: true).")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("centerAnchorPoint", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — playhead
+// ============================================================
+
+server.registerTool(
+  "getCurrentTime",
+  {
+    description: "Get the current playhead time of a composition, in seconds and frames. Use before any 'animate from current time' prompt or to read the user's navigation intent.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target composition by name. Omit to read from the active composition.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("getCurrentTime", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "setCurrentTime",
+  {
+    description: "Move the composition playhead to a specific time. Time out of range is silently clamped. Use before reading sourceRectAtTime or before keyframe operations that target 'current time'.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target composition by name. Omit to use the active composition."),
+      timeInSeconds: z.number().optional().describe("Target time in seconds."),
+      timeInFrames: z.number().optional().describe("Target time in frames (alternative to timeInSeconds).")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("setCurrentTime", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — markers
+// ============================================================
+
+server.registerTool(
+  "addMarker",
+  {
+    description: "Add a marker to a composition or layer timeline. Omit layerIndex/layerName for a comp-level marker. Markers let the agent label sections of its own timeline for navigation across turns.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target composition name. Omit to use the active composition."),
+      layerIndex: z.number().int().positive().optional().describe("Add to this layer (1-based). Omit for a comp marker."),
+      layerName: z.string().optional().describe("Add to this layer by name. Alternative to layerIndex."),
+      time: z.number().describe("Marker time in seconds."),
+      comment: z.string().optional().describe("Marker label / comment text."),
+      duration: z.number().optional().describe("Marker duration in seconds (creates a span marker)."),
+      chapter: z.string().optional().describe("Chapter name (used by Flash/HTML exporters)."),
+      url: z.string().optional().describe("URL associated with this marker."),
+      frameTarget: z.string().optional().describe("Frame target (used by Flash/HTML exporters)."),
+      cuePointName: z.string().optional().describe("ActionScript cue point name.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("addMarker", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "listMarkers",
+  {
+    description: "List all markers on a composition or layer. Returns time, comment, duration, and other fields for each marker.",
+    inputSchema: {
+      compName: z.string().optional().describe("Target composition name. Omit to use the active composition."),
+      layerIndex: z.number().int().positive().optional().describe("Read layer markers for this layer (1-based). Omit for comp markers."),
+      layerName: z.string().optional().describe("Read layer markers by layer name. Alternative to layerIndex.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("listMarkers", params, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+
+// ============================================================
+// TOOLS — project
+// ============================================================
+
+server.registerTool(
+  "getProjectPath",
+  {
+    description: "Get the project's file path on disk and whether it has unsaved changes. Cheap read — use this to confirm a save path before calling saveProject."
+  },
+  async () => {
+    try {
+      const result = await bridge.sendCommand("getProjectPath", {}, 10000);
+      return { content: [{ type: "text", text: result }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "saveProject",
+  {
+    description: "Save the current After Effects project to disk. If the project has never been saved, pass saveAs with an absolute file path. Otherwise saves in place.",
+    inputSchema: {
+      saveAs: z.string().optional().describe("Absolute file path to save as a new .aep file (e.g. '/Users/you/project.aep'). Required for unsaved projects.")
+    }
+  },
+  async (params) => {
+    try {
+      const result = await bridge.sendCommand("saveProject", params, 10000);
       return { content: [{ type: "text", text: result }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };

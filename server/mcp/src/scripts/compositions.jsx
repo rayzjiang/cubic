@@ -160,6 +160,77 @@ function setCompositionProperties(args) {
     }
 }
 
+// R: getCurrentTime — get the composition playhead time
+function getCurrentTime(args) {
+    try {
+        var comp = null;
+        if (args && args.compName) {
+            for (var ci = 1; ci <= app.project.numItems; ci++) {
+                var item = app.project.item(ci);
+                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
+            }
+            if (!comp) { throw new Error("No composition '" + args.compName + "'"); }
+        } else {
+            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        }
+        if (!comp) {
+            return JSON.stringify({ status: "success", activeComp: null, timeInSeconds: null, message: "No active composition" }, null, 2);
+        }
+        return JSON.stringify({
+            status: "success",
+            compName: comp.name,
+            timeInSeconds: comp.time,
+            frame: Math.round(comp.time * comp.frameRate),
+            frameRate: comp.frameRate,
+            duration: comp.duration
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// U: setCurrentTime — move the composition playhead; clamps to [0, duration)
+function setCurrentTime(args) {
+    try {
+        var comp = null;
+        if (args && args.compName) {
+            for (var ci = 1; ci <= app.project.numItems; ci++) {
+                var item = app.project.item(ci);
+                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
+            }
+            if (!comp) { throw new Error("No composition '" + args.compName + "'"); }
+        } else {
+            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        }
+        if (!comp) { throw new Error("No active composition. Pass compName or open a comp."); }
+
+        var t = null;
+        if (args.timeInSeconds !== undefined && args.timeInSeconds !== null) {
+            t = parseFloat(args.timeInSeconds);
+        } else if (args.timeInFrames !== undefined && args.timeInFrames !== null) {
+            t = parseFloat(args.timeInFrames) / comp.frameRate;
+        } else {
+            throw new Error("Provide timeInSeconds or timeInFrames.");
+        }
+
+        // Clamp silently — motion designers expect snap rather than error
+        if (t < 0) { t = 0; }
+        if (t >= comp.duration) { t = comp.duration - (1 / comp.frameRate); }
+
+        comp.time = t;
+
+        return JSON.stringify({
+            status: "success",
+            compName: comp.name,
+            timeInSeconds: comp.time,
+            frame: Math.round(comp.time * comp.frameRate),
+            frameRate: comp.frameRate
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
 // D: deleteComposition
 function deleteComposition(args) {
     try {

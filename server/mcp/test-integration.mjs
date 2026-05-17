@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text
+// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -24,6 +24,11 @@
 //   __MCP_TEST_footage__       — project panel: imported PNG; timeline: "Test Footage Layer" + "Test Footage Layer 2"
 //   __MCP_TEST_shapes__        — shape layers: Trim Paths End=100%, Repeater Copies=5, Round Corners Radius=20
 //   __MCP_TEST_text__          — "HELLO" text: Animator 1 "Scale Fade" end=50 rampUp, Animator 2 Opacity by characters
+//   __MCP_TEST_layer_time__    — "Shape Left" outPoint=2s, "Shape Left copy" inPoint=2s, "Trimmed Shape" inPoint=1s outPoint=3s
+//   __MCP_TEST_markers__       — comp ruler: 1 marker at 2s "updated comment"; "Marked Layer": 0 layer markers
+//   __MCP_TEST_playhead__      — playhead test comp (no visual residue after tests)
+//   __MCP_TEST_selection__     — 3 solid layers; no layers selected after final test
+//   __MCP_TEST_anchor__        — "Offset Shape" + "Offset Text": anchors centered on content bounding boxes
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
@@ -36,6 +41,12 @@ import * as batchSuite        from './tests/batch.mjs';
 import * as footageSuite      from './tests/footage.mjs';
 import * as shapesSuite       from './tests/shapes.mjs';
 import * as textSuite         from './tests/text.mjs';
+import * as layerTimeSuite    from './tests/layer-time.mjs';
+import * as markersSuite      from './tests/markers.mjs';
+import * as playheadSuite     from './tests/playhead.mjs';
+import * as selectionSuite    from './tests/selection.mjs';
+import * as projectSuite      from './tests/project.mjs';
+import * as anchorSuite       from './tests/anchor.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
 import { unlinkSync, existsSync } from 'node:fs';
@@ -60,6 +71,12 @@ const suites = [
   { name: 'footage',      mod: footageSuite      },
   { name: 'shapes',       mod: shapesSuite       },
   { name: 'text',         mod: textSuite         },
+  { name: 'layer-time',   mod: layerTimeSuite    },
+  { name: 'markers',      mod: markersSuite      },
+  { name: 'playhead',     mod: playheadSuite     },
+  { name: 'selection',    mod: selectionSuite    },
+  { name: 'project',      mod: projectSuite      },
+  { name: 'anchor',       mod: anchorSuite       },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────

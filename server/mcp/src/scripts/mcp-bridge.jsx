@@ -127,7 +127,8 @@ var READ_ONLY_COMMANDS = {
     getLayerKeyframes: 1, getLayerExpressions: 1,
     getLayerMasks: 1, getLayerEffects: 1,
     getSelectedLayers: 1, listProjectItems: 1,
-    getLayerProperty: 1
+    getLayerProperty: 1,
+    listMarkers: 1, getCurrentTime: 1, getProjectPath: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -153,9 +154,12 @@ function _dispatchSwitch(command, args) {
         case "createComposition":        return createComposition(args);
         case "setCompositionProperties": return setCompositionProperties(args);
         case "deleteComposition":        return deleteComposition(args);
+        case "getCurrentTime":           return getCurrentTime(args);
+        case "setCurrentTime":           return setCurrentTime(args);
         // layers.jsx
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
+        case "setSelectedLayers":        return setSelectedLayers(args);
         case "createLayer":              return createLayer(args);
         case "createTextLayer":          return createTextLayer(args);
         case "createShapeLayer":         return createShapeLayer(args);
@@ -166,8 +170,11 @@ function _dispatchSwitch(command, args) {
         case "duplicateLayer":           return duplicateLayer(args);
         case "setLayerProperties":       return setLayerProperties(args);
         case "batchSetLayerProperties":  return batchSetLayerProperties(args);
+        case "splitLayer":               return splitLayer(args);
+        case "trimLayer":                return trimLayer(args);
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
+        case "centerAnchorPoint":        return centerAnchorPoint(args);
         case "deleteLayer":              return deleteLayer(args);
         case "precompose":               return precompose(args);
         case "setTrackMatte":            return setTrackMatte(args);
@@ -176,6 +183,14 @@ function _dispatchSwitch(command, args) {
         case "addTextAnimator":          return addTextAnimator(args);
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
+        // markers.jsx
+        case "addMarker":                return addMarker(args);
+        case "listMarkers":              return listMarkers(args);
+        case "updateMarker":             return updateMarker(args);
+        case "removeMarker":             return removeMarker(args);
+        // project.jsx
+        case "getProjectPath":           return getProjectPath();
+        case "saveProject":              return saveProject(args);
         // animation.jsx
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);
