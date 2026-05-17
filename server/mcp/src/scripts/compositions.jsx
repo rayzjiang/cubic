@@ -160,41 +160,6 @@ function setCompositionProperties(args) {
     }
 }
 
-// Project op: undoAction — undo the most recent N actions (1–20)
-// Note: intentionally in READ_ONLY_COMMANDS in mcp-bridge.jsx — wrapping Undo inside
-// beginUndoGroup is semantically incoherent and causes undefined AE behavior.
-function undoAction(args) {
-    try {
-        var steps = (args && args.steps) ? parseInt(args.steps) : 1;
-        if (isNaN(steps) || steps < 1) { steps = 1; }
-        if (steps > 20) { steps = 20; }
-
-        // findMenuCommandId("Undo") may fail on AE versions where the label is dynamic
-        // ("Undo createSolidLayer" vs. the static "Undo"). Fall back to hardcoded ID 16
-        // which is Edit > Undo on all AE versions and platforms.
-        var undoCmd = app.findMenuCommandId("Undo") || 16;
-
-        var executed = 0;
-        for (var i = 0; i < steps; i++) {
-            try {
-                app.executeCommand(undoCmd);
-                executed++;
-            } catch (e) {
-                // AE throws when nothing remains to undo — stop the loop
-                break;
-            }
-        }
-        return JSON.stringify({
-            status: "success",
-            message: "Undid " + executed + " action(s)",
-            requested: steps,
-            executed: executed
-        }, null, 2);
-    } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
-    }
-}
-
 // D: deleteComposition
 function deleteComposition(args) {
     try {

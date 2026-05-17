@@ -155,8 +155,7 @@ server.registerTool(
       "listProjectItems",
       "importFootage",
       "addFootageToComp",
-      "deleteProjectItem",
-      "undoAction"
+      "deleteProjectItem"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -203,7 +202,6 @@ server.registerTool(
 ## Available Commands (via runScript or dedicated tools)
 
 **Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
-**Project:** undoAction — undo the most recent N actions (1–20); use in the self-healing retry loop
 **Layers:** getLayerInfo, getSelectedLayers, createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
@@ -522,29 +520,6 @@ server.registerTool(
   async (params) => {
     try {
       const result = await bridge.sendCommand("addFootageToComp", params, 10000);
-      return { content: [{ type: "text", text: result }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
-    }
-  }
-);
-
-
-// ============================================================
-// TOOLS — undo
-// ============================================================
-
-server.registerTool(
-  "undoAction",
-  {
-    description: "Undo the most recent N After Effects actions (clamped 1–20). Use this in the self-healing retry loop to roll back a bad LLM-generated operation before reattempting.",
-    inputSchema: {
-      steps: z.number().int().min(1).max(20).optional().describe("Number of undo steps. Defaults to 1.")
-    }
-  },
-  async (params) => {
-    try {
-      const result = await bridge.sendCommand("undoAction", params, 10000);
       return { content: [{ type: "text", text: result }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };

@@ -57,7 +57,7 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 **Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
 ```
 compositions.jsx  ← getProjectInfo, listCompositions, createComposition, setCompositionProperties,
-                     deleteComposition, undoAction
+                     deleteComposition
 layers.jsx        ← getLayerInfo, getSelectedLayers, createTextLayer, createShapeLayer, createSolidLayer,
                      createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
                      batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
@@ -86,9 +86,9 @@ Every mutating command is wrapped in `app.beginUndoGroup("Cubic: <command>") / e
 
 Read-only allowlist: `getProjectInfo`, `listCompositions`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `listProjectItems`
 
-`undoAction` is also in the allowlist (not literally read-only, but wrapping Undo inside `beginUndoGroup` is semantically incoherent and causes undefined AE behavior).
+**No programmatic undo.** AE gates `app.executeCommand(Undo)` from CEP's evalScript context — every approach (top-level, `scheduleTask`, `BridgeTalk`, `findMenuCommandId`-by-dynamic-label) no-ops. Rollback is handled via **inverse-CRUD**: each `create*` has a matching `delete*`, each `set*` can be replayed with prior values captured via the matching `get*`. The user's own ⌘Z still works because every mutation is wrapped in `beginUndoGroup`. Agents wanting "one ⌘Z reverts the whole turn" should emit their mutations through `batch`, which wraps the entire loop in one outer group.
 
-Deferred: autosave before run (Phase 2/3), session-level undo group (Phase 2), undo history panel (Phase 4).
+Deferred: autosave before run (Phase 2/3), session-level undo group via `batch` (Phase 2), undo history panel (Phase 4).
 
 ## Critical ExtendScript quirks
 
