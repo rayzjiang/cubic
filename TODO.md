@@ -9,14 +9,16 @@ Phase 5 (Post MVP stuff?)
 ---
 ## Phase 2
 - [ ] x
+- [ ] ***Eg. Preset Library?? <-- might be done in phase 2 (give the system prompt a good understanding)
 
 ## Phase 1.5
 - [x] Critical: migrate mcp architecture to CEP extension instead of nonstop 2 second polling + file reading
 - [x] Wrap each command in an undo group
-    - [ ] **Note: will eventually need to add: Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
-- [x] Finish MCP functionality - Identify potential missing functionality that I would need for my product (see CRUD screenshot above)
-    - [ ] 
-    - [ ] Ensure Create/read/update/delete functionality for all functions/commands
+    - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
+- [ ] Finish MCP functionality - Identify potential missing functionality that I would need for my product
+    - [ ] see "*missing mcp feat overview claude code chat"
+    - [ ] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
+    - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
 
 ## Phase 1
 - [x] Evaluate + organize what functionalities we have + the CRUD of each
