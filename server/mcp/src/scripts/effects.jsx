@@ -91,7 +91,7 @@ function getLayerEffects(args) {
             count: effects.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -137,7 +137,7 @@ function applyEffect(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -249,7 +249,7 @@ function applyEffectTemplate(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -295,7 +295,7 @@ function setEffectProperty(args) {
             layer: { name: layer.name, index: layer.index }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -332,6 +332,6 @@ function deleteEffect(args) {
             layer: { name: layer.name, index: layer.index }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }

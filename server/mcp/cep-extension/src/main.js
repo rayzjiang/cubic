@@ -108,7 +108,7 @@
       "    var __r = dispatchCommand(" + JSON.stringify(command) + ", eval(\"(\" + " + JSON.stringify(JSON.stringify(args)) + " + \")\"));\n" +
       "    return (typeof __r === \"string\") ? __r : JSON.stringify(__r);\n" +
       "  } catch(e) {\n" +
-      "    return JSON.stringify({ status: \"error\", message: e.toString(), line: e.line });\n" +
+      "    return JSON.stringify({ status: \"error\", errorCode: \"HANDLER_UNCAUGHT\", message: e.toString(), line: e.line, stack: (e.stack || null) });\n" +
       "  }\n" +
       "})();";
 

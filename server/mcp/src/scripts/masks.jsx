@@ -77,7 +77,7 @@ function getLayerMasks(args) {
             count: masks.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -151,7 +151,7 @@ function setLayerMask(args) {
             mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -188,6 +188,6 @@ function deleteLayerMask(args) {
             deleted: { name: deletedName, index: deletedIndex }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }

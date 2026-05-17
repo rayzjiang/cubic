@@ -19,7 +19,8 @@ Phase 5 (Post MVP stuff?)
     - [x] see "*missing mcp feat overview claude code chat"
         - [x] Impl + add testing for tier 1
         - [x] Impl + add testing for tier 2
-        - [x] Visually verify all tiers
+        - [x] Impl + add testing for tier 3
+        - [ ] Visually verify all tiers
     - [x] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [x] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility

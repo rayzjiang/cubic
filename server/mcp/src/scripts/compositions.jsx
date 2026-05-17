@@ -65,7 +65,7 @@ function getProjectInfo() {
 
         return JSON.stringify(result, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -96,7 +96,7 @@ function listCompositions() {
 
         return JSON.stringify(result, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -123,7 +123,7 @@ function createComposition(args) {
             composition: { name: newComp.name, id: newComp.id, itemIndex: itemIndex, width: newComp.width, height: newComp.height, pixelAspect: newComp.pixelAspect, duration: newComp.duration, frameRate: newComp.frameRate, bgColor: newComp.bgColor }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -156,7 +156,7 @@ function setCompositionProperties(args) {
             changedProperties: changed
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -185,7 +185,7 @@ function getCurrentTime(args) {
             duration: comp.duration
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -227,7 +227,71 @@ function setCurrentTime(args) {
             frameRate: comp.frameRate
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// R: saveFrameToPng — render a single frame to disk as PNG
+function saveFrameToPng(args) {
+    try {
+        var compName = args.compName || "";
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+        }
+        if (!comp) {
+            if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+            else { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No composition found with name '" + compName + "'"); }
+        }
+
+        var time = (typeof args.timeInSeconds === "number") ? args.timeInSeconds : comp.time;
+        if (time < 0 || time > comp.duration) {
+            throw _err(ERROR_CODES.TIME_OUT_OF_RANGE, "time " + time + "s is outside comp duration [0, " + comp.duration + "]");
+        }
+
+        if (!args.outputPath) {
+            var framesFolder = new Folder('~/.cubic/frames');
+            if (!framesFolder.exists) { framesFolder.create(); }
+            args.outputPath = framesFolder.fsName + '/frame_' + new Date().getTime() + '.png';
+        }
+        var file = new File(args.outputPath);
+
+        var parent = file.parent;
+        if (parent && !parent.exists) { parent.create(); }
+
+        // Pre-check write permission: open('w') returns false when AE scripting write access is disabled
+        var permTest = new File(file.parent.fsName + '/.cubic_write_test');
+        if (!permTest.open('w')) {
+            throw _err(ERROR_CODES.RENDER_FAILED,
+                "AE cannot write files — go to Preferences → Scripting & Expressions and enable 'Allow Scripts to Write Files and Access Network'");
+        }
+        permTest.close();
+        if (permTest.exists) { permTest.remove(); }
+
+        // Pre-check method availability (requires AE 17.0.1+)
+        if (typeof comp.saveFrameToPng !== 'function') {
+            throw _err(ERROR_CODES.RENDER_FAILED,
+                "comp.saveFrameToPng is not available (typeof: " + typeof comp.saveFrameToPng + ") — requires AE 17.0.1+");
+        }
+
+        comp.saveFrameToPng(time, file);
+
+        // Do not check file.exists here — ExtendScript's File stat is stale for paths written
+        // by AE's internal renderer. Trust the call if it didn't throw; Node verifies on its side.
+        var finalPath = file.fsName;
+
+        return JSON.stringify({
+            status: "success",
+            path: finalPath,
+            timeInSeconds: time,
+            frame: Math.round(time * comp.frameRate),
+            width: comp.width,
+            height: comp.height,
+            comp: { name: comp.name, frameRate: comp.frameRate, duration: comp.duration }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.RENDER_FAILED, message: error.toString() }, null, 2);
     }
 }
 
@@ -252,6 +316,6 @@ function deleteComposition(args) {
         comp.remove();
         return JSON.stringify({ status: "success", deleted: { name: name, id: id } }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }

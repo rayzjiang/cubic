@@ -80,7 +80,7 @@ function getLayerExpressions(args) {
             count: expressions.length
         }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }
 
@@ -143,7 +143,7 @@ function getLayerKeyframes(args) {
             count: keyframes.length
         }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }
 
@@ -206,7 +206,7 @@ function setLayerKeyframe(args) {
 
         return JSON.stringify({ status: "success", message: "Keyframe set for '" + args.propertyName + "' on layer '" + layer.name + "' at " + timeInSeconds + "s." });
     } catch (e) {
-        return JSON.stringify({ status: "error", message: "Error setting keyframe: " + e.toString() + " (Line: " + e.line + ")" });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: "Error setting keyframe: " + e.toString(), line: e.line });
     }
 }
 
@@ -249,7 +249,7 @@ function setLayerExpression(args) {
         var action = args.expressionString === "" ? "removed" : "set";
         return JSON.stringify({ status: "success", message: "Expression " + action + " for '" + args.propertyName + "' on layer '" + layer.name + "'." });
     } catch (e) {
-        return JSON.stringify({ status: "error", message: "Error setting expression: " + e.toString() + " (Line: " + e.line + ")" });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: "Error setting expression: " + e.toString(), line: e.line });
     }
 }
 
@@ -360,7 +360,7 @@ function setKeyframeEasing(args) {
             easeType: easeType
         });
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }
 
@@ -419,7 +419,7 @@ function getLayerProperty(args) {
 
         return JSON.stringify({ status: "success", property: propInfo }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }
 
@@ -458,6 +458,6 @@ function removePropertyKeyframes(args) {
         while (property.numKeys > 0) { property.removeKey(1); }
         return JSON.stringify({ status: "success", message: "Removed " + removed + " keyframe(s) from '" + args.propertyName + "'.", removed: removed });
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }

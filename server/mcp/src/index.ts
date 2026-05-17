@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { z } from "zod";
-import { bridge } from "./bridge/wsBridge.js";
+import { bridge, BridgeError } from "./bridge/wsBridge.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
@@ -12,6 +12,47 @@ const server = new McpServer({
 });
 
 const AE_MCP_PORT = parseInt(process.env.AE_MCP_PORT ?? "17923", 10);
+
+const FRAMES_DIR = path.join(os.homedir(), '.cubic', 'frames');
+function defaultFramePath(): string {
+  if (!fs.existsSync(FRAMES_DIR)) fs.mkdirSync(FRAMES_DIR, { recursive: true });
+  return path.join(FRAMES_DIR, `frame_${Date.now()}.png`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function dispatchTool(command: string, args: object, timeoutMs = 10000): Promise<any> {
+  try {
+    const raw = await bridge.sendCommand(command, args, timeoutMs);
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { return { content: [{ type: "text", text: raw }] }; }
+    if (parsed?.status === "error") {
+      return {
+        content: [{ type: "text", text: raw }],
+        isError: true,
+        structuredContent: {
+          ok: false,
+          errorCode: parsed.errorCode ?? "INTERNAL_ERROR",
+          message: parsed.message ?? "Unknown error",
+          command,
+          line: parsed.line,
+          stack: parsed.stack
+        }
+      };
+    }
+    return { content: [{ type: "text", text: raw }], structuredContent: { ok: true, command, result: parsed } };
+  } catch (e: any) {
+    return {
+      content: [{ type: "text", text: `Error: ${e?.message ?? String(e)}` }],
+      isError: true,
+      structuredContent: {
+        ok: false,
+        errorCode: (e instanceof BridgeError ? e.code : undefined) ?? "INTERNAL_ERROR",
+        message: e?.message ?? String(e),
+        command
+      }
+    };
+  }
+}
 
 
 // ============================================================
@@ -176,7 +217,8 @@ server.registerTool(
       "updateMarker",
       "removeMarker",
       "getProjectPath",
-      "saveProject"
+      "saveProject",
+      "saveFrameToPng"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -186,13 +228,8 @@ server.registerTool(
       };
     }
 
-    try {
-      const timeoutMs = script === "batch" ? 30000 : 10000;
-      const result = await bridge.sendCommand(script, parameters, timeoutMs);
-      return { content: [{ type: "text", text: result }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
-    }
+    const timeoutMs = script === "batch" ? 30000 : 10000;
+    return dispatchTool(script, parameters, timeoutMs);
   }
 );
 
@@ -263,14 +300,7 @@ gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glo
 server.registerTool(
   "runBridgeTest",
   { description: "Run the bridge test to verify MCP ↔ After Effects communication" },
-  async () => {
-    try {
-      const result = await bridge.sendCommand("getProjectInfo", {}, 10000);
-      return { content: [{ type: "text", text: result }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
-    }
-  }
+  async () => dispatchTool("getProjectInfo", {}, 10000)
 );
 
 server.registerTool(
@@ -638,6 +668,52 @@ server.registerTool(
 );
 
 
+server.registerTool(
+  "saveFrameToPng",
+  {
+    description: "Render a single frame of a composition to PNG and return the file path plus the image inline. The agent can 'see' the comp at a given time — use this to visually verify animations, check text positioning, or inspect any visual artifact. Defaults to the active comp at the current playhead time.",
+    inputSchema: {
+      compName: z.string().optional().describe("Name of the composition. Falls back to the active composition."),
+      timeInSeconds: z.number().nonnegative().optional().describe("Frame time in seconds. Defaults to the composition's current playhead time."),
+      outputPath: z.string().optional().describe("Absolute path for the PNG output. Defaults to ~/.cubic/frames/frame_<timestamp>.png.")
+    }
+  },
+  async (params) => {
+    const outputPath = params.outputPath ?? defaultFramePath();
+    try {
+      const result = await bridge.sendCommand("saveFrameToPng", { ...params, outputPath }, 30000);
+      const parsed = JSON.parse(result);
+      if (parsed.status === "error") {
+        return {
+          content: [{ type: "text", text: result }],
+          isError: true,
+          structuredContent: { ok: false, errorCode: parsed.errorCode ?? "RENDER_FAILED", message: parsed.message, command: "saveFrameToPng" }
+        };
+      }
+      const imgB64 = fs.readFileSync(parsed.path).toString("base64");
+      return {
+        content: [
+          { type: "text", text: result },
+          { type: "image", data: imgB64, mimeType: "image/png" }
+        ],
+        structuredContent: { ok: true, command: "saveFrameToPng", result: parsed }
+      };
+    } catch (e: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${e?.message ?? String(e)}` }],
+        isError: true,
+        structuredContent: {
+          ok: false,
+          errorCode: (e instanceof BridgeError ? e.code : undefined) ?? "RENDER_FAILED",
+          message: e?.message ?? String(e),
+          command: "saveFrameToPng"
+        }
+      };
+    }
+  }
+);
+
+
 // ============================================================
 // TOOLS — markers
 // ============================================================
@@ -983,14 +1059,7 @@ server.registerTool(
       timeInSeconds: z.number().optional().describe("If provided, also returns the interpolated value at this time (useful when the property has keyframes).")
     }
   },
-  async (parameters) => {
-    try {
-      const result = await bridge.sendCommand("getLayerProperty", parameters, 10000);
-      return { content: [{ type: "text", text: result }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `Error: ${String(e)}` }], isError: true };
-    }
-  }
+  async (parameters) => dispatchTool("getLayerProperty", parameters, 10000)
 );
 
 

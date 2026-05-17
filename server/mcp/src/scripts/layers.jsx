@@ -59,7 +59,7 @@ function getLayerInfo(args) {
 
         return JSON.stringify(result, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -68,7 +68,7 @@ function createTextLayer(args) {
     try {
         var compName = args.compName || "";
         var text = args.text || "Text Layer";
-        var position = args.position || [960, 540];
+        var position = args.position;
         var fontSize = args.fontSize || 72;
         var color = args.color || [1, 1, 1];
         var startTime = args.startTime || 0;
@@ -84,6 +84,7 @@ function createTextLayer(args) {
             if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
             else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
         }
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         var textLayer = comp.layers.addText(text);
         var textProp = textLayer.property("ADBE Text Properties").property("ADBE Text Document");
         var textDocument = textProp.value;
@@ -102,7 +103,7 @@ function createTextLayer(args) {
             layer: { name: textLayer.name, index: textLayer.index, type: "text", inPoint: textLayer.inPoint, outPoint: textLayer.outPoint, position: textLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -111,7 +112,7 @@ function createShapeLayer(args) {
     try {
         var compName = args.compName || "";
         var shapeType = args.shapeType || "rectangle";
-        var position = args.position || [960, 540];
+        var position = args.position;
         var size = args.size || [200, 200];
         var fillColor = args.fillColor || [1, 0, 0];
         var strokeColor = args.strokeColor || [0, 0, 0];
@@ -130,6 +131,7 @@ function createShapeLayer(args) {
             if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
             else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
         }
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         var shapeLayer = comp.layers.addShape();
         shapeLayer.name = name;
         var contents = shapeLayer.property("Contents");
@@ -167,7 +169,7 @@ function createShapeLayer(args) {
             layer: { name: shapeLayer.name, index: shapeLayer.index, type: "shape", shapeType: shapeType, inPoint: shapeLayer.inPoint, outPoint: shapeLayer.outPoint, position: shapeLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -177,7 +179,7 @@ function createSolidLayer(args) {
         var compName = args.compName || "";
         var color = args.color || [1, 1, 1];
         var name = args.name || "Solid Layer";
-        var position = args.position || [960, 540];
+        var position = args.position;
         var size = args.size;
         var startTime = args.startTime || 0;
         var duration = args.duration || 5;
@@ -192,6 +194,7 @@ function createSolidLayer(args) {
             else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
         }
         if (!size) { size = [comp.width, comp.height]; }
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         var solidLayer;
         if (isAdjustment) {
             solidLayer = comp.layers.addSolid([0, 0, 0], name, size[0], size[1], 1);
@@ -207,7 +210,7 @@ function createSolidLayer(args) {
             layer: { name: solidLayer.name, index: solidLayer.index, type: isAdjustment ? "adjustment" : "solid", inPoint: solidLayer.inPoint, outPoint: solidLayer.outPoint, position: solidLayer.property("Position").value, isAdjustment: solidLayer.adjustmentLayer }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -264,7 +267,7 @@ function createCamera(args) {
             layer: result
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -302,7 +305,7 @@ function createLightLayer(args) {
             layer: { name: lightLayer.name, index: lightLayer.index, type: "light", lightType: lightType, inPoint: lightLayer.inPoint, outPoint: lightLayer.outPoint, position: lightLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -335,7 +338,7 @@ function createNullLayer(args) {
             layer: { name: nullLayer.name, index: nullLayer.index, type: "null", threeDLayer: nullLayer.threeDLayer, inPoint: nullLayer.inPoint, outPoint: nullLayer.outPoint, position: nullLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -378,7 +381,7 @@ function duplicateLayer(args) {
             duplicate: { name: newLayer.name, index: newLayer.index }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -568,7 +571,7 @@ function setLayerProperties(args) {
             layer: returnLayerInfo
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -659,7 +662,7 @@ function batchSetLayerProperties(args) {
 
         return JSON.stringify({ status: "success", results: results }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -706,7 +709,7 @@ function moveLayer(args) {
         }
         return JSON.stringify({ status: "success", message: "Layer moved successfully." });
     } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() });
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
     }
 }
 
@@ -758,7 +761,7 @@ function setLayerParent(args) {
             layer: { name: layer.name, index: layer.index, parent: { name: parentLayer.name, index: parentLayer.index } }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -818,7 +821,7 @@ function getSelectedLayers(args) {
             count: layers.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -888,7 +891,7 @@ function precompose(args) {
             replacingLayer: placeholderLayer ? { index: placeholderLayer.index, name: placeholderLayer.name } : null
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -943,7 +946,7 @@ function setTrackMatte(args) {
             layer: { index: layer.index, name: layer.name, trackMatteType: matteType, matteLayerIndex: mattingLayer ? mattingLayer.index : null }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1014,7 +1017,7 @@ function addShapeOperator(args) {
             operator: { type: type, name: operator.name, matchName: matchNames[type], properties: opProps }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1052,7 +1055,7 @@ function setShapeOperatorProperty(args) {
             property: { name: prop.name, value: prop.value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1141,7 +1144,7 @@ function addTextAnimator(args) {
             }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1198,7 +1201,7 @@ function setTextAnimatorProperty(args) {
             property: { name: prop.name, value: prop.value }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1279,7 +1282,7 @@ function setTextAnimatorRangeSelector(args) {
             }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1312,7 +1315,7 @@ function splitLayer(args) {
             newLayer: { index: dup.index, name: dup.name, inPoint: dup.inPoint, outPoint: dup.outPoint }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1350,7 +1353,7 @@ function trimLayer(args) {
             layer: { index: layer.index, name: layer.name, startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1411,7 +1414,7 @@ function setSelectedLayers(args) {
             count: selectedLayers.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1463,7 +1466,7 @@ function centerAnchorPoint(args) {
             position: layer.property("Position").value
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -1505,6 +1508,6 @@ function deleteLayer(args) {
             deleted: { name: deletedName, index: deletedIndex }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }

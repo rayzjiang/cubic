@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor
+// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor, render, errors
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -29,6 +29,7 @@
 //   __MCP_TEST_playhead__      — playhead test comp (no visual residue after tests)
 //   __MCP_TEST_selection__     — 3 solid layers; no layers selected after final test
 //   __MCP_TEST_anchor__        — "Offset Shape" + "Offset Text": anchors centered on content bounding boxes
+//   __MCP_TEST_render__        — open ~/.cubic/frames/ in Finder: 3 PNG files rendered from a red solid comp
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
@@ -47,9 +48,13 @@ import * as playheadSuite     from './tests/playhead.mjs';
 import * as selectionSuite    from './tests/selection.mjs';
 import * as projectSuite      from './tests/project.mjs';
 import * as anchorSuite       from './tests/anchor.mjs';
+import * as renderSuite       from './tests/render.mjs';
+import * as errorsSuite       from './tests/errors.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
-import { unlinkSync, existsSync } from 'node:fs';
+import { unlinkSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 // ─── Args ─────────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,8 @@ const suites = [
   { name: 'selection',    mod: selectionSuite    },
   { name: 'project',      mod: projectSuite      },
   { name: 'anchor',       mod: anchorSuite       },
+  { name: 'render',       mod: renderSuite       },
+  { name: 'errors',       mod: errorsSuite       },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
@@ -148,6 +155,24 @@ async function cleanupTestComps() {
   } catch (_) {}
 }
 
+function cleanupRenderFrames(ctx) {
+  let removed = 0;
+  // Pass 1: paths tracked in ctx (catches default-path renders from this run)
+  for (const p of ctx.renderPaths ?? []) {
+    if (p && existsSync(p)) { try { unlinkSync(p); removed++; } catch (_) {} }
+  }
+  // Pass 2: scan ~/.cubic/frames/ for __MCP_TEST_* prefix — catches leaks from failed/prior runs
+  const dir = join(homedir(), '.cubic', 'frames');
+  if (existsSync(dir)) {
+    for (const f of readdirSync(dir)) {
+      if (f.startsWith('__MCP_TEST_')) {
+        try { unlinkSync(join(dir, f)); removed++; } catch (_) {}
+      }
+    }
+  }
+  if (removed > 0) console.log(`  Removed ${removed} render frame(s) from disk`);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -164,6 +189,7 @@ async function main() {
     console.log(bold('After Effects MCP — Cleanup'));
     console.log(yellow('Requires: After Effects open + MCP Bridge UXP panel active'));
     await cleanupTestComps();
+    cleanupRenderFrames({});
     await closeConnection();
     return;
   }
@@ -187,6 +213,7 @@ async function main() {
 
   if (opts.write && cleanup) {
     await cleanupTestComps();
+    cleanupRenderFrames(ctx);
   } else if (opts.write) {
     console.log(yellow('\n  Test comps left in project for visual inspection.'));
     console.log(dim('  Run with --cleanup or npm run test:clean to delete all test comps when done.'));

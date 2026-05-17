@@ -42,7 +42,7 @@ function listProjectItems(args) {
         }
         return JSON.stringify({ status: "success", items: items, count: items.length }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -73,7 +73,7 @@ function importFootage(args) {
             }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -131,7 +131,7 @@ function addFootageToComp(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -156,7 +156,7 @@ function deleteProjectItem(args) {
         item.remove();
         return JSON.stringify({ status: "success", deleted: { name: name, id: id } }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 

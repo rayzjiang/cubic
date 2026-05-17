@@ -53,7 +53,7 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 **Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
 ```
 compositions.jsx  ← getProjectInfo, listCompositions, createComposition, setCompositionProperties,
-                     deleteComposition, getCurrentTime, setCurrentTime
+                     deleteComposition, getCurrentTime, setCurrentTime, saveFrameToPng
 layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createTextLayer, createShapeLayer,
                      createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer,
                      setLayerProperties, batchSetLayerProperties, splitLayer, trimLayer, setLayerParent,
@@ -65,7 +65,7 @@ effects.jsx       ← getLayerEffects, applyEffect, applyEffectTemplate, setEffe
 footage.jsx       ← listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
 project.jsx       ← getProjectPath, saveProject
-mcp-bridge.jsx    ← JSON polyfill + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
+mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
 ```
 
 ## Adding a new command
@@ -86,6 +86,12 @@ Read-only allowlist: `getProjectInfo`, `listCompositions`, `getLayerInfo`, `getL
 **No programmatic undo.** AE gates `app.executeCommand(Undo)` from CEP's evalScript context — every approach (top-level, `scheduleTask`, `BridgeTalk`, `findMenuCommandId`-by-dynamic-label) no-ops. Rollback is handled via **inverse-CRUD**: each `create*` has a matching `delete*`, each `set*` can be replayed with prior values captured via the matching `get*`. The user's own ⌘Z still works because every mutation is wrapped in `beginUndoGroup`. Agents wanting "one ⌘Z reverts the whole turn" should emit their mutations through `batch`, which wraps the entire loop in one outer group.
 
 Deferred: autosave before run (Phase 2/3), session-level undo group via `batch` (Phase 2), undo history panel (Phase 4).
+
+## Structured errors (Tier 3)
+All handler `catch` blocks now return `{ status:"error", errorCode, message, line }`. `errorCode` is one of: `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`. The Node bridge uses `BridgeError` (with `.code`) for transport-level errors. `dispatchTool()` in `src/index.ts` parses handler responses and sets MCP `isError:true` + `structuredContent` when `status:"error"` is detected.
+
+## saveFrameToPng
+`comp.saveFrameToPng(time, file)` — renders a single frame. Default output: `~/.cubic/frames/frame_<ts>.png` (persistent; Phase 3 can diff across turns). Returns text JSON + inline base64 PNG. Timeout 30s (rendering is slow). AE setting required: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**.
 
 ## Critical ExtendScript quirks
 **Array values arrive as strings:** `[0, 0]` arrives as `"[0, 0]"` — use `eval("(" + value + ")")` to parse.

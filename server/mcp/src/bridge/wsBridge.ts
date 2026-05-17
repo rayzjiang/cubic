@@ -3,6 +3,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+export class BridgeError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'BridgeError';
+  }
+}
+
 interface PendingCommand {
   resolve: (value: string) => void;
   reject: (reason: Error) => void;
@@ -75,7 +84,7 @@ class AEBridge {
             this.lastResult = msg.result ?? '';
             pending.resolve(msg.result ?? '');
           } else {
-            pending.reject(new Error(msg.error ?? 'Unknown error from AE'));
+            pending.reject(new BridgeError('AE_HANDLER_ERROR', msg.error ?? 'Unknown error from AE'));
           }
         } else if (msg.command !== undefined) {
           // Command from an external caller (e.g. test helper or direct WS client)
@@ -89,7 +98,7 @@ class AEBridge {
           this.emit('disconnect');
           for (const [, pending] of this.pending) {
             clearTimeout(pending.timer);
-            pending.reject(new Error('AE plugin disconnected'));
+            pending.reject(new BridgeError('AE_DISCONNECTED', 'AE plugin disconnected'));
           }
           this.pending.clear();
         }
@@ -114,7 +123,7 @@ class AEBridge {
       const id = crypto.randomUUID();
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Command "${command}" timed out after ${timeoutMs}ms — AE may be busy`));
+        reject(new BridgeError('TIMEOUT', `Command "${command}" timed out after ${timeoutMs}ms — AE may be busy`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.workerClient!.send(JSON.stringify({ id, command, args }));
@@ -128,8 +137,9 @@ class AEBridge {
       const timer = setTimeout(() => {
         if (!done) {
           done = true;
-          reject(new Error(
-            'AE UXP plugin not connected — open the MCP Bridge panel in After Effects'
+          reject(new BridgeError(
+            'AE_NOT_CONNECTED',
+            'AE plugin not connected — open the MCP Bridge panel in After Effects'
           ));
         }
       }, ms);

@@ -55,6 +55,30 @@ if (typeof JSON.stringify !== "function") {
 
 
 // ============================================================
+// ERROR CODES
+// ============================================================
+
+var ERROR_CODES = {
+    COMP_NOT_FOUND:     "COMP_NOT_FOUND",
+    LAYER_NOT_FOUND:    "LAYER_NOT_FOUND",
+    LAYER_INDEX_OOB:    "LAYER_INDEX_OOB",
+    PROPERTY_NOT_FOUND: "PROPERTY_NOT_FOUND",
+    INVALID_ARGS:       "INVALID_ARGS",
+    TIME_OUT_OF_RANGE:  "TIME_OUT_OF_RANGE",
+    RENDER_FAILED:      "RENDER_FAILED",
+    UNKNOWN_COMMAND:    "UNKNOWN_COMMAND",
+    HANDLER_UNCAUGHT:   "HANDLER_UNCAUGHT",
+    INTERNAL_ERROR:     "INTERNAL_ERROR"
+};
+
+function _err(code, message) {
+    var e = new Error(message);
+    e.code = code;
+    return e;
+}
+
+
+// ============================================================
 // SHARED HELPERS
 // ============================================================
 
@@ -68,20 +92,20 @@ function _resolveCompAndLayer(args) {
         if (item instanceof CompItem && item.name === compName) { comp = item; break; }
     }
     if (!comp) {
-        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+        if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        else { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No composition found with name '" + compName + "'"); }
     }
     var layerIndex = args.layerIndex;
     var layer = null;
     if (layerIndex !== undefined && layerIndex !== null) {
         if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-        else { throw new Error("Layer index out of bounds: " + layerIndex); }
+        else { throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + layerIndex); }
     } else if (args.layerName) {
         for (var j = 1; j <= comp.numLayers; j++) {
             if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
         }
     }
-    if (!layer) { throw new Error("Layer not found: " + (args.layerName || "index " + layerIndex)); }
+    if (!layer) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Layer not found: " + (args.layerName || "index " + layerIndex)); }
     return { comp: comp, layer: layer };
 }
 
@@ -89,7 +113,7 @@ function _resolveCompAndLayer(args) {
 // Throws with path context on missing step.
 function _resolvePropertyByPath(layer, propertyPath) {
     if (!propertyPath || propertyPath.length === 0) {
-        throw new Error("propertyPath must be a non-empty array.");
+        throw _err(ERROR_CODES.INVALID_ARGS, "propertyPath must be a non-empty array.");
     }
     // AE's UI flattens certain container groups; transparent fallback matches UI-level paths.
     var IMPLICIT_CONTAINERS = ["Contents", "ADBE Text Animator Properties", "ADBE Text Selectors"];
@@ -110,7 +134,7 @@ function _resolvePropertyByPath(layer, propertyPath) {
             }
         }
         if (!next) {
-            throw new Error("Property path not found at '" + step + "' (path so far: " + propertyPath.slice(0, i + 1).join(" > ") + ")");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property path not found at '" + step + "' (path so far: " + propertyPath.slice(0, i + 1).join(" > ") + ")");
         }
         current = next;
     }
@@ -156,6 +180,7 @@ function _dispatchSwitch(command, args) {
         case "deleteComposition":        return deleteComposition(args);
         case "getCurrentTime":           return getCurrentTime(args);
         case "setCurrentTime":           return setCurrentTime(args);
+        case "saveFrameToPng":           return saveFrameToPng(args);
         // layers.jsx
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
@@ -217,7 +242,7 @@ function _dispatchSwitch(command, args) {
         case "deleteUnusedSolids":       return deleteUnusedSolids();
         // mcp-bridge.jsx
         case "batch":                    return batch(args);
-        default:                         return JSON.stringify({ status: "error", message: "Unknown command: " + command });
+        default:                         return JSON.stringify({ status: "error", errorCode: ERROR_CODES.UNKNOWN_COMMAND, message: "Unknown command: " + command });
     }
 }
 
@@ -226,10 +251,10 @@ function batch(args) {
     var commands = args.commands;
 
     if (!commands) {
-        return JSON.stringify({ status: "error", message: "Missing 'commands' array." });
+        return JSON.stringify({ status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "Missing 'commands' array." });
     }
     if (typeof commands.length === "undefined") {
-        return JSON.stringify({ status: "error", message: "'commands' must be an array." });
+        return JSON.stringify({ status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "'commands' must be an array." });
     }
     if (commands.length === 0) {
         return JSON.stringify({ status: "success", message: "Empty batch.", total: 0, executed: 0, succeeded: 0, failed: 0, results: [] });
@@ -253,7 +278,7 @@ function batch(args) {
         var entry = commands[i];
 
         if (!entry || typeof entry.command !== "string" || entry.command === "") {
-            var errEntry = { index: i, command: null, success: false, status: "error", message: "Missing or invalid 'command' field." };
+            var errEntry = { index: i, command: null, success: false, status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "Missing or invalid 'command' field." };
             results.push(errEntry);
             failed++;
             if (stopOnError) break;
@@ -262,7 +287,7 @@ function batch(args) {
 
         // Block nested batch to prevent infinite recursion
         if (entry.command === "batch") {
-            var nestedErr = { index: i, command: "batch", success: false, status: "error", message: "Nested batch commands are not supported." };
+            var nestedErr = { index: i, command: "batch", success: false, status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "Nested batch commands are not supported." };
             results.push(nestedErr);
             failed++;
             if (stopOnError) break;
@@ -275,7 +300,7 @@ function batch(args) {
         try {
             resultStr = dispatchCommand(entry.command, cmdArgs);
         } catch (e) {
-            resultStr = JSON.stringify({ status: "error", message: "Uncaught error: " + e.toString() });
+            resultStr = JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.HANDLER_UNCAUGHT, message: "Uncaught error: " + e.toString() });
         }
 
         try {

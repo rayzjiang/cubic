@@ -102,13 +102,17 @@ function addMarker(args) {
             marker: _markerToObj(markerProp, newKeyIndex)
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // R: listMarkers
 function listMarkers(args) {
     try {
+        // No compName + no active comp → return empty gracefully (read-only, safe to soft-fail)
+        if (!args.compName && !(app.project.activeItem instanceof CompItem)) {
+            return JSON.stringify({ status: "success", target: "comp", count: 0, markers: [], message: "No active composition" }, null, 2);
+        }
         var resolved = _resolveMarkerProp(args);
         var markerProp = resolved.markerProp;
 
@@ -124,7 +128,7 @@ function listMarkers(args) {
             markers: markers
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -154,7 +158,7 @@ function updateMarker(args) {
             marker: _markerToObj(markerProp, keyIndex)
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -186,6 +190,6 @@ function removeMarker(args) {
             removedAt: markerTime
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
     }
 }
