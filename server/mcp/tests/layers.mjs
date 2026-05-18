@@ -20,6 +20,8 @@
 //   setLayerParent         (U  — parents text layer to null layer)
 //   setTrackMatte          (U  — alpha/luma/none, adjacent + explicit matteLayerIndex)
 //   precompose             (C  — groups layers into nested sub-comp)
+//   mergeLayer             (U  — rejoins two contiguous same-source halves from splitLayer)
+//   decomposeLayer         (U  — lifts inner layers from a precomp back into the parent comp)
 //   deleteLayer            (D  — removes layer, returns name + index)
 //
 // Missing: none — full CRUD covered.
@@ -691,5 +693,112 @@ export async function run(ctx, opts) {
     assertIncludes(r.layer, 'changedProperties', 'label', 'comment');
     // Reset
     await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, label: 0, comment: '' });
+  });
+
+  // ── mergeLayer ────────────────────────────────────────────────────────────
+
+  await test('mergeLayer — split a solid then rejoin; merged outPoint equals original', async () => {
+    // Create a fresh solid spanning the full comp (default duration=5 would make split at 5 fail)
+    const sc = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Test Solid', color: [0.5, 0.5, 0.5], duration: 10
+    });
+    assertNoError(sc);
+    const solidIdx = sc.layer.index; // just added, sits at index 1
+
+    // Split at 5s (comp is 10s)
+    const split = await send('splitLayer', {
+      compName: COMP_NAME, layerIndex: solidIdx, time: 5
+    });
+    assertNoError(split);
+    assertField(split, 'original', 'object');
+    assertField(split, 'newLayer', 'object');
+    const leftIdx  = split.original.index;
+    const rightIdx = split.newLayer.index;
+    const origOut  = split.newLayer.outPoint;
+
+    // Merge the two halves back
+    const r = await send('mergeLayer', {
+      compName: COMP_NAME, layerIndex: leftIdx, mergeWithIndex: rightIdx
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r, 'removed', 'object');
+    assertField(r.removed, 'name', 'string');
+    assertField(r.removed, 'index', 'number');
+    if (Math.abs(r.layer.outPoint - origOut) > 0.001) {
+      throw new Error(`merged outPoint ${r.layer.outPoint} != expected ${origOut}`);
+    }
+    return `merged; outPoint=${r.layer.outPoint}s`;
+  });
+
+  await test('mergeLayer — mismatched sources returns INVALID_ARGS', async () => {
+    // Two unrelated layers cannot be merged
+    const a = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Err A', color: [1, 0, 0]
+    });
+    const b = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Err B', color: [0, 0, 1]
+    });
+    assertNoError(a); assertNoError(b);
+    const r = await send('mergeLayer', {
+      compName: COMP_NAME, layerIndex: b.layer.index, mergeWithIndex: a.layer.index
+    });
+    assertValue(r, 'status', 'error');
+    if (r.errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
+  });
+
+  // ── decomposeLayer ────────────────────────────────────────────────────────
+
+  await test('decomposeLayer — lifts inner layers into parent, removes precomp item', async () => {
+    // Create two layers to precompose
+    const r1 = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [1, 0.5, 0], name: 'DC Inner A'
+    });
+    assertNoError(r1);
+    const r2 = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [0, 0.5, 1], name: 'DC Inner B'
+    });
+    assertNoError(r2);
+
+    const idxA = r2.layer.index; // last added = 1
+    const idxB = r1.layer.index; // previous    = 2
+
+    const pc = await send('precompose', {
+      compName: COMP_NAME,
+      layerIndices: [idxA, idxB],
+      newCompName: '__MCP_TEST_decompose__',
+      moveAttributes: true
+    });
+    assertNoError(pc);
+    assertField(pc, 'replacingLayer', 'object');
+    const precompLayerIdx = pc.replacingLayer.index;
+
+    // Decompose
+    const r = await send('decomposeLayer', {
+      compName: COMP_NAME, layerIndex: precompLayerIdx
+    });
+    assertNoError(r);
+    assertArray(r, 'unwrappedLayers');
+    assertField(r, 'removedPrecomp', 'object');
+    assertField(r.removedPrecomp, 'name', 'string');
+    if (r.unwrappedLayers.length < 1) throw new Error('expected at least 1 unwrapped layer');
+    // Precomp must no longer appear in listCompositions
+    const list = await send('listCompositions');
+    const stillExists = (list.compositions ?? []).some(c => c.name === '__MCP_TEST_decompose__');
+    if (stillExists) throw new Error('precomp item was not removed after decompose');
+    return `unwrapped ${r.unwrappedLayers.length} layer(s)`;
+  });
+
+  await test('decomposeLayer — non-precomp layer returns INVALID_ARGS', async () => {
+    // A regular solid is not a precomp instance
+    const s = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', color: [0.2, 0.2, 0.2], name: 'DC Not A Precomp'
+    });
+    assertNoError(s);
+    const r = await send('decomposeLayer', {
+      compName: COMP_NAME, layerIndex: s.layer.index
+    });
+    assertValue(r, 'status', 'error');
+    if (r.errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
   });
 }

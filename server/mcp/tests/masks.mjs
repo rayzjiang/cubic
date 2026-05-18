@@ -5,15 +5,11 @@
 //                         feather, opacity, expansion)
 //   setLayerMask    (C  — new mask via maskRect with feather + opacity + name)
 //   setLayerMask    (C  — new mask via maskPath, triangle shape)
+//   setLayerMask    (C  — new mask via maskPath with closed=false, open path)
 //   setLayerMask    (U  — modify existing mask by maskIndex)
 //   deleteLayerMask (D  — remove mask by name, confirmed by count drop)
 //
 // Missing: none — full CRUD covered.
-//
-// Visual verification (after --write, open __MCP_TEST_masks__ in After Effects):
-//   Select the blue solid layer and open the Masks panel (Layer > Mask).
-//   Should show exactly 1 remaining mask: "Test Rect Mask" (add mode, expanded 5px).
-//   "Test Path Mask" (triangle) should be gone — it was deleted by the final test.
 
 import {
   test, send,
@@ -153,5 +149,25 @@ export async function run(ctx, opts) {
     assertNoError(check);
     if (check.count !== 1) throw new Error(`expected 1 mask remaining, got ${check.count}`);
     return `deleted "${r.deleted.name}", ${check.count} mask remaining`;
+  });
+
+  await test('setLayerMask — open path (closed=false) stored and returned by getLayerMasks', async () => {
+    const r = await send('setLayerMask', {
+      compName: COMP_NAME,
+      layerIndex: li,
+      maskPath: [[50, 300], [300, 300], [200, 500]],
+      closed: false,
+      maskMode: 'add',
+      maskName: 'Test Open Mask'
+    });
+    assertNoError(r);
+    assertField(r, 'mask', 'object');
+
+    const check = await send('getLayerMasks', { compName: COMP_NAME, layerIndex: li });
+    assertNoError(check);
+    const m = check.masks.find(m => m.name === 'Test Open Mask');
+    if (!m) throw new Error('Test Open Mask not found in getLayerMasks');
+    if (m.closed !== false) throw new Error(`expected closed=false, got ${m.closed}`);
+    return `closed=${m.closed}`;
   });
 }
