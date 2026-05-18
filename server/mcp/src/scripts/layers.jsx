@@ -1041,19 +1041,31 @@ function decomposeLayer(args) {
         var precompName = precompLayer.name;
         var precompId   = innerComp.id;
 
-        // Copy each inner layer into the parent comp; each copy lands at index 1.
-        // Collect references, then re-stack them above the precomp layer in original order.
+        // Copy inner layers top→bottom. AE's copyToComp does NOT always land the new layer at
+        // index 1 — empirically it places copies at the same index they had inside the precomp,
+        // so parentComp.layer(1) would keep returning the first-copied layer. Snapshot existing
+        // layer refs, copy, then find the one ref not in the snapshot. Move it immediately above
+        // the precomp so each subsequent copy has a known anchor; final order = inner order.
         var copied = [];
         var innerCount = innerComp.numLayers;
         for (var i = 1; i <= innerCount; i++) {
+            var pre = [];
+            for (var pj = 1; pj <= parentComp.numLayers; pj++) { pre.push(parentComp.layer(pj)); }
             innerComp.layer(i).copyToComp(parentComp);
-            copied.push(parentComp.layer(1));
-        }
-
-        // Move copied layers to land directly above the precomp layer, preserving inner order.
-        // copied[0] = was innerComp.layer(1) (top of precomp) — should be the topmost unwrapped layer.
-        for (var c = copied.length - 1; c >= 0; c--) {
-            copied[c].moveBefore(precompLayer);
+            var newLayer = null;
+            for (var nj = 1; nj <= parentComp.numLayers; nj++) {
+                var candidate = parentComp.layer(nj);
+                var seen = false;
+                for (var pk = 0; pk < pre.length; pk++) {
+                    if (pre[pk] === candidate) { seen = true; break; }
+                }
+                if (!seen) { newLayer = candidate; break; }
+            }
+            if (!newLayer) {
+                throw _err(ERROR_CODES.INTERNAL_ERROR, "Failed to locate newly copied layer for inner index " + i);
+            }
+            newLayer.moveBefore(precompLayer);
+            copied.push(newLayer);
         }
 
         // Delete the precomp layer and the now-unused precomp item.
