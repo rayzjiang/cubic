@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor, render, errors
+// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor, render, errors, propertyPaths
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -30,6 +30,7 @@
 //   __MCP_TEST_selection__     — 3 solid layers; no layers selected after final test
 //   __MCP_TEST_anchor__        — "Offset Shape" + "Offset Text": anchors centered on content bounding boxes
 //   __MCP_TEST_render__        — open ~/.cubic/frames/ in Finder: 3 PNG files rendered from a red solid comp
+//   __MCP_TEST_property_paths__ — "Path Shape": Fill=green; "Path Camera": Zoom=2000; "Path Solid" Drop Shadow Opacity=60
 //
 // Run --cleanup or npm run test:clean when done. Deletes comps + orphaned solid footage items.
 
@@ -49,7 +50,8 @@ import * as selectionSuite    from './tests/selection.mjs';
 import * as projectSuite      from './tests/project.mjs';
 import * as anchorSuite       from './tests/anchor.mjs';
 import * as renderSuite       from './tests/render.mjs';
-import * as errorsSuite       from './tests/errors.mjs';
+import * as errorsSuite        from './tests/errors.mjs';
+import * as propertyPathsSuite from './tests/property-paths.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
 import { unlinkSync, existsSync, readdirSync } from 'node:fs';
@@ -83,7 +85,8 @@ const suites = [
   { name: 'project',      mod: projectSuite      },
   { name: 'anchor',       mod: anchorSuite       },
   { name: 'render',       mod: renderSuite       },
-  { name: 'errors',       mod: errorsSuite       },
+  { name: 'errors',         mod: errorsSuite        },
+  { name: 'propertyPaths',  mod: propertyPathsSuite },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────

@@ -12,7 +12,9 @@
 //   createNullLayer        (C)
 //   createLayer            (C  — unified dispatcher: all 7 types including adjustment)
 //   duplicateLayer         (C)
-//   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array)
+//   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array;
+//                                Tier 4: blendMode, threeDLayer, motionBlur, collapseTransformation,
+//                                shy, solo, quality, autoOrient, label, comment)
 //   batchSetLayerProperties (U — multiple layers in one call)
 //   moveLayer              (U  — reorders layer stack by name)
 //   setLayerParent         (U  — parents text layer to null layer)
@@ -528,5 +530,92 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'invalid'
     });
     assertValue(r, 'status', 'error');
+  });
+
+  // ── Tier 4 — layer toggles + smoke-verify wired flags ────────────────────
+
+  // blendMode already wired — verify explicitly
+  await test('setLayerProperties — blendMode: multiply smoke test', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, blendMode: 'multiply'
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'blendMode');
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, blendMode: 'normal' });
+  });
+
+  // threeDLayer already wired — verify explicitly
+  await test('setLayerProperties — threeDLayer toggle smoke test', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, threeDLayer: true
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'threeDLayer');
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, threeDLayer: false });
+  });
+
+  // New Tier 4 toggles
+  await test('setLayerProperties — motionBlur toggle', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, motionBlur: true
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'motionBlur');
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, motionBlur: false });
+  });
+
+  await test('setLayerProperties — collapseTransformation toggle', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, collapseTransformation: true
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'collapseTransformation');
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, collapseTransformation: false });
+  });
+
+  await test('setLayerProperties — shy + solo toggles', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, shy: true, solo: true
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'shy', 'solo');
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, shy: false, solo: false });
+  });
+
+  await test('setLayerProperties — quality: wireframe then back to best', async () => {
+    const rWire = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, quality: 'wireframe'
+    });
+    assertNoError(rWire);
+    assertIncludes(rWire.layer, 'changedProperties', 'quality');
+    const rBest = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, quality: 'best'
+    });
+    assertNoError(rBest);
+    assertIncludes(rBest.layer, 'changedProperties', 'quality');
+  });
+
+  await test('setLayerProperties — autoOrient: alongPath then off', async () => {
+    const rOn = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, autoOrient: 'alongPath'
+    });
+    assertNoError(rOn);
+    assertIncludes(rOn.layer, 'changedProperties', 'autoOrient');
+    const rOff = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, autoOrient: 'off'
+    });
+    assertNoError(rOff);
+    assertIncludes(rOff.layer, 'changedProperties', 'autoOrient');
+  });
+
+  await test('setLayerProperties — label + comment roundtrip', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex,
+      label: 5, comment: 'tier4-test'
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'label', 'comment');
+    // Reset
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, label: 0, comment: '' });
   });
 }

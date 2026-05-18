@@ -206,6 +206,7 @@ server.registerTool(
       "setTextAnimatorProperty",
       "setTextAnimatorRangeSelector",
       "getLayerProperty",
+      "setLayerProperty",
       "splitLayer",
       "trimLayer",
       "setSelectedLayers",
@@ -265,9 +266,9 @@ server.registerTool(
 **Layer time ops:** splitLayer, trimLayer (inPoint/outPoint/startTime/mode)
 **Anchor:** centerAnchorPoint (move anchor to content center, position-compensated)
 **Nesting / Mattes:** precompose, setTrackMatte
-**Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners), setShapeOperatorProperty
+**Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners|gradientFill|gradientStroke), setShapeOperatorProperty
 **Text Animators:** addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
-**Property Reads:** getLayerProperty (path-based — read any property before mutating)
+**Property Reads/Writes:** getLayerProperty, setLayerProperty (path-based — address any nested property, e.g. ['Contents','Group 1','Stroke 1','Color'])
 **Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression
 **Masks:** getLayerMasks, setLayerMask, deleteLayerMask
@@ -945,7 +946,7 @@ server.registerTool(
     description: "Add a shape operator (Trim Paths, Repeater, or Rounded Corners) to a shape layer's vector group. Use `type` to select which operator.",
     inputSchema: {
       ...LayerIdentifierSchema,
-      type: z.enum(["trimPaths", "repeater", "roundedCorners"]).describe("Shape operator to add."),
+      type: z.enum(["trimPaths", "repeater", "roundedCorners", "gradientFill", "gradientStroke"]).describe("Shape operator to add. gradientFill/gradientStroke support Type (1=linear, 2=radial), 'Start Point', 'End Point', Opacity, 'Highlight Length', 'Highlight Angle' via settings. Color stops must be set via the AE UI or setLayerProperty."),
       groupPath: z.array(z.string()).optional().describe("Path into the shape Contents to reach the target group (e.g. ['Contents', 'Group 1']). Defaults to the first group in Contents."),
       settings: z.record(z.string(), z.unknown()).optional().describe("Initial property values to set on the operator (e.g. { Start: 0, End: 50 } for trimPaths, { Copies: 5 } for repeater, { Radius: 20 } for roundedCorners).")
     }
@@ -1060,6 +1061,58 @@ server.registerTool(
     }
   },
   async (parameters) => dispatchTool("getLayerProperty", parameters, 10000)
+);
+
+server.registerTool(
+  "setLayerProperty",
+  {
+    description: "Set the value of any layer property by path — including deeply nested ones (shape contents, effect sub-groups, camera/light options, text animator props). Mirror of getLayerProperty. Refuses paths that already have keyframes — use setLayerKeyframe for animated properties. For flat layer toggles and transforms use setLayerProperties instead.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      propertyPath: z.array(z.string()).describe("Path to the property as an array of names, e.g. ['Contents', 'Group 1', 'Stroke 1', 'Color'], ['Camera Options', 'Zoom'], or ['Effects', 'Drop Shadow', 'Opacity']."),
+      value: z.unknown().describe("New value for the property. Arrays may be passed as JSON strings and will be parsed automatically.")
+    }
+  },
+  async (parameters) => dispatchTool("setLayerProperty", parameters, 10000)
+);
+
+server.registerTool(
+  "setLayerProperties",
+  {
+    description: "Set multiple non-keyframed properties on a layer in one call — transforms, layer toggles, text content. For arbitrary nested path addressing use setLayerProperty instead.",
+    inputSchema: {
+      ...LayerIdentifierSchema,
+      position: z.array(z.number()).optional().describe("[x, y] or [x, y, z]. Rejected if the property already has keyframes."),
+      scale: z.array(z.number()).optional().describe("[x, y, z] in percent (e.g. [100, 100, 100])."),
+      rotation: z.number().optional().describe("Rotation in degrees (Z Rotation for 3D layers)."),
+      opacity: z.number().optional().describe("Opacity 0–100."),
+      startTime: z.number().optional().describe("Layer in-point / start time in seconds."),
+      duration: z.number().positive().optional().describe("Layer duration in seconds (sets outPoint = startTime + duration)."),
+      enabled: z.boolean().optional().describe("Show/hide the layer (eye toggle)."),
+      selected: z.boolean().optional().describe("Select/deselect the layer in the timeline."),
+      blendMode: z.enum([
+        "normal","add","multiply","screen","overlay","softLight","hardLight",
+        "colorDodge","colorBurn","darken","lighten","difference","exclusion",
+        "hue","saturation","color","luminosity"
+      ]).optional().describe("Blending mode."),
+      trackMatteType: z.enum(["none","alpha","alphaInverted","luma","lumaInverted"]).optional().describe("Track matte type."),
+      threeDLayer: z.boolean().optional().describe("Enable/disable 3D layer."),
+      motionBlur: z.boolean().optional().describe("Enable/disable motion blur on this layer."),
+      collapseTransformation: z.boolean().optional().describe("Enable collapse transformation (continuous rasterize for vector/text layers)."),
+      shy: z.boolean().optional().describe("Toggle shy flag (hides layer when comp's Hide Shy Layers is on)."),
+      solo: z.boolean().optional().describe("Solo the layer."),
+      guideLayer: z.boolean().optional().describe("Mark layer as a guide layer."),
+      quality: z.enum(["best","draft","wireframe"]).optional().describe("Render quality for this layer."),
+      autoOrient: z.enum(["off","alongPath","cameraOrPOI","charactersTowardsCamera"]).optional().describe("Auto-orientation mode. Use 'alongPath' for motion-path following."),
+      label: z.number().int().min(0).max(16).optional().describe("Color label index (0=none, 1–16 match AE label colors)."),
+      comment: z.string().optional().describe("Layer comment string (visible in Comments column)."),
+      text: z.string().optional().describe("(text layer) New text content."),
+      fontFamily: z.string().optional().describe("(text layer) Font family name."),
+      fontSize: z.number().positive().optional().describe("(text layer) Font size in pixels."),
+      fillColor: z.array(z.number()).optional().describe("(text layer) Fill color [r, g, b] 0–1.")
+    }
+  },
+  async (parameters) => dispatchTool("setLayerProperties", parameters, 10000)
 );
 
 

@@ -17,14 +17,19 @@ Phase 5 (Post MVP stuff?)
     - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
 - [ ] Finish MCP functionality - Identify potential missing functionality that I would need for my product
     - [x] see "*missing mcp feat overview claude code chat"
-        - [x] Impl + add testing for tier 1
-        - [x] Impl + add testing for tier 2
-        - [x] Impl + add testing for tier 3
-        - [ ] Visually verify all tiers
+        - [x] Impl + add testing for tier 1 — motion vocabulary blockers
+            - precompose, adjustment layer, track matte, Trim Paths operator, Repeater + Rounded Corners, text animators (per-character), getLayerProperty (read any nested prop)
+        - [x] Impl + add testing for tier 2 — workflow primitives
+            - splitLayer, trimLayer, markers (comp + layer), getCurrentTime/setCurrentTime, setSelectedLayers, saveProject/getProjectPath, centerAnchorPoint
+        - [x] Impl + add testing for tier 3 — Phase 3 self-healing enablers
+            - saveFrameToPng (vision-in-the-loop), structured error channel ({ errorCode, message, line } + dispatchTool MCP surface)
+        - [x] Impl + add testing for tier 4 — fills, modes, depth
+            - gradientFill/gradientStroke operators, setLayerProperty (generic path setter mirroring getLayerProperty), layer toggles: motionBlur, collapseTransformation, shy, solo, guideLayer, quality, autoOrient, label, comment
+        - [x] Visually verify all tiers
     - [x] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [x] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
     - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
-- [ ] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**
+- [x] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
 
 ## Phase 1

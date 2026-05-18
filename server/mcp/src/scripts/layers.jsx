@@ -524,6 +524,41 @@ function setLayerProperties(args) {
         // --- General Property Handling ---
         var threeDLayer = args.threeDLayer;
         if (threeDLayer !== undefined && threeDLayer !== null) { layer.threeDLayer = !!threeDLayer; changedProperties.push("threeDLayer"); }
+
+        // --- Layer Toggles (Tier 4) ---
+        var motionBlur = args.motionBlur;
+        if (motionBlur !== undefined && motionBlur !== null) { layer.motionBlur = !!motionBlur; changedProperties.push("motionBlur"); }
+
+        var collapseTransformation = args.collapseTransformation;
+        if (collapseTransformation !== undefined && collapseTransformation !== null) { layer.collapseTransformation = !!collapseTransformation; changedProperties.push("collapseTransformation"); }
+
+        var shy = args.shy;
+        if (shy !== undefined && shy !== null) { layer.shy = !!shy; changedProperties.push("shy"); }
+
+        var solo = args.solo;
+        if (solo !== undefined && solo !== null) { layer.solo = !!solo; changedProperties.push("solo"); }
+
+        var guideLayer = args.guideLayer;
+        if (guideLayer !== undefined && guideLayer !== null) { layer.guideLayer = !!guideLayer; changedProperties.push("guideLayer"); }
+
+        var quality = args.quality;
+        if (quality !== undefined && quality !== null) {
+            var qualityMap = { "best": LayerQuality.BEST, "draft": LayerQuality.DRAFT, "wireframe": LayerQuality.WIREFRAME };
+            if (qualityMap[quality] !== undefined) { layer.quality = qualityMap[quality]; changedProperties.push("quality"); }
+        }
+
+        var autoOrient = args.autoOrient;
+        if (autoOrient !== undefined && autoOrient !== null) {
+            var orientMap = { "off": AutoOrientType.NO_AUTO_ORIENT, "alongPath": AutoOrientType.ALONG_PATH, "cameraOrPOI": AutoOrientType.CAMERA_OR_POINT_OF_INTEREST, "charactersTowardsCamera": AutoOrientType.CHARACTERS_TOWARDS_CAMERA };
+            if (orientMap[autoOrient] !== undefined) { layer.autoOrient = orientMap[autoOrient]; changedProperties.push("autoOrient"); }
+        }
+
+        var label = args.label;
+        if (label !== undefined && label !== null) { layer.label = label; changedProperties.push("label"); }
+
+        var comment = args.comment;
+        if (comment !== undefined && comment !== null) { layer.comment = comment; changedProperties.push("comment"); }
+
         if (position !== undefined && position !== null) {
             var posProp = layer.property("Position");
             if (posProp.numKeys > 0) { throw new Error("position has keyframes — use setLayerKeyframe instead"); }
@@ -649,6 +684,21 @@ function batchSetLayerProperties(args) {
                 changed.push("duration");
             }
             if (op.outPoint !== undefined && op.outPoint !== null) { layer.outPoint = op.outPoint; changed.push("outPoint"); }
+            if (op.motionBlur !== undefined && op.motionBlur !== null) { layer.motionBlur = !!op.motionBlur; changed.push("motionBlur"); }
+            if (op.collapseTransformation !== undefined && op.collapseTransformation !== null) { layer.collapseTransformation = !!op.collapseTransformation; changed.push("collapseTransformation"); }
+            if (op.shy !== undefined && op.shy !== null) { layer.shy = !!op.shy; changed.push("shy"); }
+            if (op.solo !== undefined && op.solo !== null) { layer.solo = !!op.solo; changed.push("solo"); }
+            if (op.guideLayer !== undefined && op.guideLayer !== null) { layer.guideLayer = !!op.guideLayer; changed.push("guideLayer"); }
+            if (op.quality !== undefined && op.quality !== null) {
+                var bQualityMap = { "best": LayerQuality.BEST, "draft": LayerQuality.DRAFT, "wireframe": LayerQuality.WIREFRAME };
+                if (bQualityMap[op.quality] !== undefined) { layer.quality = bQualityMap[op.quality]; changed.push("quality"); }
+            }
+            if (op.autoOrient !== undefined && op.autoOrient !== null) {
+                var bOrientMap = { "off": AutoOrientType.NO_AUTO_ORIENT, "alongPath": AutoOrientType.ALONG_PATH, "cameraOrPOI": AutoOrientType.CAMERA_OR_POINT_OF_INTEREST, "charactersTowardsCamera": AutoOrientType.CHARACTERS_TOWARDS_CAMERA };
+                if (bOrientMap[op.autoOrient] !== undefined) { layer.autoOrient = bOrientMap[op.autoOrient]; changed.push("autoOrient"); }
+            }
+            if (op.label !== undefined && op.label !== null) { layer.label = op.label; changed.push("label"); }
+            if (op.comment !== undefined && op.comment !== null) { layer.comment = op.comment; changed.push("comment"); }
 
             results.push({
                 layerIndex: layer.index,
@@ -960,7 +1010,9 @@ function addShapeOperator(args) {
         var matchNames = {
             "trimPaths":      "ADBE Vector Filter - Trim",
             "repeater":       "ADBE Vector Filter - Repeater",
-            "roundedCorners": "ADBE Vector Filter - RC"
+            "roundedCorners": "ADBE Vector Filter - RC",
+            "gradientFill":   "ADBE Vector Graphic - G-Fill",
+            "gradientStroke": "ADBE Vector Graphic - G-Stroke"
         };
 
         if (!matchNames[type]) {

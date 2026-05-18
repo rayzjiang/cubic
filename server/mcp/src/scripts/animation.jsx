@@ -423,6 +423,56 @@ function getLayerProperty(args) {
     }
 }
 
+// U: setLayerProperty — generic path-based setter (mirror of getLayerProperty)
+function setLayerProperty(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var propertyPath = args.propertyPath;
+        if (!propertyPath || typeof propertyPath.length === "undefined" || propertyPath.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "propertyPath must be a non-empty array.");
+        }
+
+        var property = _resolvePropertyByPath(layer, propertyPath);
+
+        if (property.numKeys !== undefined && property.numKeys > 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' has " + property.numKeys + " keyframe(s) — use setLayerKeyframe to target individual keyframes.");
+        }
+
+        if (!property.setValue) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' is a group or read-only and cannot be set directly.");
+        }
+
+        var value = args.value;
+        if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
+
+        // Reconstruct as a literal array so AE always gets a native ExtendScript array type (same
+        // pattern as setLayerKeyframe:194).
+        var currentVal = property.value;
+        var finalVal;
+        if (typeof currentVal === "object" && typeof currentVal.length === "number" && currentVal.length >= 1 && value instanceof Array) {
+            finalVal = [];
+            for (var vi = 0; vi < currentVal.length; vi++) {
+                var inVal = +value[vi];
+                finalVal[vi] = isNaN(inVal) ? +currentVal[vi] : inVal;
+            }
+        } else {
+            finalVal = value;
+        }
+
+        property.setValue(finalVal);
+
+        return JSON.stringify({
+            status: "success",
+            message: "Property '" + property.name + "' updated.",
+            property: { path: propertyPath, name: property.name, value: property.value }
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
+    }
+}
+
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {
