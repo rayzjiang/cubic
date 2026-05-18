@@ -374,8 +374,8 @@ function getLayerProperty(args) {
             if (item instanceof CompItem && item.name === compName) { comp = item; break; }
         }
         if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
+            if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+            else { throw new Error("No composition found with name '" + compName + "'"); }
         }
 
         var layerIndex = args.layerIndex;
