@@ -217,6 +217,8 @@ function _dispatchSwitch(command, args) {
         case "centerAnchorPoint":        return centerAnchorPoint(args);
         case "deleteLayer":              return deleteLayer(args);
         case "precompose":               return precompose(args);
+        case "decomposeLayer":           return decomposeLayer(args);
+        case "mergeLayer":               return mergeLayer(args);
         case "setTrackMatte":            return setTrackMatte(args);
         case "getLayerProperty":         return getLayerProperty(args);
         case "setLayerProperty":         return setLayerProperty(args);

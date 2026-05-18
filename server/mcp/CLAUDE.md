@@ -56,8 +56,9 @@ compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, crea
                      setCompositionProperties, deleteComposition, getCurrentTime, setCurrentTime, saveFrameToPng
 layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
                      createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
-                     batchSetLayerProperties, splitLayer, trimLayer, setLayerParent, moveLayer, centerAnchorPoint,
-                     precompose, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty
+                     batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setLayerParent, moveLayer,
+                     centerAnchorPoint, precompose, decomposeLayer, setTrackMatte, deleteLayer,
+                     getLayerProperty, setLayerProperty
 text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
 shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty
 animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
@@ -76,8 +77,9 @@ mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _r
 2. Add a `case` in `_dispatchSwitch()` in `mcp-bridge.jsx`
 3. If read-only (getter), add to `READ_ONLY_COMMANDS` in `mcp-bridge.jsx`
 4. Add name to `allowedScripts` in `src/index.ts`
-5. Optionally add a dedicated typed MCP tool in `src/index.ts`
-6. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
+5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
+
+Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface (`runScript`, `batch`, `getHelp`, `createComposition`, `runBridgeTest`, `testAnimation`, `getResults`). All handler commands are called via `runScript` — no per-command typed tool needed.
 
 **New domain file:** also add to `domainFiles` array in `scripts/build-cep-extension.mjs`. Handler functions must live in domain files only — never in `mcp-bridge.jsx`.
 

@@ -135,9 +135,13 @@ function setCompositionProperties(args) {
         if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
         if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
         if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = args.frameRate; changed.push("frameRate"); }
-        if (args.width !== undefined && args.width !== null && args.height !== undefined && args.height !== null) {
-            comp.width = args.width; comp.height = args.height; changed.push("dimensions");
+        var hasW = (args.width  !== undefined && args.width  !== null);
+        var hasH = (args.height !== undefined && args.height !== null);
+        if (hasW !== hasH) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Pass both width and height together — AE applies dimension changes as a pair.");
         }
+        if (hasW && hasH) { comp.width = args.width; comp.height = args.height; changed.push("dimensions"); }
         if (args.backgroundColor !== undefined && args.backgroundColor !== null) {
             comp.bgColor = [args.backgroundColor.r / 255, args.backgroundColor.g / 255, args.backgroundColor.b / 255];
             changed.push("backgroundColor");

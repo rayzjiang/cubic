@@ -545,6 +545,10 @@ function batchSetLayerProperties(args) {
                     status: "success",
                     threeDLayer: layer.threeDLayer,
                     position: layer.property("Position").value,
+                    scale: layer.property("Scale").value,
+                    rotation: layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value,
+                    opacity: layer.property("Opacity").value,
+                    anchorPoint: layer.property("Anchor Point").value,
                     changedProperties: changed
                 });
             } catch (opErr) {
@@ -791,6 +795,17 @@ function setTrackMatte(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Invalid matteType '" + matteType + "'. Use: none, alpha, alphaInverted, luma, lumaInverted.");
         }
 
+        // Capture prior state before mutation
+        var prevTypeLabels = {};
+        for (var pk in matteTypes) { if (matteTypes.hasOwnProperty(pk)) { prevTypeLabels[matteTypes[pk]] = pk; } }
+        var previousMatteType = prevTypeLabels[layer.trackMatteType] || "unknown";
+        var previousMatteLayer = null;
+        try {
+            if (typeof layer.trackMatteLayer !== "undefined" && layer.trackMatteLayer) {
+                previousMatteLayer = { index: layer.trackMatteLayer.index, name: layer.trackMatteLayer.name };
+            }
+        } catch (e) {}
+
         var matteLayerIndex = args.matteLayerIndex;
         var matteLayerName = args.matteLayerName;
         var mattingLayer = null;
@@ -820,7 +835,8 @@ function setTrackMatte(args) {
         return JSON.stringify({
             status: "success",
             message: "Track matte set to '" + matteType + "' on layer '" + layer.name + "'.",
-            layer: { index: layer.index, name: layer.name, trackMatteType: matteType, matteLayerIndex: mattingLayer ? mattingLayer.index : null }
+            layer: { index: layer.index, name: layer.name, trackMatteType: matteType, matteLayerIndex: mattingLayer ? mattingLayer.index : null },
+            previousValues: { matteType: previousMatteType, matteLayer: previousMatteLayer }
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -947,6 +963,117 @@ function centerAnchorPoint(args) {
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: mergeLayer — inverse of splitLayer; joins two contiguous same-source layers into one
+function mergeLayer(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var left = resolved.layer;
+
+        var rightIdx = args.mergeWithIndex;
+        if (rightIdx === undefined || rightIdx === null) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "mergeWithIndex (the right-half layer) is required.");
+        }
+        if (rightIdx < 1 || rightIdx > comp.numLayers) {
+            throw _err(ERROR_CODES.LAYER_INDEX_OOB, "mergeWithIndex out of bounds: " + rightIdx);
+        }
+        var right = comp.layer(rightIdx);
+        if (left.index === right.index) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Cannot merge a layer with itself.");
+        }
+
+        // Source-parity check (text/shape/null layers lack .source — those layers can't be merged)
+        var lSrc = null, rSrc = null;
+        try { lSrc = left.source;  } catch (e) {}
+        try { rSrc = right.source; } catch (e) {}
+        if (!lSrc || !rSrc || lSrc.id !== rSrc.id) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "mergeLayer requires both layers to reference the same source (typical splitLayer output).");
+        }
+
+        // Continuity check: right.inPoint should match left.outPoint within 1 frame
+        var tolerance = 1 / comp.frameRate;
+        if (Math.abs(right.inPoint - left.outPoint) > tolerance) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Layers are not contiguous: left.outPoint=" + left.outPoint +
+                ", right.inPoint=" + right.inPoint + " (tolerance=" + tolerance + "s).");
+        }
+
+        var newOut = right.outPoint;
+        var removedName  = right.name;
+        var removedIndex = right.index;
+        right.remove();
+        left.outPoint = newOut;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Merged '" + removedName + "' into '" + left.name + "'.",
+            layer: { index: left.index, name: left.name, inPoint: left.inPoint, outPoint: left.outPoint },
+            removed: { index: removedIndex, name: removedName }
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// U: decomposeLayer — inverse of precompose; lifts inner layers back into the parent comp
+function decomposeLayer(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var parentComp = resolved.comp;
+        var precompLayer = resolved.layer;
+
+        if (!(precompLayer.source instanceof CompItem)) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Layer is not a precomp instance — nothing to decompose.");
+        }
+        var innerComp = precompLayer.source;
+
+        // Refuse if the precomp is referenced by more than one comp
+        if (innerComp.usedIn && innerComp.usedIn.length > 1) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Precomp '" + innerComp.name + "' is used by " + innerComp.usedIn.length +
+                " comps — decomposing would orphan the others. Duplicate it first.");
+        }
+
+        var precompName = precompLayer.name;
+        var precompId   = innerComp.id;
+
+        // Copy each inner layer into the parent comp; each copy lands at index 1.
+        // Collect references, then re-stack them above the precomp layer in original order.
+        var copied = [];
+        var innerCount = innerComp.numLayers;
+        for (var i = 1; i <= innerCount; i++) {
+            innerComp.layer(i).copyToComp(parentComp);
+            copied.push(parentComp.layer(1));
+        }
+
+        // Move copied layers to land directly above the precomp layer, preserving inner order.
+        // copied[0] = was innerComp.layer(1) (top of precomp) — should be the topmost unwrapped layer.
+        for (var c = copied.length - 1; c >= 0; c--) {
+            copied[c].moveBefore(precompLayer);
+        }
+
+        // Delete the precomp layer and the now-unused precomp item.
+        precompLayer.remove();
+        innerComp.remove();
+
+        var unwrappedInfo = [];
+        for (var u = 0; u < copied.length; u++) {
+            unwrappedInfo.push({ index: copied[u].index, name: copied[u].name });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Decomposed '" + precompName + "' — " + copied.length + " layer(s) unwrapped. " +
+                     "Note: the precomp layer's own transforms/effects were not flattened onto children.",
+            unwrappedLayers: unwrappedInfo,
+            removedPrecomp: { name: precompName, id: precompId }
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }
 

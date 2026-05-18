@@ -271,6 +271,9 @@ function setEffectProperty(args) {
         }
         if (!property) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on effect '" + eff.name + "'"); }
 
+        var previousValue = null;
+        try { previousValue = property.value; } catch (e) {}
+
         property.setValue(args.value);
 
         return JSON.stringify({
@@ -278,6 +281,7 @@ function setEffectProperty(args) {
             message: "Effect property updated",
             effect: { name: eff.name, index: eff.propertyIndex },
             property: { name: args.propertyName, value: property.value },
+            previousValue: previousValue,
             layer: { name: layer.name, index: layer.index }
         }, null, 2);
     } catch (error) {

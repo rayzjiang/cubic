@@ -70,6 +70,7 @@ function setLayerMask(args) {
         var maskOpacity   = args.maskOpacity;
         var maskExpansion = args.maskExpansion;
         var maskName      = args.maskName;
+        var closed        = (args.closed === false) ? false : true;
 
         var shapePoints = [];
         if (maskRect) {
@@ -88,10 +89,11 @@ function setLayerMask(args) {
         var vertices = [];
         for (var p = 0; p < shapePoints.length; p++) { vertices.push(shapePoints[p]); }
         myShape.vertices = vertices;
-        myShape.closed = true;
+        myShape.closed = closed;
 
         var changed = [];
         var mask;
+        var previousValues = {};
 
         if (maskIndex !== undefined && maskIndex !== null) {
             if (maskIndex > 0 && maskIndex <= layer.property("Masks").numProperties) {
@@ -99,6 +101,15 @@ function setLayerMask(args) {
             } else {
                 throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Mask index out of bounds: " + maskIndex);
             }
+            // Capture prior state before mutation
+            var prevPath = mask.property("Mask Path").value;
+            previousValues.maskPath     = { vertices: prevPath.vertices, closed: prevPath.closed };
+            previousValues.maskMode     = getMaskModeLabels()[mask.maskMode] || mask.maskMode;
+            previousValues.maskFeather  = mask.property("Mask Feather").value;
+            previousValues.maskOpacity  = mask.property("Mask Opacity").value;
+            previousValues.maskExpansion = mask.property("Mask Expansion").value;
+            previousValues.maskName     = mask.name;
+
             mask.property("Mask Path").setValue(myShape);
             changed.push("maskPath");
         } else {
@@ -122,7 +133,8 @@ function setLayerMask(args) {
             status: "success",
             message: "Mask set successfully",
             layer: { name: layer.name, index: layer.index },
-            mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed }
+            mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed },
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
