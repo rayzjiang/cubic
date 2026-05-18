@@ -7,6 +7,16 @@ Phase 4 (After effects panel UI)
 Phase 5 (Post MVP stuff?)
 
 ---
+1. Obfuscation (meaningful protection, not foolproof)
+    - Run javascript-obfuscator on the bundled JSX + compiled MCP server before distribution
+    - Makes casual reading/copying painful; deters 95% of people
+    - Determined reverse engineers can still work through it
+
+2. Package the MCP server as a binary
+    - Tools like pkg or nexe bundle Node.js + your JS into a single executable
+    - Much harder to reverse engineer than plain JS
+    - This is actually realistic for your MCP server specifically
+
 ## Phase 2
 - [ ] x
 - [ ] ***Eg. Preset Library?? <-- might be done in phase 2 (give the system prompt a good understanding)
@@ -25,12 +35,20 @@ Phase 5 (Post MVP stuff?)
             - saveFrameToPng (vision-in-the-loop), structured error channel ({ errorCode, message, line } + dispatchTool MCP surface)
         - [x] Impl + add testing for tier 4 — fills, modes, depth
             - gradientFill/gradientStroke operators, setLayerProperty (generic path setter mirroring getLayerProperty), layer toggles: motionBlur, collapseTransformation, shy, solo, guideLayer, quality, autoOrient, label, comment
+            You can have gradients with color — use the Gradient Ramp effect (applyEffect("ADBE Ramp") +
+            setEffectProperty for Start Color / End Color).
+
+            What can't be done: scripting the color stops on a shape layer's gradient fill/stroke operator
+            specifically (the one inside Contents > Group > Gradient Fill 1). Those colors are locked.
+
+            So: gradients with color ✅, just not via shape operators. Gradient Ramp effect covers it fully.
         - [x] Visually verify all tiers
     - [x] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [x] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
-    - [ ] Ensure Create/read/update/delete functionality for all functions/commands + revertibility
-- [x] **verify that MCP tools/commands are robust/broad enough + add this note to Claude MD**
+- [ ] **do a claude audit w opus - Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests**
+- [ ] **do a claude audit w opus - verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + revertibility ability (if users dont do ctrl z)**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
+- [ ] ^^After above 2 are done, move onto Phase 2
 
 ## Phase 1
 - [x] Evaluate + organize what functionalities we have + the CRUD of each

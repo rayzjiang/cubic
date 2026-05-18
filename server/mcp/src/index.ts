@@ -946,7 +946,7 @@ server.registerTool(
     description: "Add a shape operator (Trim Paths, Repeater, or Rounded Corners) to a shape layer's vector group. Use `type` to select which operator.",
     inputSchema: {
       ...LayerIdentifierSchema,
-      type: z.enum(["trimPaths", "repeater", "roundedCorners", "gradientFill", "gradientStroke"]).describe("Shape operator to add. gradientFill/gradientStroke support Type (1=linear, 2=radial), 'Start Point', 'End Point', Opacity, 'Highlight Length', 'Highlight Angle' via settings. Color stops must be set via the AE UI or setLayerProperty."),
+      type: z.enum(["trimPaths", "repeater", "roundedCorners", "gradientFill", "gradientStroke"]).describe("Shape operator to add. gradientFill/gradientStroke: use settings for Type (1=linear/2=radial), Start Point, End Point, Opacity, Stroke Width. NOTE: gradient color stops (ADBE Vector Grad Colors) are not scriptable in AE 2026 — AE's C++ layer blocks all setValue/GradientColor approaches. Use applyEffect('ADBE Ramp') + setEffectProperty for controllable gradient colors instead."),
       groupPath: z.array(z.string()).optional().describe("Path into the shape Contents to reach the target group (e.g. ['Contents', 'Group 1']). Defaults to the first group in Contents."),
       settings: z.record(z.string(), z.unknown()).optional().describe("Initial property values to set on the operator (e.g. { Start: 0, End: 50 } for trimPaths, { Copies: 5 } for repeater, { Radius: 20 } for roundedCorners).")
     }

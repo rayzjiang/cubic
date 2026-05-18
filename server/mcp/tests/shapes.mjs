@@ -190,10 +190,10 @@ export async function run(ctx, opts) {
 
   // ── Tier 4 — Gradient Fill ────────────────────────────────────────────────
 
-  await test('addShapeOperator — gradientFill (linear, Start=[-100,0] End=[100,0] Opacity=80)', async () => {
+  await test('addShapeOperator — gradientFill (red→blue, linear)', async () => {
     const lr = await send('createLayer', {
       compName: COMP_NAME, type: 'shape', name: 'Gradient Fill Shape',
-      shapeType: 'rectangle', size: [400, 200], fillColor: [0, 0, 1]
+      shapeType: 'rectangle', size: [600, 200], fillColor: [0, 0, 1]
     });
     assertNoError(lr);
     ctx.gradFillLayerIndex = 1;
@@ -201,7 +201,7 @@ export async function run(ctx, opts) {
     const r = await send('addShapeOperator', {
       compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
       type: 'gradientFill',
-      settings: { Type: 1, 'Start Point': [-100, 0], 'End Point': [100, 0], Opacity: 80 }
+      settings: { Type: 1, 'Start Point': [-150, 0], 'End Point': [150, 0], Opacity: 100 }
     });
     assertNoError(r);
     assertField(r, 'operator', 'object');
@@ -210,42 +210,42 @@ export async function run(ctx, opts) {
     ctx.gradFillOpName = r.operator.name;
   });
 
-  await test('getLayerProperty — read Gradient Fill Opacity (should be 80)', async () => {
+  await test('getLayerProperty — read Gradient Fill Opacity (should be 100)', async () => {
     const r = await send('getLayerProperty', {
       compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
       propertyPath: ['Contents', 'Group 1', ctx.gradFillOpName || 'Gradient Fill 1', 'Opacity']
     });
     assertNoError(r);
     assertField(r, 'property', 'object');
-    if (r.property.value !== 80) throw new Error(`Expected Opacity=80, got ${r.property.value}`);
+    if (r.property.value !== 100) throw new Error(`Expected Opacity=100, got ${r.property.value}`);
   });
 
-  await test('setLayerProperty — change Gradient Fill Opacity from 80 to 50', async () => {
+  await test('setLayerProperty — change Gradient Fill Opacity from 100 to 80', async () => {
     const r = await send('setLayerProperty', {
       compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
       propertyPath: ['Contents', 'Group 1', ctx.gradFillOpName || 'Gradient Fill 1', 'Opacity'],
-      value: 50
+      value: 80
     });
     assertNoError(r);
     assertField(r, 'property', 'object');
-    if (r.property.value !== 50) throw new Error(`Expected Opacity=50 after set, got ${r.property.value}`);
+    if (r.property.value !== 80) throw new Error(`Expected Opacity=80 after set, got ${r.property.value}`);
   });
 
-  await test('getLayerProperty — verify Gradient Fill Opacity is now 50', async () => {
+  await test('getLayerProperty — verify Gradient Fill Opacity is now 80', async () => {
     const r = await send('getLayerProperty', {
       compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
       propertyPath: ['Contents', 'Group 1', ctx.gradFillOpName || 'Gradient Fill 1', 'Opacity']
     });
     assertNoError(r);
-    if (r.property.value !== 50) throw new Error(`Expected 50 after update, got ${r.property.value}`);
+    if (r.property.value !== 80) throw new Error(`Expected 80 after update, got ${r.property.value}`);
   });
 
   // ── Tier 4 — Gradient Stroke ──────────────────────────────────────────────
 
-  await test('addShapeOperator — gradientStroke (linear, Stroke Width=8)', async () => {
+  await test('addShapeOperator — gradientStroke (green→yellow, Stroke Width=12)', async () => {
     const lr = await send('createLayer', {
       compName: COMP_NAME, type: 'shape', name: 'Gradient Stroke Shape',
-      shapeType: 'ellipse', size: [300, 300], fillColor: [0.9, 0.9, 0.9]
+      shapeType: 'ellipse', size: [300, 300], fillColor: [0.15, 0.15, 0.15]
     });
     assertNoError(lr);
     ctx.gradStrokeLayerIndex = 1;
@@ -253,7 +253,7 @@ export async function run(ctx, opts) {
     const r = await send('addShapeOperator', {
       compName: COMP_NAME, layerIndex: ctx.gradStrokeLayerIndex,
       type: 'gradientStroke',
-      settings: { Type: 1, 'Start Point': [-100, 0], 'End Point': [100, 0], 'Stroke Width': 8, Opacity: 100 }
+      settings: { Type: 1, 'Start Point': [-150, 0], 'End Point': [150, 0], 'Stroke Width': 12, Opacity: 100 }
     });
     assertNoError(r);
     assertField(r, 'operator', 'object');

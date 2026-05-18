@@ -1000,6 +1000,11 @@ function setTrackMatte(args) {
     }
 }
 
+// NOTE: ADBE Vector Grad Colors (gradient color stops on shape operators) is NOT scriptable
+// in AE 2026. PropertyValueType.NO_VALUE blocks all approaches: setValue, setValueAtTime,
+// GradientColor constructor — all throw from AE's C++ layer. No workaround exists within
+// ExtendScript. For controllable gradient colors use applyEffect("ADBE Ramp") + setEffectProperty.
+
 // C: addShapeOperator — add Trim Paths / Repeater / Rounded Corners to a shape layer's Contents group
 function addShapeOperator(args) {
     try {
@@ -1057,6 +1062,11 @@ function addShapeOperator(args) {
                 }
             }
         }
+
+        // Gradient color stops (args.colors) are not scriptable in AE 2026 — ADBE Vector Grad Colors
+        // has PropertyValueType.NO_VALUE and all setValue/setValueAtTime/GradientColor approaches
+        // are blocked by AE's C++ layer. Colors stay at AE's default white→transparent ramp.
+        // For controllable gradient colors, use applyEffect("ADBE Ramp") + setEffectProperty instead.
 
         var opProps = [];
         for (var oi = 1; oi <= operator.numProperties; oi++) {
