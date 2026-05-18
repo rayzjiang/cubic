@@ -94,6 +94,7 @@ function listCompositions() {
             }
         }
 
+        result.count = result.compositions.length;
         return JSON.stringify(result, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

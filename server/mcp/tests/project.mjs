@@ -13,7 +13,7 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertValue,
+  assertNoError, assertField, assertStructuredError,
   bold, yellow, dim
 } from './helpers.mjs';
 
@@ -69,8 +69,8 @@ export async function run(ctx, opts) {
     // Project is unsaved — saveProject without saveAs should error with a clear message
     await test('saveProject — unsaved project without saveAs returns descriptive error', async () => {
       const r = await send('saveProject', {});
-      assertValue(r, 'status', 'error');
-      if (!r.message || !r.message.toLowerCase().includes('saveas')) {
+      assertStructuredError(r);
+      if (!r.message.toLowerCase().includes('saveas')) {
         throw new Error('Expected error message mentioning saveAs');
       }
       return 'correct: error mentions saveAs';

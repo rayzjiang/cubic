@@ -49,9 +49,10 @@ then after your analysis of the scripts, analyze the @server/mcp/tests/ to make 
         - [x] Visually verify all tiers
     - [x] **Making sure AI reads before edits/deletes + saves to somewhere so it can easily revert? (assuming user doesn't do ctrl+z)
     - [x] figure out why testing suite runtime speed varies (sometimes ultra fast, sometimes seems to go thru each test one at a time)
-- [ ] **do a claude audit w opus - Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests**
-- [ ] **do a claude audit w opus - verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + revertibility ability (if users dont do ctrl z)**
+- [x] **do a claude audit w opus - Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests**
+- [x] **do a claude audit w opus - verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + revertibility ability (if users dont do ctrl z)**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
+- [ ] **do a claude audit w opus - verify tests are comprehensive enough**
 - [ ] ^^After above 2 are done, move onto Phase 2
 
 ## Phase 1

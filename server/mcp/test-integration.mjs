@@ -9,7 +9,7 @@
 //   node test-integration.mjs --suite=effects    # only run one domain suite
 //   node test-integration.mjs --write --suite=batch
 //
-// Available suites: compositions, layers, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor, render, errors, propertyPaths
+// Available suites: compositions, layers, nesting, animation, masks, effects, batch, footage, shapes, text, layer-time, markers, playhead, selection, project, anchor, render, errors, property-paths, bridge
 //
 // Requires: MCP server running (npm start) + MCP Bridge CEP panel open in After Effects
 //
@@ -17,6 +17,7 @@
 //
 //   __MCP_TEST_compositions__  — comp is deleted at end of suite; nothing to inspect
 //   __MCP_TEST_layers__        — open comp: null + light + camera + shape + text + solid in timeline; text parented to null
+//   __MCP_TEST_nesting__       — TM Content (luma-matted by TM Matte); DC Inner A/B restored from decompose test
 //   __MCP_TEST_animation__     — play 0-4s: text spins (Rotation expr), fades in (Opacity), slides left→right (Position)
 //   __MCP_TEST_masks__         — select the blue solid: masks panel should show 1 mask (Test Rect Mask, add mode); triangle was deleted
 //   __MCP_TEST_effects__       — open Effect Controls on white solid: 4 effects (Gaussian Blur ×2, Curves, Vibrance); Drop Shadow was deleted
@@ -36,6 +37,7 @@
 
 import * as compositionsSuite from './tests/compositions.mjs';
 import * as layersSuite       from './tests/layers.mjs';
+import * as nestingSuite      from './tests/nesting.mjs';
 import * as animationSuite    from './tests/animation.mjs';
 import * as masksSuite        from './tests/masks.mjs';
 import * as effectsSuite      from './tests/effects.mjs';
@@ -52,6 +54,7 @@ import * as anchorSuite       from './tests/anchor.mjs';
 import * as renderSuite       from './tests/render.mjs';
 import * as errorsSuite        from './tests/errors.mjs';
 import * as propertyPathsSuite from './tests/property-paths.mjs';
+import * as bridgeSuite        from './tests/bridge.mjs';
 
 import { WS_URL, send, results, printSummary, bold, yellow, red, dim, checkConnection, closeConnection } from './tests/helpers.mjs';
 import { unlinkSync, existsSync, readdirSync } from 'node:fs';
@@ -69,24 +72,26 @@ const opts = { write: process.argv.includes('--write') };
 // ─── Suite registry ───────────────────────────────────────────────────────────
 
 const suites = [
-  { name: 'compositions', mod: compositionsSuite },
-  { name: 'layers',       mod: layersSuite       },
-  { name: 'animation',    mod: animationSuite    },
-  { name: 'masks',        mod: masksSuite        },
-  { name: 'effects',      mod: effectsSuite      },
-  { name: 'batch',        mod: batchSuite        },
-  { name: 'footage',      mod: footageSuite      },
-  { name: 'shapes',       mod: shapesSuite       },
-  { name: 'text',         mod: textSuite         },
-  { name: 'layer-time',   mod: layerTimeSuite    },
-  { name: 'markers',      mod: markersSuite      },
-  { name: 'playhead',     mod: playheadSuite     },
-  { name: 'selection',    mod: selectionSuite    },
-  { name: 'project',      mod: projectSuite      },
-  { name: 'anchor',       mod: anchorSuite       },
-  { name: 'render',       mod: renderSuite       },
+  { name: 'compositions',   mod: compositionsSuite  },
+  { name: 'layers',         mod: layersSuite        },
+  { name: 'nesting',        mod: nestingSuite       },
+  { name: 'animation',      mod: animationSuite     },
+  { name: 'masks',          mod: masksSuite         },
+  { name: 'effects',        mod: effectsSuite       },
+  { name: 'batch',          mod: batchSuite         },
+  { name: 'footage',        mod: footageSuite       },
+  { name: 'shapes',         mod: shapesSuite        },
+  { name: 'text',           mod: textSuite          },
+  { name: 'layer-time',     mod: layerTimeSuite     },
+  { name: 'markers',        mod: markersSuite       },
+  { name: 'playhead',       mod: playheadSuite      },
+  { name: 'selection',      mod: selectionSuite     },
+  { name: 'project',        mod: projectSuite       },
+  { name: 'anchor',         mod: anchorSuite        },
+  { name: 'render',         mod: renderSuite        },
   { name: 'errors',         mod: errorsSuite        },
-  { name: 'propertyPaths',  mod: propertyPathsSuite },
+  { name: 'property-paths', mod: propertyPathsSuite },
+  { name: 'bridge',         mod: bridgeSuite        },
 ];
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────

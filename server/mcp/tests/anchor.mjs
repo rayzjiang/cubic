@@ -10,7 +10,7 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertValue,
+  assertNoError, assertField, assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -46,10 +46,7 @@ export async function run(ctx, opts) {
     return 'shape layer with anchor offset to [200,200]';
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Anchor tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── centerAnchorPoint on shape layer ──────────────────────────────────────
 
@@ -140,7 +137,7 @@ export async function run(ctx, opts) {
     const r = await send('centerAnchorPoint', {
       compName: COMP_NAME, layerIndex: 99
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   // ── overwriteKeyframes guard contract ────────────────────────────────────
@@ -155,10 +152,7 @@ export async function run(ctx, opts) {
     const r = await send('centerAnchorPoint', {
       compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex
     });
-    assertValue(r, 'status', 'error');
-    if (r.errorCode !== 'INVALID_ARGS') {
-      throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
-    }
+    assertStructuredError(r, 'INVALID_ARGS');
     if (!r.message.toLowerCase().includes('overwritekeyframes')) {
       throw new Error(`expected message to mention overwriteKeyframes, got: "${r.message}"`);
     }

@@ -138,6 +138,38 @@ export function assertIncludes(r, field, ...members) {
   }
 }
 
+// ─── Structured error assertion ───────────────────────────────────────────────
+
+export const KNOWN_ERROR_CODES = new Set([
+  'COMP_NOT_FOUND',
+  'LAYER_NOT_FOUND',
+  'LAYER_INDEX_OOB',
+  'PROPERTY_NOT_FOUND',
+  'INVALID_ARGS',
+  'TIME_OUT_OF_RANGE',
+  'RENDER_FAILED',
+  'UNKNOWN_COMMAND',
+  'HANDLER_UNCAUGHT',
+  'INTERNAL_ERROR'
+]);
+
+export function assertStructuredError(r, expectedCode) {
+  assertValue(r, 'status', 'error');
+  assertField(r, 'errorCode', 'string');
+  assertField(r, 'message', 'string');
+  if (!KNOWN_ERROR_CODES.has(r.errorCode)) {
+    throw new Error(`unrecognized errorCode "${r.errorCode}" — add it to ERROR_CODES in mcp-bridge.jsx`);
+  }
+  if (expectedCode && r.errorCode !== expectedCode) {
+    throw new Error(`expected errorCode "${expectedCode}", got "${r.errorCode}"`);
+  }
+}
+
+export function requireSetup(ok) {
+  if (!ok) console.log(yellow('  Skipped — setup failed'));
+  return ok;
+}
+
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
 export function printSummary(write) {

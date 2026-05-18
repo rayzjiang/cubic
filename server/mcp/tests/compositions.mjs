@@ -16,6 +16,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue, assertIncludes,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -114,10 +115,7 @@ export async function run(ctx, opts) {
 
   await test('getCompositionInfo — unknown comp returns COMP_NOT_FOUND', async () => {
     const r = await send('getCompositionInfo', { compName: '__no_such_comp_getCompInfo_test__' });
-    assertValue(r, 'status', 'error');
-    if (r.errorCode !== 'COMP_NOT_FOUND') {
-      throw new Error(`expected COMP_NOT_FOUND, got "${r.errorCode}"`);
-    }
+    assertStructuredError(r, 'COMP_NOT_FOUND');
   });
 
   await test('deleteComposition — removes comp, no longer in listCompositions', async () => {

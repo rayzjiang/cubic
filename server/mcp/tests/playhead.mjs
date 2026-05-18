@@ -11,6 +11,7 @@
 import {
   test, send,
   assertNoError, assertField, assertValue,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -44,10 +45,7 @@ export async function run(ctx, opts) {
     return 'comp created (10s @ 30fps)';
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Playhead tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── setCurrentTime / getCurrentTime round-trips ────────────────────────────
 
@@ -93,8 +91,8 @@ export async function run(ctx, opts) {
 
   await test('setCurrentTime — missing both timeInSeconds and timeInFrames returns error', async () => {
     const r = await send('setCurrentTime', { compName: COMP_NAME });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('timeInSeconds')) {
+    assertStructuredError(r);
+    if (!r.message.includes('timeInSeconds')) {
       throw new Error('Expected error mentioning timeInSeconds');
     }
   });

@@ -14,7 +14,8 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertArray, assertValue,
+  assertNoError, assertField, assertArray,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -42,10 +43,7 @@ export async function run(ctx, opts) {
     return `layer ${ctx.textAnimLayerIndex}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Text animator tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Add text animator ─────────────────────────────────────────────────────
 
@@ -123,7 +121,7 @@ export async function run(ctx, opts) {
       propertyName: 'Scale',
       value: 100
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   await test('setTextAnimatorProperty — invalid propertyName returns error', async () => {
@@ -133,7 +131,7 @@ export async function run(ctx, opts) {
       propertyName: 'FakeProperty',
       value: 100
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   // ── setTextAnimatorRangeSelector ─────────────────────────────────────────
@@ -166,7 +164,7 @@ export async function run(ctx, opts) {
       animatorIndex: 99,
       start: 0
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   // ── Error: non-text layer ─────────────────────────────────────────────────
@@ -182,8 +180,8 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: solidIdx,
       properties: ['Opacity']
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.toLowerCase().includes('text')) {
+    assertStructuredError(r);
+    if (!r.message.toLowerCase().includes('text')) {
       throw new Error('Expected error message mentioning text layer requirement');
     }
   });

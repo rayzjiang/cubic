@@ -9,6 +9,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray,
+  requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -103,10 +104,7 @@ export async function run(ctx, opts) {
     return `comp ${ci}, layer ${li}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Write batch tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Write batch (Scale animation stays for visual verification) ────────────
 

@@ -15,7 +15,8 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertValue,
+  assertNoError, assertField,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -36,10 +37,7 @@ export async function run(ctx, opts) {
     return `comp "${COMP_NAME}" created`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  property-paths tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Shape Contents — Fill Color ───────────────────────────────────────────
 
@@ -162,7 +160,7 @@ export async function run(ctx, opts) {
       propertyPath: ['Contents', 'FakeGroup', 'FakeProp'],
       value: 999
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r, 'PROPERTY_NOT_FOUND');
   });
 
   await test('setLayerProperty — path pointing to a group (not a leaf) returns error', async () => {
@@ -172,6 +170,6 @@ export async function run(ctx, opts) {
       propertyPath: ['Contents'],
       value: 99
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 }

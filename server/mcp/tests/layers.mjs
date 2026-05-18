@@ -3,7 +3,6 @@
 // Covers:
 //   getLayerInfo           (R  — all fields: name, index, type, scale, rotation,
 //                                opacity, effectsCount, masksCount, inPoint, outPoint)
-//   getSelectedLayers      (R  — returns layers the user has selected; uses setLayerProperties.selected to simulate)
 //   createTextLayer        (C)
 //   createShapeLayer       (C)
 //   createSolidLayer       (C)
@@ -13,16 +12,17 @@
 //   createLayer            (C  — unified dispatcher: all 7 types including adjustment)
 //   duplicateLayer         (C)
 //   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array;
-//                                Tier 4: blendMode, threeDLayer, motionBlur, collapseTransformation,
-//                                shy, solo, quality, autoOrient, label, comment)
+//                                Tier 4: blendMode, threeDLayer, motionBlur, shy, solo,
+//                                quality, autoOrient, label, comment;
+//                                collapseTransformation → see nesting.mjs (precomp layers only))
 //   batchSetLayerProperties (U — multiple layers in one call)
 //   moveLayer              (U  — reorders layer stack by name)
 //   setLayerParent         (U  — parents text layer to null layer)
-//   setTrackMatte          (U  — alpha/luma/none, adjacent + explicit matteLayerIndex)
-//   precompose             (C  — groups layers into nested sub-comp)
-//   mergeLayer             (U  — rejoins two contiguous same-source halves from splitLayer)
-//   decomposeLayer         (U  — lifts inner layers from a precomp back into the parent comp)
 //   deleteLayer            (D  — removes layer, returns name + index)
+//
+// Nesting/mattes (precompose, setTrackMatte, decomposeLayer) → see nesting.mjs
+// Time ops (splitLayer, mergeLayer, trimLayer) → see layer-time.mjs
+// Selection round-trip (getSelectedLayers, setSelectedLayers) → see selection.mjs
 //
 // Missing: none — full CRUD covered.
 //
@@ -47,6 +47,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue, assertIncludes,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -96,10 +97,7 @@ export async function run(ctx, opts) {
     return `comp index ${compIndex}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Write tests skipped — failed to create test comp'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Create ────────────────────────────────────────────────────────────────
 
@@ -288,10 +286,7 @@ export async function run(ctx, opts) {
     const r = await send('setLayerProperties', {
       compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex, opacity: 90
     });
-    assertValue(r, 'status', 'error');
-    if (r.errorCode !== 'INVALID_ARGS') {
-      throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
-    }
+    assertStructuredError(r, 'INVALID_ARGS');
     if (!r.message.toLowerCase().includes('overwritekeyframes')) {
       throw new Error(`expected hint about overwriteKeyframes, got "${r.message}"`);
     }
@@ -329,8 +324,7 @@ export async function run(ctx, opts) {
     });
     assertNoError(r);
     assertArray(r, 'results');
-    if (r.results[0].status !== 'error') throw new Error('expected first op to error without overwriteKeyframes');
-    if (r.results[0].errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS on first op, got "${r.results[0].errorCode}"`);
+    assertStructuredError(r.results[0], 'INVALID_ARGS');
     if (r.results[1].status !== 'success') throw new Error(`expected second op to succeed: ${JSON.stringify(r.results[1])}`);
 
     // Restore shape opacity to 75 for downstream tests
@@ -401,34 +395,10 @@ export async function run(ctx, opts) {
     if (!r.layer.changedProperties.includes('selected')) {
       throw new Error('"selected" not in changedProperties');
     }
-  });
-
-  await test('getSelectedLayers — returns selected layer with required fields', async () => {
-    // layer at textLayerIndex is already selected from the previous test
-    const r = await send('getSelectedLayers', { compName: COMP_NAME });
-    assertNoError(r);
-    assertField(r, 'activeComp', 'object');
-    assertField(r.activeComp, 'name', 'string');
-    assertField(r, 'count', 'number');
-    assertArray(r, 'selectedLayers');
-    if (r.count < 1) throw new Error('Expected at least 1 selected layer');
-    const sel = r.selectedLayers.find(l => l.index === ctx.textLayerIndex);
-    if (!sel) throw new Error(`Text layer (index ${ctx.textLayerIndex}) not in selectedLayers`);
-    assertField(sel, 'name', 'string');
-    assertField(sel, 'type', 'string');
-    assertField(sel, 'index', 'number');
-    return `${r.count} selected in "${r.activeComp.name}"`;
-  });
-
-  await test('getSelectedLayers — deselecting layer reduces count', async () => {
+    // deselect for downstream tests; getSelectedLayers round-trip lives in selection.mjs
     await send('setLayerProperties', {
       compName: COMP_NAME, layerIndex: ctx.textLayerIndex, selected: false
     });
-    const r = await send('getSelectedLayers', { compName: COMP_NAME });
-    assertNoError(r);
-    const stillSelected = (r.selectedLayers ?? []).find(l => l.index === ctx.textLayerIndex);
-    if (stillSelected) throw new Error('Text layer should no longer be selected');
-    return `count now ${r.count}`;
   });
 
   // ── createLayer (unified dispatcher) ─────────────────────────────────────
@@ -499,116 +469,12 @@ export async function run(ctx, opts) {
     const r = await send('createLayer', {
       compName: COMP_NAME, type: 'hologram'
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('hologram')) throw new Error('Expected error mentioning invalid type name');
-  });
-
-  // ── precompose ────────────────────────────────────────────────────────────
-
-  await test('precompose — group 2 layers into a sub-comp', async () => {
-    // Create two fresh layers to precompose
-    const s1 = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [1, 0, 0], name: 'PC Red'
-    });
-    assertNoError(s1);
-    const s2 = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [0, 0, 1], name: 'PC Blue'
-    });
-    assertNoError(s2);
-
-    const idx1 = s2.layer.index; // most recently added = 1
-    const idx2 = s1.layer.index; // previous = 2
-
-    const r = await send('precompose', {
-      compName: COMP_NAME,
-      layerIndices: [idx1, idx2],
-      newCompName: '__MCP_TEST_precompose__',
-      moveAttributes: true
-    });
-    assertNoError(r);
-    assertField(r, 'newComp', 'object');
-    assertField(r.newComp, 'name', 'string');
-    assertField(r.newComp, 'numLayers', 'number');
-    if (r.newComp.numLayers < 1) throw new Error('Expected at least 1 layer inside the precomp');
-    assertField(r, 'replacingLayer', 'object');
-    assertField(r.replacingLayer, 'index', 'number');
-
-    // Verify the sub-comp exists in the project
-    const list = await send('listCompositions');
-    const found = (list.compositions ?? []).some(c => c.name === '__MCP_TEST_precompose__');
-    if (!found) throw new Error('New precomp not found in listCompositions');
-    return `precomp at layer index ${r.replacingLayer.index} with ${r.newComp.numLayers} layer(s)`;
-  });
-
-  await test('precompose — invalid layer index returns error', async () => {
-    const r = await send('precompose', {
-      compName: COMP_NAME,
-      layerIndices: [9999],
-      newCompName: 'Should Fail'
-    });
-    assertValue(r, 'status', 'error');
-  });
-
-  await test('precompose — empty layerIndices returns error', async () => {
-    const r = await send('precompose', {
-      compName: COMP_NAME,
-      layerIndices: [],
-      newCompName: 'Should Fail'
-    });
-    assertValue(r, 'status', 'error');
-  });
-
-  // ── setTrackMatte ─────────────────────────────────────────────────────────
-
-  await test('setTrackMatte — set alpha matte using layer directly above (adjacent)', async () => {
-    // Create matte (top) + content (below) layers adjacent to each other
-    const matte = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [1, 1, 1], name: 'TM Matte'
-    });
-    assertNoError(matte);
-    const content = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [0.2, 0.8, 0.2], name: 'TM Content'
-    });
-    assertNoError(content);
-    // After both creates: TM Content=1, TM Matte=2 — content layer is below matte
-    ctx.tmContentIdx = 1;
-    ctx.tmMatteIdx   = 2;
-
-    const r = await send('setTrackMatte', {
-      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'alpha'
-    });
-    assertNoError(r);
-    assertField(r, 'layer', 'object');
-    assertValue(r.layer, 'trackMatteType', 'alpha');
-  });
-
-  await test('setTrackMatte — clear matte with matteType=none', async () => {
-    const r = await send('setTrackMatte', {
-      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'none'
-    });
-    assertNoError(r);
-    assertValue(r.layer, 'trackMatteType', 'none');
-  });
-
-  await test('setTrackMatte — explicit matteLayerIndex (non-adjacent matte)', async () => {
-    // Use the already-created matte layer by explicit index reference
-    const r = await send('setTrackMatte', {
-      compName: COMP_NAME, layerIndex: ctx.tmContentIdx,
-      matteType: 'luma',
-      matteLayerIndex: ctx.tmMatteIdx
-    });
-    assertNoError(r);
-    assertValue(r.layer, 'trackMatteType', 'luma');
-  });
-
-  await test('setTrackMatte — invalid matteType returns error', async () => {
-    const r = await send('setTrackMatte', {
-      compName: COMP_NAME, layerIndex: ctx.tmContentIdx, matteType: 'invalid'
-    });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
+    if (!r.message.includes('hologram')) throw new Error('Expected error mentioning invalid type name');
   });
 
   // ── Tier 4 — layer toggles + smoke-verify wired flags ────────────────────
+  // Nesting/mattes (precompose, setTrackMatte, decomposeLayer) → see nesting.mjs
 
   // blendMode already wired — verify explicitly
   await test('setLayerProperties — blendMode: multiply smoke test', async () => {
@@ -638,15 +504,6 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertIncludes(r.layer, 'changedProperties', 'motionBlur');
     await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, motionBlur: false });
-  });
-
-  await test('setLayerProperties — collapseTransformation toggle', async () => {
-    const r = await send('setLayerProperties', {
-      compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, collapseTransformation: true
-    });
-    assertNoError(r);
-    assertIncludes(r.layer, 'changedProperties', 'collapseTransformation');
-    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, collapseTransformation: false });
   });
 
   await test('setLayerProperties — shy + solo toggles', async () => {
@@ -695,110 +552,6 @@ export async function run(ctx, opts) {
     await send('setLayerProperties', { compName: COMP_NAME, layerIndex: ctx.solidLayerIndex, label: 0, comment: '' });
   });
 
-  // ── mergeLayer ────────────────────────────────────────────────────────────
-
-  await test('mergeLayer — split a solid then rejoin; merged outPoint equals original', async () => {
-    // Create a fresh solid spanning the full comp (default duration=5 would make split at 5 fail)
-    const sc = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Test Solid', color: [0.5, 0.5, 0.5], duration: 10
-    });
-    assertNoError(sc);
-    const solidIdx = sc.layer.index; // just added, sits at index 1
-
-    // Split at 5s (comp is 10s)
-    const split = await send('splitLayer', {
-      compName: COMP_NAME, layerIndex: solidIdx, time: 5
-    });
-    assertNoError(split);
-    assertField(split, 'original', 'object');
-    assertField(split, 'newLayer', 'object');
-    const leftIdx  = split.original.index;
-    const rightIdx = split.newLayer.index;
-    const origOut  = split.newLayer.outPoint;
-
-    // Merge the two halves back
-    const r = await send('mergeLayer', {
-      compName: COMP_NAME, layerIndex: leftIdx, mergeWithIndex: rightIdx
-    });
-    assertNoError(r);
-    assertField(r, 'layer', 'object');
-    assertField(r, 'removed', 'object');
-    assertField(r.removed, 'name', 'string');
-    assertField(r.removed, 'index', 'number');
-    if (Math.abs(r.layer.outPoint - origOut) > 0.001) {
-      throw new Error(`merged outPoint ${r.layer.outPoint} != expected ${origOut}`);
-    }
-    return `merged; outPoint=${r.layer.outPoint}s`;
-  });
-
-  await test('mergeLayer — mismatched sources returns INVALID_ARGS', async () => {
-    // Two unrelated layers cannot be merged
-    const a = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Err A', color: [1, 0, 0]
-    });
-    const b = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Err B', color: [0, 0, 1]
-    });
-    assertNoError(a); assertNoError(b);
-    const r = await send('mergeLayer', {
-      compName: COMP_NAME, layerIndex: b.layer.index, mergeWithIndex: a.layer.index
-    });
-    assertValue(r, 'status', 'error');
-    if (r.errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
-  });
-
-  // ── decomposeLayer ────────────────────────────────────────────────────────
-
-  await test('decomposeLayer — lifts inner layers into parent, removes precomp item', async () => {
-    // Create two layers to precompose
-    const r1 = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [1, 0.5, 0], name: 'DC Inner A'
-    });
-    assertNoError(r1);
-    const r2 = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [0, 0.5, 1], name: 'DC Inner B'
-    });
-    assertNoError(r2);
-
-    const idxA = r2.layer.index; // last added = 1
-    const idxB = r1.layer.index; // previous    = 2
-
-    const pc = await send('precompose', {
-      compName: COMP_NAME,
-      layerIndices: [idxA, idxB],
-      newCompName: '__MCP_TEST_decompose__',
-      moveAttributes: true
-    });
-    assertNoError(pc);
-    assertField(pc, 'replacingLayer', 'object');
-    const precompLayerIdx = pc.replacingLayer.index;
-
-    // Decompose
-    const r = await send('decomposeLayer', {
-      compName: COMP_NAME, layerIndex: precompLayerIdx
-    });
-    assertNoError(r);
-    assertArray(r, 'unwrappedLayers');
-    assertField(r, 'removedPrecomp', 'object');
-    assertField(r.removedPrecomp, 'name', 'string');
-    if (r.unwrappedLayers.length < 1) throw new Error('expected at least 1 unwrapped layer');
-    // Precomp must no longer appear in listCompositions
-    const list = await send('listCompositions');
-    const stillExists = (list.compositions ?? []).some(c => c.name === '__MCP_TEST_decompose__');
-    if (stillExists) throw new Error('precomp item was not removed after decompose');
-    return `unwrapped ${r.unwrappedLayers.length} layer(s)`;
-  });
-
-  await test('decomposeLayer — non-precomp layer returns INVALID_ARGS', async () => {
-    // A regular solid is not a precomp instance
-    const s = await send('createLayer', {
-      compName: COMP_NAME, type: 'solid', color: [0.2, 0.2, 0.2], name: 'DC Not A Precomp'
-    });
-    assertNoError(s);
-    const r = await send('decomposeLayer', {
-      compName: COMP_NAME, layerIndex: s.layer.index
-    });
-    assertValue(r, 'status', 'error');
-    if (r.errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
-  });
+  // mergeLayer, splitLayer, trimLayer → see layer-time.mjs
+  // precompose, setTrackMatte, decomposeLayer → see nesting.mjs
 }

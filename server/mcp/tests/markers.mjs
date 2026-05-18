@@ -13,6 +13,7 @@
 import {
   test, send,
   assertNoError, assertField, assertValue, assertArray,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -48,10 +49,7 @@ export async function run(ctx, opts) {
     return 'layer index 1';
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Marker tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Comp markers ─────────────────────────────────────────────────────────
 
@@ -162,12 +160,12 @@ export async function run(ctx, opts) {
 
   await test('addMarker — missing time returns error', async () => {
     const r = await send('addMarker', { compName: COMP_NAME });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('time')) throw new Error('Expected error mentioning "time"');
+    assertStructuredError(r);
+    if (!r.message.includes('time')) throw new Error('Expected error mentioning "time"');
   });
 
   await test('removeMarker — non-existent time returns error', async () => {
     const r = await send('removeMarker', { compName: COMP_NAME, time: 99 });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 }

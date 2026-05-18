@@ -22,6 +22,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -51,10 +52,7 @@ export async function run(ctx, opts) {
     return `layer ${li}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Animation tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Expressions ───────────────────────────────────────────────────────────
 
@@ -255,12 +253,12 @@ export async function run(ctx, opts) {
     return `Opacity=${r.property.value}`;
   });
 
-  await test('getLayerProperty — invalid path returns status=error', async () => {
+  await test('getLayerProperty — invalid path returns error', async () => {
     const r = await send('getLayerProperty', {
       compName: COMP_NAME, layerIndex: li,
       propertyPath: ['DoesNot', 'Exist', 'AtAll']
     });
-    if (r.status !== 'error') throw new Error(`Expected error status, got ${r.status}`);
+    assertStructuredError(r);
   });
 
   await test('getLayerProperty — empty propertyPath returns error', async () => {
@@ -268,6 +266,6 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: li,
       propertyPath: []
     });
-    if (r.status !== 'error') throw new Error(`Expected error status, got ${r.status}`);
+    assertStructuredError(r);
   });
 }

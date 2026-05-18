@@ -1,8 +1,9 @@
-// layer-time.mjs — tests for splitLayer + trimLayer in layers.jsx
+// layer-time.mjs — tests for splitLayer, trimLayer, and mergeLayer in layers.jsx
 //
 // Covers:
 //   splitLayer  (U — split layer at time into two halves; duplicate + inPoint/outPoint)
 //   trimLayer   (U — set inPoint, outPoint, startTime, or mode)
+//   mergeLayer  (U — rejoin two contiguous same-source halves from splitLayer)
 //
 // Visual verification (after --write, open __MCP_TEST_layer_time__ in After Effects):
 //   "Shape Left" layer — outPoint should be 2s (trimmed right edge)
@@ -12,7 +13,8 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertValue, assertArray,
+  assertNoError, assertField,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -40,10 +42,7 @@ export async function run(ctx, opts) {
     return `layer index ${ctx.ltLayerIndex}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Layer time tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── splitLayer ────────────────────────────────────────────────────────────
 
@@ -80,8 +79,8 @@ export async function run(ctx, opts) {
     const r = await send('splitLayer', {
       compName: COMP_NAME, layerIndex: ctx.ltLayerIndex, time: 99
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('outside')) {
+    assertStructuredError(r);
+    if (!r.message.includes('outside')) {
       throw new Error('Expected error mentioning "outside"');
     }
   });
@@ -128,8 +127,8 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: ctx.ltTrimIndex,
       inPoint: 8, outPoint: 3
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('outPoint')) {
+    assertStructuredError(r);
+    if (!r.message.includes('outPoint')) {
       throw new Error('Expected error mentioning inPoint/outPoint constraint');
     }
   });
@@ -147,5 +146,52 @@ export async function run(ctx, opts) {
     if (Math.abs(r.layer.outPoint - 3) > 0.01) {
       throw new Error(`Expected outPoint ≈ 3 (playhead), got ${r.layer.outPoint}`);
     }
+  });
+
+  // ── mergeLayer ────────────────────────────────────────────────────────────
+
+  await test('mergeLayer — split a solid then rejoin; merged outPoint equals original', async () => {
+    const sc = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Test Solid', color: [0.5, 0.5, 0.5], duration: 10
+    });
+    assertNoError(sc);
+    const solidIdx = sc.layer.index;
+
+    const split = await send('splitLayer', {
+      compName: COMP_NAME, layerIndex: solidIdx, time: 5
+    });
+    assertNoError(split);
+    assertField(split, 'original', 'object');
+    assertField(split, 'newLayer', 'object');
+    const leftIdx = split.original.index;
+    const rightIdx = split.newLayer.index;
+    const origOut  = split.newLayer.outPoint;
+
+    const r = await send('mergeLayer', {
+      compName: COMP_NAME, layerIndex: leftIdx, mergeWithIndex: rightIdx
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r, 'removed', 'object');
+    assertField(r.removed, 'name', 'string');
+    assertField(r.removed, 'index', 'number');
+    if (Math.abs(r.layer.outPoint - origOut) > 0.001) {
+      throw new Error(`merged outPoint ${r.layer.outPoint} != expected ${origOut}`);
+    }
+    return `merged; outPoint=${r.layer.outPoint}s`;
+  });
+
+  await test('mergeLayer — mismatched sources returns INVALID_ARGS', async () => {
+    const a = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Err A', color: [1, 0, 0]
+    });
+    const b = await send('createSolidLayer', {
+      compName: COMP_NAME, name: 'Merge Err B', color: [0, 0, 1]
+    });
+    assertNoError(a); assertNoError(b);
+    const r = await send('mergeLayer', {
+      compName: COMP_NAME, layerIndex: b.layer.index, mergeWithIndex: a.layer.index
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
   });
 }

@@ -10,7 +10,8 @@
 
 import {
   test, send,
-  assertNoError, assertField, assertValue, assertArray,
+  assertNoError, assertField, assertArray,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -41,10 +42,7 @@ export async function run(ctx, opts) {
     return '3 solid layers created';
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Selection tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Select by index ───────────────────────────────────────────────────────
 
@@ -112,8 +110,8 @@ export async function run(ctx, opts) {
     const r = await send('setSelectedLayers', {
       compName: COMP_NAME, layerIndices: [99]
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('out of bounds')) {
+    assertStructuredError(r);
+    if (!r.message.includes('out of bounds')) {
       throw new Error('Expected "out of bounds" in error message');
     }
   });
@@ -122,8 +120,8 @@ export async function run(ctx, opts) {
     const r = await send('setSelectedLayers', {
       compName: COMP_NAME, layerNames: ['NonExistent']
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('NonExistent')) {
+    assertStructuredError(r);
+    if (!r.message.includes('NonExistent')) {
       throw new Error('Expected layer name in error message');
     }
   });

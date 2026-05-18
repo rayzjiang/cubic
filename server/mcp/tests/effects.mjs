@@ -24,6 +24,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
+  requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -52,10 +53,7 @@ export async function run(ctx, opts) {
     return `layer ${li}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Effects tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Create ────────────────────────────────────────────────────────────────
 

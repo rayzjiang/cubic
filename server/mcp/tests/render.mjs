@@ -10,7 +10,7 @@
 //
 // Cleanup: --cleanup removes all ctx.renderPaths entries from disk.
 
-import { test, send, assertNoError, assertField, assertValue, bold, yellow } from './helpers.mjs';
+import { test, send, assertNoError, assertField, assertValue, assertStructuredError, requireSetup, bold, yellow } from './helpers.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -34,10 +34,7 @@ export async function run(ctx, opts) {
     const s = await send('createSolidLayer', { compName: COMP_NAME, name: 'bg', color: [1, 0, 0] });
     assertNoError(s);
   });
-  if (!setupOk) {
-    console.log(yellow('  Render tests skipped — comp setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   ctx.renderPaths = ctx.renderPaths ?? [];
 
@@ -79,23 +76,16 @@ export async function run(ctx, opts) {
     return r.path;
   });
 
-  await test('render — time past duration returns structured error (RENDER_FAILED)', async () => {
+  await test('render — time past duration returns structured error', async () => {
     const r = await send('saveFrameToPng', { compName: COMP_NAME, timeInSeconds: 999 });
-    assertValue(r, 'status', 'error');
-    assertField(r, 'errorCode', 'string');
+    assertStructuredError(r);
     if (r.errorCode !== 'RENDER_FAILED' && r.errorCode !== 'TIME_OUT_OF_RANGE') {
       throw new Error(`unexpected errorCode "${r.errorCode}" (expected RENDER_FAILED or TIME_OUT_OF_RANGE)`);
     }
-    assertField(r, 'message', 'string');
   });
 
   await test('render — missing comp returns structured error', async () => {
     const r = await send('saveFrameToPng', { compName: '__no_such_comp_render_test__' });
-    assertValue(r, 'status', 'error');
-    assertField(r, 'errorCode', 'string');
-    assertField(r, 'message', 'string');
-    if (r.errorCode !== 'COMP_NOT_FOUND' && r.errorCode !== 'RENDER_FAILED' && r.errorCode !== 'INTERNAL_ERROR') {
-      throw new Error(`unexpected errorCode "${r.errorCode}"`);
-    }
+    assertStructuredError(r);
   });
 }

@@ -14,6 +14,7 @@
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
+  requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -42,10 +43,7 @@ export async function run(ctx, opts) {
     return `comp ${cr.composition.itemIndex}, layer ${li}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Mask tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Create ────────────────────────────────────────────────────────────────
 

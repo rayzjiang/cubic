@@ -5,7 +5,8 @@
 //                                gradientFill, gradientStroke; with settings)
 //   setShapeOperatorProperty (U  — update a single property on an existing operator)
 //   getLayerProperty         (R  — read shape Contents tree property, verifies C + U above)
-//   setLayerProperty         (U  — Tier 4: generic path-based setter, tested via gradient Opacity)
+//
+// Generic setLayerProperty path-based setter → see property-paths.mjs
 //
 // Visual verification (after --write, open __MCP_TEST_shapes__ in After Effects):
 //   Timeline: "Test Shape" layer (blue rectangle).
@@ -13,12 +14,13 @@
 //   After setShapeOperatorProperty test, End should be 100 (fully drawn).
 //   "Repeater Shape" layer: Contents > Group 1 > Repeater 1 — Copies=5.
 //   "Rounded Shape" layer: Contents > Group 1 > Round Corners 1 — Radius=20.
-//   "Gradient Fill Shape": gradient fill operator (linear, Opacity=50).
-//   "Gradient Stroke Shape": gradient stroke operator (Stroke Width=8, Opacity=60).
+//   "Gradient Fill Shape": gradient fill operator (linear, Opacity=100).
+//   "Gradient Stroke Shape": gradient stroke operator (Stroke Width=12, Opacity=100).
 
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -46,10 +48,7 @@ export async function run(ctx, opts) {
     return `shape layer index ${ctx.shapesLayerIndex}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Shape operator tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Trim Paths ────────────────────────────────────────────────────────────
 
@@ -166,8 +165,8 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: ctx.shapesLayerIndex,
       type: 'flubber'
     });
-    assertValue(r, 'status', 'error');
-    if (!r.message || !r.message.includes('flubber')) throw new Error('Expected error mentioning invalid type name');
+    assertStructuredError(r);
+    if (!r.message.includes('flubber')) throw new Error('Expected error mentioning invalid type name');
   });
 
   await test('setShapeOperatorProperty — invalid propertyName returns error', async () => {
@@ -177,7 +176,7 @@ export async function run(ctx, opts) {
       propertyName: 'NonExistentProp',
       value: 999
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   await test('getLayerProperty — invalid path returns error', async () => {
@@ -185,7 +184,7 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: ctx.shapesLayerIndex,
       propertyPath: ['Contents', 'DoesNotExist', 'Fake Property']
     });
-    assertValue(r, 'status', 'error');
+    assertStructuredError(r);
   });
 
   // ── Tier 4 — Gradient Fill ────────────────────────────────────────────────
@@ -220,27 +219,7 @@ export async function run(ctx, opts) {
     if (r.property.value !== 100) throw new Error(`Expected Opacity=100, got ${r.property.value}`);
   });
 
-  await test('setLayerProperty — change Gradient Fill Opacity from 100 to 80', async () => {
-    const r = await send('setLayerProperty', {
-      compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
-      propertyPath: ['Contents', 'Group 1', ctx.gradFillOpName || 'Gradient Fill 1', 'Opacity'],
-      value: 80
-    });
-    assertNoError(r);
-    assertField(r, 'property', 'object');
-    if (r.property.value !== 80) throw new Error(`Expected Opacity=80 after set, got ${r.property.value}`);
-  });
-
-  await test('getLayerProperty — verify Gradient Fill Opacity is now 80', async () => {
-    const r = await send('getLayerProperty', {
-      compName: COMP_NAME, layerIndex: ctx.gradFillLayerIndex,
-      propertyPath: ['Contents', 'Group 1', ctx.gradFillOpName || 'Gradient Fill 1', 'Opacity']
-    });
-    assertNoError(r);
-    if (r.property.value !== 80) throw new Error(`Expected 80 after update, got ${r.property.value}`);
-  });
-
-  // ── Tier 4 — Gradient Stroke ──────────────────────────────────────────────
+  // ── Gradient Stroke ───────────────────────────────────────────────────────
 
   await test('addShapeOperator — gradientStroke (green→yellow, Stroke Width=12)', async () => {
     const lr = await send('createLayer', {
@@ -261,24 +240,5 @@ export async function run(ctx, opts) {
     ctx.gradStrokeOpName = r.operator.name;
   });
 
-  await test('setLayerProperty — set Gradient Stroke Opacity to 60 (cross-domain setter smoke)', async () => {
-    const r = await send('setLayerProperty', {
-      compName: COMP_NAME, layerIndex: ctx.gradStrokeLayerIndex,
-      propertyPath: ['Contents', 'Group 1', ctx.gradStrokeOpName || 'Gradient Stroke 1', 'Opacity'],
-      value: 60
-    });
-    assertNoError(r);
-    if (r.property.value !== 60) throw new Error(`Expected Opacity=60, got ${r.property.value}`);
-  });
-
-  // ── Tier 4 — setLayerProperty error paths ─────────────────────────────────
-
-  await test('setLayerProperty — invalid path returns PROPERTY_NOT_FOUND', async () => {
-    const r = await send('setLayerProperty', {
-      compName: COMP_NAME, layerIndex: ctx.shapesLayerIndex,
-      propertyPath: ['Contents', 'DoesNotExist', 'FakeProp'],
-      value: 99
-    });
-    assertValue(r, 'status', 'error');
-  });
+  // Generic setLayerProperty (path-based setter, cross-domain) → see property-paths.mjs
 }

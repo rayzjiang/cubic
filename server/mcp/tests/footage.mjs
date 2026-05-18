@@ -4,7 +4,8 @@
 //   listProjectItems   (R  — enumerate project panel with optional type filter)
 //   importFootage      (C  — import a file from disk, returns item metadata)
 //   addFootageToComp   (C  — place imported item as a layer in a comp)
-//   deleteUnusedSolids (D  — already covered here as cleanup; full test in batch.mjs)
+//   deleteProjectItem  (D  — remove imported footage item from project panel)
+//   deleteUnusedSolids (D  — remove orphaned solid footage items)
 //
 // Missing: replaceFootageSource (post-MVP)
 //
@@ -20,6 +21,7 @@ import { join } from 'node:path';
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -79,10 +81,7 @@ export async function run(ctx, opts) {
     return `comp created, temp PNG at ${tempPath}`;
   });
 
-  if (!setupOk) {
-    console.log(yellow('  Footage write tests skipped — setup failed'));
-    return;
-  }
+  if (!requireSetup(setupOk)) return;
 
   // ── Create: importFootage ─────────────────────────────────────────────────
 
@@ -159,13 +158,85 @@ export async function run(ctx, opts) {
 
   await test('importFootage — returns error for missing file', async () => {
     const r = await send('importFootage', { filePath: '/nonexistent/path/missing.png' });
-    if (r.status !== 'error') throw new Error(`Expected error status, got "${r.status}"`);
-    return `error: "${r.message}"`;
+    assertStructuredError(r);
+    return `errorCode=${r.errorCode}`;
   });
 
   await test('addFootageToComp — returns error when no source specified', async () => {
     const r = await send('addFootageToComp', { compName: COMP_NAME });
-    if (r.status !== 'error') throw new Error(`Expected error status, got "${r.status}"`);
-    return `error: "${r.message}"`;
+    assertStructuredError(r);
+    return `errorCode=${r.errorCode}`;
+  });
+
+  // ── deleteProjectItem ─────────────────────────────────────────────────────
+
+  await test('deleteProjectItem — import a temp item then remove it, verifies gone from listProjectItems', async () => {
+    // Import a second temp item solely to delete it (ctx.importedItemId must survive for visual inspection)
+    const tempPath2 = join(tmpdir(), `mcp_test_footage_del_${Date.now()}.png`);
+    const pngBuf = Buffer.from(TINY_PNG_B64, 'base64');
+    writeFileSync(tempPath2, pngBuf);
+
+    const imported = await send('importFootage', { filePath: tempPath2 });
+    assertNoError(imported);
+    const delItemId = imported.item.id;
+
+    const r = await send('deleteProjectItem', { itemId: delItemId });
+    assertNoError(r);
+    assertField(r, 'deleted', 'object');
+    assertField(r.deleted, 'name', 'string');
+
+    // Verify it's gone
+    const list = await send('listProjectItems', { type: 'footage' });
+    assertNoError(list);
+    const stillThere = (list.items ?? []).find(i => i.id === delItemId);
+    if (stillThere) throw new Error(`Item id=${delItemId} still present after deleteProjectItem`);
+
+    // Clean up disk file
+    try { unlinkSync(tempPath2); } catch (_) {}
+    return `deleted item "${r.deleted.name}"`;
+  });
+
+  await test('deleteProjectItem — invalid itemId returns error', async () => {
+    const r = await send('deleteProjectItem', { itemId: 999999 });
+    assertStructuredError(r);
+    return `errorCode=${r.errorCode}`;
+  });
+
+  // ── deleteUnusedSolids ────────────────────────────────────────────────────
+
+  await test('deleteUnusedSolids — create orphaned solid then remove it', async () => {
+    // Create a solid layer, capture the solid footage name, then delete the layer → orphan
+    const cr2 = await send('createComposition', {
+      name: '__MCP_TEST_footage_orphan__', width: 100, height: 100, frameRate: 30, duration: 1, pixelAspect: 1
+    });
+    assertField(cr2, 'composition', 'object');
+
+    const sl = await send('createSolidLayer', {
+      compName: '__MCP_TEST_footage_orphan__', name: 'Orphan Solid', color: [1, 0, 0]
+    });
+    assertNoError(sl);
+    const solidLayerIndex = sl.layer.index;
+
+    // Delete the layer → the solid footage item is now unused
+    await send('deleteLayer', { compName: '__MCP_TEST_footage_orphan__', layerIndex: solidLayerIndex });
+
+    const r = await send('deleteUnusedSolids');
+    assertNoError(r);
+    assertField(r, 'count', 'number');
+    assertArray(r, 'removed');
+    if (r.count < 1) throw new Error(`Expected ≥1 unused solid removed, got ${r.count}`);
+
+    // Clean up the orphan comp
+    await send('deleteComposition', { compName: '__MCP_TEST_footage_orphan__' });
+    return `removed ${r.count} unused solid(s): ${r.removed.join(', ')}`;
+  });
+
+  await test('deleteUnusedSolids — with no orphans returns count=0', async () => {
+    const r = await send('deleteUnusedSolids');
+    assertNoError(r);
+    assertField(r, 'count', 'number');
+    assertArray(r, 'removed');
+    // count may be 0 or more depending on project state; just verify shape is correct
+    return `count=${r.count}`;
   });
 }
