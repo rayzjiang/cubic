@@ -13,7 +13,7 @@ function getProjectPath() {
             dirty: project.dirty
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -27,7 +27,7 @@ function saveProject(args) {
             project.save(new File(saveAsPath));
         } else {
             if (!project.file) {
-                throw new Error("Project has never been saved. Pass saveAs with an absolute file path (e.g. '/Users/you/my-project.aep').");
+                throw _err(ERROR_CODES.INVALID_ARGS, "Project has never been saved. Pass saveAs with an absolute file path (e.g. '/Users/you/my-project.aep').");
             }
             project.save();
         }
@@ -39,6 +39,6 @@ function saveProject(args) {
             name: project.file ? project.file.name   : null
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

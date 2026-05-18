@@ -20,6 +20,8 @@ const distCsxsDir = path.join(distDir, 'CSXS');
 const domainFiles = [
   'compositions.jsx',
   'layers.jsx',
+  'text.jsx',         // text layers + animators (was in layers.jsx)
+  'shapes.jsx',       // shape layers + vector operators (was in layers.jsx)
   'animation.jsx',
   'masks.jsx',
   'effects.jsx',

@@ -3,33 +3,6 @@
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-function resolveMasksComp(compName) {
-    var comp = null;
-    for (var i = 1; i <= app.project.numItems; i++) {
-        var item = app.project.item(i);
-        if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-    }
-    if (!comp) {
-        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-    }
-    return comp;
-}
-
-function resolveMasksLayer(comp, layerIndex, layerName) {
-    if (layerIndex !== undefined && layerIndex !== null) {
-        if (layerIndex < 1 || layerIndex > comp.numLayers) { throw new Error("Layer index out of bounds: " + layerIndex); }
-        return comp.layer(layerIndex);
-    }
-    if (layerName) {
-        for (var i = 1; i <= comp.numLayers; i++) {
-            if (comp.layer(i).name === layerName) { return comp.layer(i); }
-        }
-        throw new Error("Layer not found with name '" + layerName + "'");
-    }
-    throw new Error("layerIndex or layerName is required");
-}
-
 var MASK_MODE_LABELS = null;
 function getMaskModeLabels() {
     if (!MASK_MODE_LABELS) {
@@ -49,8 +22,8 @@ function getMaskModeLabels() {
 
 function getLayerMasks(args) {
     try {
-        var comp  = resolveMasksComp(args.compName || "");
-        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
         var modeLabels = getMaskModeLabels();
 
         var masksGroup = layer.property("Masks");
@@ -77,7 +50,7 @@ function getLayerMasks(args) {
             count: masks.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -85,8 +58,9 @@ function getLayerMasks(args) {
 
 function setLayerMask(args) {
     try {
-        var comp  = resolveMasksComp(args.compName || "");
-        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName || "");
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
 
         var maskIndex     = args.maskIndex;
         var maskPath      = args.maskPath;
@@ -107,7 +81,7 @@ function setLayerMask(args) {
         } else if (maskPath && maskPath.length >= 3) {
             shapePoints = maskPath;
         } else {
-            throw new Error("Must provide either maskRect or maskPath with at least 3 points");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Must provide either maskRect or maskPath with at least 3 points");
         }
 
         var myShape = new Shape();
@@ -123,7 +97,7 @@ function setLayerMask(args) {
             if (maskIndex > 0 && maskIndex <= layer.property("Masks").numProperties) {
                 mask = layer.property("Masks").property(maskIndex);
             } else {
-                throw new Error("Mask index out of bounds: " + maskIndex);
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Mask index out of bounds: " + maskIndex);
             }
             mask.property("Mask Path").setValue(myShape);
             changed.push("maskPath");
@@ -151,7 +125,7 @@ function setLayerMask(args) {
             mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -159,8 +133,8 @@ function setLayerMask(args) {
 
 function deleteLayerMask(args) {
     try {
-        var comp  = resolveMasksComp(args.compName || "");
-        var layer = resolveMasksLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var masksGroup = layer.property("Masks");
         var mask = null;
@@ -168,14 +142,14 @@ function deleteLayerMask(args) {
             if (args.maskIndex > 0 && args.maskIndex <= masksGroup.numProperties) {
                 mask = masksGroup.property(args.maskIndex);
             } else {
-                throw new Error("Mask index out of bounds: " + args.maskIndex);
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Mask index out of bounds: " + args.maskIndex);
             }
         } else if (args.maskName) {
             for (var m = 1; m <= masksGroup.numProperties; m++) {
                 if (masksGroup.property(m).name === args.maskName) { mask = masksGroup.property(m); break; }
             }
         }
-        if (!mask) { throw new Error("Mask not found: " + (args.maskName || "index " + args.maskIndex)); }
+        if (!mask) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Mask not found: " + (args.maskName || "index " + args.maskIndex)); }
 
         var deletedName  = mask.name;
         var deletedIndex = mask.propertyIndex;
@@ -188,6 +162,6 @@ function deleteLayerMask(args) {
             deleted: { name: deletedName, index: deletedIndex }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

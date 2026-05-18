@@ -109,6 +109,21 @@ function _resolveCompAndLayer(args) {
     return { comp: comp, layer: layer };
 }
 
+// Comp-only resolver — for handlers that don't take a layer argument.
+function _resolveComp(args) {
+    var compName = args.compName || "";
+    var comp = null;
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.name === compName) { comp = item; break; }
+    }
+    if (!comp) {
+        if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
+        else { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No composition found with name '" + compName + "'"); }
+    }
+    return comp;
+}
+
 // Walks a property path array on a layer (e.g. ["Contents","Group 1","Trim Paths 1","Start"]).
 // Throws with path context on missing step.
 function _resolvePropertyByPath(layer, propertyPath) {
@@ -152,7 +167,8 @@ var READ_ONLY_COMMANDS = {
     getLayerMasks: 1, getLayerEffects: 1,
     getSelectedLayers: 1, listProjectItems: 1,
     getLayerProperty: 1,
-    listMarkers: 1, getCurrentTime: 1, getProjectPath: 1
+    listMarkers: 1, getCurrentTime: 1, getProjectPath: 1,
+    getCompositionInfo: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -181,13 +197,12 @@ function _dispatchSwitch(command, args) {
         case "getCurrentTime":           return getCurrentTime(args);
         case "setCurrentTime":           return setCurrentTime(args);
         case "saveFrameToPng":           return saveFrameToPng(args);
-        // layers.jsx
+        case "getCompositionInfo":       return getCompositionInfo(args);
+        // layers.jsx (core)
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
         case "setSelectedLayers":        return setSelectedLayers(args);
         case "createLayer":              return createLayer(args);
-        case "createTextLayer":          return createTextLayer(args);
-        case "createShapeLayer":         return createShapeLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);
         case "createCamera":             return createCamera(args);
         case "createLightLayer":         return createLightLayer(args);
@@ -203,11 +218,17 @@ function _dispatchSwitch(command, args) {
         case "deleteLayer":              return deleteLayer(args);
         case "precompose":               return precompose(args);
         case "setTrackMatte":            return setTrackMatte(args);
-        case "addShapeOperator":         return addShapeOperator(args);
-        case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
+        case "getLayerProperty":         return getLayerProperty(args);
+        case "setLayerProperty":         return setLayerProperty(args);
+        // text.jsx
+        case "createTextLayer":          return createTextLayer(args);
         case "addTextAnimator":          return addTextAnimator(args);
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
+        // shapes.jsx
+        case "createShapeLayer":         return createShapeLayer(args);
+        case "addShapeOperator":         return addShapeOperator(args);
+        case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
         // markers.jsx
         case "addMarker":                return addMarker(args);
         case "listMarkers":              return listMarkers(args);
@@ -223,8 +244,6 @@ function _dispatchSwitch(command, args) {
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
-        case "getLayerProperty":         return getLayerProperty(args);
-        case "setLayerProperty":         return setLayerProperty(args);
         // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);

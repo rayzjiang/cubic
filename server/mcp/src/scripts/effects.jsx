@@ -1,34 +1,7 @@
 // effects.jsx
 // CRUD: C ✓  R ✓  U ✓  D ✓
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
-
-function resolveEffectsComp(compName) {
-    var comp = null;
-    for (var i = 1; i <= app.project.numItems; i++) {
-        var item = app.project.item(i);
-        if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-    }
-    if (!comp) {
-        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-    }
-    return comp;
-}
-
-function resolveEffectsLayer(comp, layerIndex, layerName) {
-    if (layerIndex !== undefined && layerIndex !== null) {
-        if (layerIndex < 1 || layerIndex > comp.numLayers) { throw new Error("Layer index out of bounds: " + layerIndex); }
-        return comp.layer(layerIndex);
-    }
-    if (layerName) {
-        for (var i = 1; i <= comp.numLayers; i++) {
-            if (comp.layer(i).name === layerName) { return comp.layer(i); }
-        }
-        throw new Error("Layer not found with name '" + layerName + "'");
-    }
-    throw new Error("layerIndex or layerName is required");
-}
+// ── Shared helper ─────────────────────────────────────────────────────────────
 
 // Applies a settings dict to an effect — used by applyEffect and applyEffectTemplate
 function applyEffectSettings(effect, settings) {
@@ -61,8 +34,8 @@ function applyEffectSettings(effect, settings) {
 
 function getLayerEffects(args) {
     try {
-        var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var effectsGroup = layer.property("Effects");
         var effects = [];
@@ -91,7 +64,7 @@ function getLayerEffects(args) {
             count: effects.length
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -99,8 +72,9 @@ function getLayerEffects(args) {
 
 function applyEffect(args) {
     try {
-        var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
 
         var effectName = args.effectName;
         var effectMatchName = args.effectMatchName;
@@ -108,7 +82,7 @@ function applyEffect(args) {
         var effectSettings = args.effectSettings || {};
 
         if (!effectName && !effectMatchName && !presetPath) {
-            throw new Error("You must specify either effectName, effectMatchName, or presetPath");
+            throw _err(ERROR_CODES.INVALID_ARGS, "You must specify either effectName, effectMatchName, or presetPath");
         }
 
         var effectResult;
@@ -116,7 +90,7 @@ function applyEffect(args) {
 
         if (presetPath) {
             var presetFile = new File(presetPath);
-            if (!presetFile.exists) { throw new Error("Effect preset file not found: " + presetPath); }
+            if (!presetFile.exists) { throw _err(ERROR_CODES.INVALID_ARGS, "Effect preset file not found: " + presetPath); }
             layer.applyPreset(presetFile);
             effectResult = { type: "preset", name: presetPath.split('/').pop().split('\\').pop(), applied: true };
         } else if (effectMatchName) {
@@ -137,7 +111,7 @@ function applyEffect(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -145,17 +119,23 @@ function applyEffect(args) {
 //
 // Templates are hardcoded here — ExtendScript has no external config mechanism
 // (no require(), no fs). Adding a new template means editing this dict, then:
-//   npm run build && npm run install-bridge + reopen panel in AE.
+//   npm run build && npm run install-plugin + reopen panel in AE.
+//
+// customSettings forms:
+//   • flat:        { Vibrance: 30 }       — applied to every sub-effect that has that property
+//   • per-index:   { "1": { Vibrance: 30 } } — targets sub-effect at given 0-based index
+// Both forms work for single-effect templates too; flat is the natural case there.
 
 function applyEffectTemplate(args) {
     try {
-        var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
 
         var templateName = args.templateName;
         var customSettings = args.customSettings || {};
 
-        if (!templateName) { throw new Error("You must specify a templateName"); }
+        if (!templateName) { throw _err(ERROR_CODES.INVALID_ARGS, "You must specify a templateName"); }
 
         var templates = {
             "gaussian-blur": {
@@ -209,34 +189,40 @@ function applyEffectTemplate(args) {
         if (!template) {
             var available = [];
             for (var k in templates) { if (templates.hasOwnProperty(k)) { available.push(k); } }
-            throw new Error("Template '" + templateName + "' not found. Available: " + available.join(", "));
+            throw _err(ERROR_CODES.INVALID_ARGS, "Template '" + templateName + "' not found. Available: " + available.join(", "));
         }
 
         var appliedEffects = [];
 
         if (template.effectMatchName) {
             var effect = layer.Effects.addProperty(template.effectMatchName);
-            for (var propName in template.settings) {
-                try {
-                    var property = effect.property(propName);
-                    if (property) { property.setValue(template.settings[propName]); }
-                } catch (e) {
-                    $.writeln("Warning: Could not set " + propName + " on " + effect.name + ": " + e);
-                }
-            }
+            // Single-effect templates: settings are already merged with customSettings above (per-key
+            // resolution in the templates dict), so just apply them as-is.
+            applyEffectSettings(effect, template.settings || {});
             appliedEffects.push({ name: effect.name, matchName: effect.matchName });
         } else if (template.effects) {
+            // Multi-effect templates: customSettings can be flat (apply to every sub-effect) or
+            // per-index ({ "0": {...}, "1": {...} }). Per-index wins where both could match.
             for (var i = 0; i < template.effects.length; i++) {
                 var effectData = template.effects[i];
                 var effect = layer.Effects.addProperty(effectData.effectMatchName);
-                for (var propName in effectData.settings) {
-                    try {
-                        var property = effect.property(propName);
-                        if (property) { property.setValue(effectData.settings[propName]); }
-                    } catch (e) {
-                        $.writeln("Warning: Could not set " + propName + " on " + effect.name + ": " + e);
+
+                var merged = {};
+                for (var bk in effectData.settings) {
+                    if (effectData.settings.hasOwnProperty(bk)) { merged[bk] = effectData.settings[bk]; }
+                }
+                var perIndex = customSettings[i] || customSettings[String(i)];
+                var overrideSrc = perIndex ? perIndex : customSettings;
+                for (var ck in overrideSrc) {
+                    if (overrideSrc.hasOwnProperty(ck) && typeof overrideSrc[ck] !== "object") {
+                        merged[ck] = overrideSrc[ck];
+                    } else if (overrideSrc.hasOwnProperty(ck) && perIndex) {
+                        // Per-index override may carry object values (e.g. color arrays)
+                        merged[ck] = overrideSrc[ck];
                     }
                 }
+
+                applyEffectSettings(effect, merged);
                 appliedEffects.push({ name: effect.name, matchName: effect.matchName });
             }
         }
@@ -249,7 +235,7 @@ function applyEffectTemplate(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -257,8 +243,8 @@ function applyEffectTemplate(args) {
 
 function setEffectProperty(args) {
     try {
-        var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var effectsGroup = layer.property("Effects");
         var eff = null;
@@ -266,14 +252,14 @@ function setEffectProperty(args) {
             if (args.effectIndex > 0 && args.effectIndex <= effectsGroup.numProperties) {
                 eff = effectsGroup.property(args.effectIndex);
             } else {
-                throw new Error("Effect index out of bounds: " + args.effectIndex);
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Effect index out of bounds: " + args.effectIndex);
             }
         } else if (args.effectName) {
             for (var i = 1; i <= effectsGroup.numProperties; i++) {
                 if (effectsGroup.property(i).name === args.effectName) { eff = effectsGroup.property(i); break; }
             }
         }
-        if (!eff) { throw new Error("Effect not found: " + (args.effectName || "index " + args.effectIndex)); }
+        if (!eff) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Effect not found: " + (args.effectName || "index " + args.effectIndex)); }
 
         var property = null;
         try {
@@ -283,7 +269,7 @@ function setEffectProperty(args) {
                 if (eff.property(p).name === args.propertyName) { property = eff.property(p); break; }
             }
         }
-        if (!property) { throw new Error("Property '" + args.propertyName + "' not found on effect '" + eff.name + "'"); }
+        if (!property) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on effect '" + eff.name + "'"); }
 
         property.setValue(args.value);
 
@@ -295,7 +281,7 @@ function setEffectProperty(args) {
             layer: { name: layer.name, index: layer.index }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -303,8 +289,8 @@ function setEffectProperty(args) {
 
 function deleteEffect(args) {
     try {
-        var comp = resolveEffectsComp(args.compName || "");
-        var layer = resolveEffectsLayer(comp, args.layerIndex, args.layerName);
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var effectsGroup = layer.property("Effects");
         var eff = null;
@@ -312,14 +298,14 @@ function deleteEffect(args) {
             if (args.effectIndex > 0 && args.effectIndex <= effectsGroup.numProperties) {
                 eff = effectsGroup.property(args.effectIndex);
             } else {
-                throw new Error("Effect index out of bounds: " + args.effectIndex);
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Effect index out of bounds: " + args.effectIndex);
             }
         } else if (args.effectName) {
             for (var i = 1; i <= effectsGroup.numProperties; i++) {
                 if (effectsGroup.property(i).name === args.effectName) { eff = effectsGroup.property(i); break; }
             }
         }
-        if (!eff) { throw new Error("Effect not found: " + (args.effectName || "index " + args.effectIndex)); }
+        if (!eff) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Effect not found: " + (args.effectName || "index " + args.effectIndex)); }
 
         var deletedName = eff.name;
         var deletedIndex = eff.propertyIndex;
@@ -332,6 +318,6 @@ function deleteEffect(args) {
             layer: { name: layer.name, index: layer.index }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

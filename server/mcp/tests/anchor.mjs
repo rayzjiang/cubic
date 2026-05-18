@@ -53,7 +53,7 @@ export async function run(ctx, opts) {
 
   // ── centerAnchorPoint on shape layer ──────────────────────────────────────
 
-  await test('centerAnchorPoint — center anchor on shape layer', async () => {
+  await test('centerAnchorPoint — center anchor on shape layer (overwrites setup keyframe)', async () => {
     const before = await send('getLayerProperty', {
       compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex,
       propertyPath: ['Transform', 'Anchor Point']
@@ -61,8 +61,9 @@ export async function run(ctx, opts) {
     assertNoError(before);
     const oldAnchor = before.property.value;
 
+    // Setup keyframed the Anchor Point to offset it — overwriteKeyframes:true acknowledges the clear.
     const r = await send('centerAnchorPoint', {
-      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, overwriteKeyframes: true
     });
     assertNoError(r);
     assertField(r, 'anchor');
@@ -78,7 +79,8 @@ export async function run(ctx, opts) {
     return `anchor → [${r.anchor[0].toFixed(1)}, ${r.anchor[1].toFixed(1)}]`;
   });
 
-  await test('centerAnchorPoint — calling again is idempotent', async () => {
+  await test('centerAnchorPoint — calling again is idempotent (no keyframes now)', async () => {
+    // Previous call cleared the keyframes, so this call should work without the flag.
     const r = await send('centerAnchorPoint', {
       compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex
     });
@@ -124,8 +126,9 @@ export async function run(ctx, opts) {
       propertyName: 'Anchor Point', timeInSeconds: 0, value: [200, 200]
     });
 
+    // overwriteKeyframes:true acknowledges that the setup keyframe will be cleared.
     const r = await send('centerAnchorPoint', {
-      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, preservePosition: false
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, preservePosition: false, overwriteKeyframes: true
     });
     assertNoError(r);
     assertField(r, 'anchor');
@@ -138,5 +141,34 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: 99
     });
     assertValue(r, 'status', 'error');
+  });
+
+  // ── overwriteKeyframes guard contract ────────────────────────────────────
+
+  await test('centerAnchorPoint — throws INVALID_ARGS when anchor has keyframes and no overwriteKeyframes', async () => {
+    // Re-keyframe the anchor on the shape layer to set up the guard condition
+    await send('setLayerKeyframe', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex,
+      propertyName: 'Anchor Point', timeInSeconds: 0, value: [150, 150]
+    });
+
+    const r = await send('centerAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex
+    });
+    assertValue(r, 'status', 'error');
+    if (r.errorCode !== 'INVALID_ARGS') {
+      throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
+    }
+    if (!r.message.toLowerCase().includes('overwritekeyframes')) {
+      throw new Error(`expected message to mention overwriteKeyframes, got: "${r.message}"`);
+    }
+  });
+
+  await test('centerAnchorPoint — overwriteKeyframes:true clears keyframes and succeeds', async () => {
+    const r = await send('centerAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, overwriteKeyframes: true
+    });
+    assertNoError(r);
+    assertField(r, 'anchor');
   });
 }

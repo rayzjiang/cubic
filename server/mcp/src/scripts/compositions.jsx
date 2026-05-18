@@ -21,7 +21,7 @@ function getProjectInfo() {
             solids: 0
         };
 
-        for (var i = 1; i <= Math.min(project.numItems, 50); i++) {
+        for (var i = 1; i <= project.numItems; i++) {
             var item = project.item(i);
             var itemType = "";
 
@@ -65,7 +65,7 @@ function getProjectInfo() {
 
         return JSON.stringify(result, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -96,7 +96,7 @@ function listCompositions() {
 
         return JSON.stringify(result, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -123,22 +123,14 @@ function createComposition(args) {
             composition: { name: newComp.name, id: newComp.id, itemIndex: itemIndex, width: newComp.width, height: newComp.height, pixelAspect: newComp.pixelAspect, duration: newComp.duration, frameRate: newComp.frameRate, bgColor: newComp.bgColor }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // U: setCompositionProperties
 function setCompositionProperties(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            throw new Error("No composition found with name '" + compName + "'");
-        }
+        var comp = _resolveComp(args);
         var changed = [];
         if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
         if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
@@ -156,7 +148,7 @@ function setCompositionProperties(args) {
             changedProperties: changed
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -165,11 +157,7 @@ function getCurrentTime(args) {
     try {
         var comp = null;
         if (args && args.compName) {
-            for (var ci = 1; ci <= app.project.numItems; ci++) {
-                var item = app.project.item(ci);
-                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
-            }
-            if (!comp) { throw new Error("No composition '" + args.compName + "'"); }
+            comp = _resolveComp(args);
         } else {
             if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
         }
@@ -185,7 +173,7 @@ function getCurrentTime(args) {
             duration: comp.duration
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -194,15 +182,11 @@ function setCurrentTime(args) {
     try {
         var comp = null;
         if (args && args.compName) {
-            for (var ci = 1; ci <= app.project.numItems; ci++) {
-                var item = app.project.item(ci);
-                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
-            }
-            if (!comp) { throw new Error("No composition '" + args.compName + "'"); }
+            comp = _resolveComp(args);
         } else {
             if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
         }
-        if (!comp) { throw new Error("No active composition. Pass compName or open a comp."); }
+        if (!comp) { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No active composition. Pass compName or open a comp."); }
 
         var t = null;
         if (args.timeInSeconds !== undefined && args.timeInSeconds !== null) {
@@ -210,7 +194,7 @@ function setCurrentTime(args) {
         } else if (args.timeInFrames !== undefined && args.timeInFrames !== null) {
             t = parseFloat(args.timeInFrames) / comp.frameRate;
         } else {
-            throw new Error("Provide timeInSeconds or timeInFrames.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Provide timeInSeconds or timeInFrames.");
         }
 
         // Clamp silently — motion designers expect snap rather than error
@@ -227,7 +211,7 @@ function setCurrentTime(args) {
             frameRate: comp.frameRate
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -316,6 +300,37 @@ function deleteComposition(args) {
         comp.remove();
         return JSON.stringify({ status: "success", deleted: { name: name, id: id } }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// R: getCompositionInfo — full detail on a single comp (vs. listCompositions which is summary)
+function getCompositionInfo(args) {
+    try {
+        var comp = _resolveComp(args);
+        return JSON.stringify({
+            status: "success",
+            composition: {
+                id: comp.id,
+                name: comp.name,
+                width: comp.width,
+                height: comp.height,
+                pixelAspect: comp.pixelAspect,
+                duration: comp.duration,
+                frameRate: comp.frameRate,
+                bgColor: comp.bgColor,
+                numLayers: comp.numLayers,
+                workAreaStart: comp.workAreaStart,
+                workAreaDuration: comp.workAreaDuration,
+                displayStartTime: comp.displayStartTime,
+                resolutionFactor: comp.resolutionFactor,
+                shutterAngle: comp.shutterAngle,
+                shutterPhase: comp.shutterPhase,
+                motionBlur: comp.motionBlur,
+                draft3d: comp.draft3d
+            }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

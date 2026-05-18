@@ -52,20 +52,23 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 
 **Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
 ```
-compositions.jsx  ← getProjectInfo, listCompositions, createComposition, setCompositionProperties,
-                     deleteComposition, getCurrentTime, setCurrentTime, saveFrameToPng
-layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createTextLayer, createShapeLayer,
-                     createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer,
-                     setLayerProperties, batchSetLayerProperties, splitLayer, trimLayer, setLayerParent,
-                     moveLayer, centerAnchorPoint, deleteLayer
+compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
+                     setCompositionProperties, deleteComposition, getCurrentTime, setCurrentTime, saveFrameToPng
+layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
+                     createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
+                     batchSetLayerProperties, splitLayer, trimLayer, setLayerParent, moveLayer, centerAnchorPoint,
+                     precompose, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty
+text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
+shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty
 animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
-                     setLayerExpression, getLayerExpressions, getLayerProperty, setLayerProperty
+                     setLayerExpression, getLayerExpressions
 masks.jsx         ← getLayerMasks, setLayerMask, deleteLayerMask
 effects.jsx       ← getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
 footage.jsx       ← listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
 project.jsx       ← getProjectPath, saveProject
-mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
+mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +
+                     _resolvePropertyByPath() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
 ```
 
 ## Adding a new command
@@ -81,7 +84,7 @@ mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + READ_ONLY_COMMANDS 
 ## Undo groups (Cubic undo)
 Every mutating command is wrapped in `app.beginUndoGroup("Cubic: <command>") / endUndoGroup()` via `try/finally` in `dispatchCommand()` — so one Cmd+Z reverts a full Cubic operation. Read-only commands (in `READ_ONLY_COMMANDS`) skip the wrapper. `batch` gets its own outer group wrapping the entire loop — all sub-commands collapse into one undo entry. Callers may pass `groupLabel` to set a human-readable label (`"Cubic: <groupLabel>"`); when omitted, falls back to `"Cubic: batch (N commands)"`. Agents should pass a per-turn summary so the user sees a meaningful entry in AE's Edit > Undo (e.g. `"apply cinematic look to logo"` → one ⌘Z reverts the whole turn).
 
-Read-only allowlist: `getProjectInfo`, `listCompositions`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`
+Read-only allowlist: `getProjectInfo`, `listCompositions`, `getCompositionInfo`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`, `getLayerProperty`
 
 **No programmatic undo.** AE gates `app.executeCommand(Undo)` from CEP's evalScript context — every approach (top-level, `scheduleTask`, `BridgeTalk`, `findMenuCommandId`-by-dynamic-label) no-ops. Rollback is handled via **inverse-CRUD**: each `create*` has a matching `delete*`, each `set*` can be replayed with prior values captured via the matching `get*`. The user's own ⌘Z still works because every mutation is wrapped in `beginUndoGroup`. Agents wanting "one ⌘Z reverts the whole turn" should emit their mutations through `batch`, which wraps the entire loop in one outer group.
 

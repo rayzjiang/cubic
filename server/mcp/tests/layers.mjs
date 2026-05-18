@@ -231,8 +231,19 @@ export async function run(ctx, opts) {
     // cameras don't have Scale/Opacity — fields must exist but may be null
     if (!('scale'   in camera)) throw new Error('camera missing field "scale"');
     if (!('opacity' in camera)) throw new Error('camera missing field "opacity"');
+    // Camera-specific fields (Item 7b)
+    assertField(camera, 'zoom', 'number');
+    if (!('pointOfInterest' in camera)) throw new Error('camera missing field "pointOfInterest"');
 
-    return `text type=${text.type} scale=[${text.scale}] opacity=${text.opacity}`;
+    const light = r.layers.find(l => l.index === ctx.lightLayerIndex);
+    if (!light) throw new Error('light layer not found');
+    assertValue(light, 'type', 'light');
+    // Light-specific fields (Item 7b)
+    assertField(light, 'intensity', 'number');
+    assertField(light, 'lightType', 'string');
+    if (!('lightColor' in light)) throw new Error('light missing field "lightColor"');
+
+    return `text type=${text.type} scale=[${text.scale}] opacity=${text.opacity}, camera.zoom=${camera.zoom}, light.intensity=${light.intensity} (${light.lightType})`;
   });
 
   // ── Update ────────────────────────────────────────────────────────────────
@@ -261,6 +272,69 @@ export async function run(ctx, opts) {
     if (r.results.length !== 2) throw new Error(`expected 2 results, got ${r.results.length}`);
     const failed = r.results.filter(res => res.status !== 'success');
     if (failed.length > 0) throw new Error(`operation(s) failed: ${JSON.stringify(failed)}`);
+  });
+
+  // ── overwriteKeyframes guard (Item 4 contract) ──────────────────────────────
+
+  await test('setLayerProperties — Opacity keyframed → throws INVALID_ARGS without overwriteKeyframes', async () => {
+    // Set an Opacity keyframe to put the property into a guarded state
+    await send('setLayerKeyframe', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex,
+      propertyName: 'Opacity', timeInSeconds: 0, value: 50
+    });
+
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex, opacity: 90
+    });
+    assertValue(r, 'status', 'error');
+    if (r.errorCode !== 'INVALID_ARGS') {
+      throw new Error(`expected INVALID_ARGS, got "${r.errorCode}"`);
+    }
+    if (!r.message.toLowerCase().includes('overwritekeyframes')) {
+      throw new Error(`expected hint about overwriteKeyframes, got "${r.message}"`);
+    }
+  });
+
+  await test('setLayerProperties — overwriteKeyframes:true clears Opacity keyframe and succeeds', async () => {
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex, opacity: 90, overwriteKeyframes: true
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'opacity');
+
+    // Verify the keyframe was actually removed
+    const kfs = await send('getLayerKeyframes', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex, propertyName: 'Opacity'
+    });
+    assertNoError(kfs);
+    if (kfs.count !== 0) throw new Error(`expected 0 keyframes after overwrite, got ${kfs.count}`);
+  });
+
+  await test('batchSetLayerProperties — per-op overwriteKeyframes flag respected', async () => {
+    // Set a Scale keyframe on shape layer
+    await send('setLayerKeyframe', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex,
+      propertyName: 'Scale', timeInSeconds: 0, value: [50, 50, 100]
+    });
+
+    // First op: no flag → should error. Second op: flag set → should succeed.
+    const r = await send('batchSetLayerProperties', {
+      compName: COMP_NAME,
+      operations: [
+        { layerIndex: ctx.shapeLayerIndex, scale: [80, 80, 100] },
+        { layerIndex: ctx.shapeLayerIndex, scale: [110, 110, 100], overwriteKeyframes: true }
+      ]
+    });
+    assertNoError(r);
+    assertArray(r, 'results');
+    if (r.results[0].status !== 'error') throw new Error('expected first op to error without overwriteKeyframes');
+    if (r.results[0].errorCode !== 'INVALID_ARGS') throw new Error(`expected INVALID_ARGS on first op, got "${r.results[0].errorCode}"`);
+    if (r.results[1].status !== 'success') throw new Error(`expected second op to succeed: ${JSON.stringify(r.results[1])}`);
+
+    // Restore shape opacity to 75 for downstream tests
+    await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: ctx.shapeLayerIndex, opacity: 75, scale: [100, 100, 100], overwriteKeyframes: true
+    });
   });
 
   // moveLayer: move solid (index 4) after text (index 6) → null=1, light=2, camera=3, shape=4, text=5, solid=6

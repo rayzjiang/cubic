@@ -160,11 +160,9 @@ server.registerTool(
     const allowedScripts = [
       "listCompositions",
       "getProjectInfo",
+      "getCompositionInfo",
       "getLayerInfo",
       "createComposition",
-      "createTextLayer",
-      "createShapeLayer",
-      "createSolidLayer",
       "setLayerProperties",
       "setLayerKeyframe",
       "setLayerExpression",
@@ -173,9 +171,6 @@ server.registerTool(
       "applyEffectTemplate",
       "setEffectProperty",
       "deleteEffect",
-      "createCamera",
-      "createLightLayer",
-      "createNullLayer",
       "setLayerParent",
       "batchSetLayerProperties",
       "setCompositionProperties",
@@ -260,9 +255,9 @@ server.registerTool(
 
 ## Available Commands (via runScript or dedicated tools)
 
-**Compositions:** getProjectInfo, listCompositions, createComposition, setCompositionProperties, deleteComposition
+**Compositions:** getProjectInfo, listCompositions, getCompositionInfo, createComposition, setCompositionProperties, deleteComposition
 **Playhead:** getCurrentTime, setCurrentTime
-**Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (preferred — unified, use \`type\` field), createTextLayer, createShapeLayer, createSolidLayer, createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (use \`type\` field: text|shape|solid|adjustment|null|camera|light), duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Layer time ops:** splitLayer, trimLayer (inPoint/outPoint/startTime/mode)
 **Anchor:** centerAnchorPoint (move anchor to content center, position-compensated)
 **Nesting / Mattes:** precompose, setTrackMatte
@@ -609,10 +604,11 @@ server.registerTool(
 server.registerTool(
   "centerAnchorPoint",
   {
-    description: "Move the anchor point to the center of the layer's content bounding box. By default adjusts Position so the layer stays visually in place — equivalent to AE's Layer > Transform > Center Anchor Point in Layer Content.",
+    description: "Move the anchor point to the center of the layer's content bounding box. By default adjusts Position so the layer stays visually in place — equivalent to AE's Layer > Transform > Center Anchor Point in Layer Content. Throws if Anchor Point or Position has existing keyframes unless overwriteKeyframes is true.",
     inputSchema: {
       ...LayerIdentifierSchema,
-      preservePosition: z.boolean().optional().describe("Adjust Position to keep the layer visually in place (default: true).")
+      preservePosition: z.boolean().optional().describe("Adjust Position to keep the layer visually in place (default: true)."),
+      overwriteKeyframes: z.boolean().optional().describe("If true, silently clear existing keyframes on Anchor Point (and Position when preservePosition) before setting. Default false → throws if keyframes exist.")
     }
   },
   async (params) => {
@@ -1066,11 +1062,12 @@ server.registerTool(
 server.registerTool(
   "setLayerProperty",
   {
-    description: "Set the value of any layer property by path — including deeply nested ones (shape contents, effect sub-groups, camera/light options, text animator props). Mirror of getLayerProperty. Refuses paths that already have keyframes — use setLayerKeyframe for animated properties. For flat layer toggles and transforms use setLayerProperties instead.",
+    description: "Set the value of any layer property by path — including deeply nested ones (shape contents, effect sub-groups, camera/light options, text animator props). Mirror of getLayerProperty. Refuses paths that already have keyframes unless overwriteKeyframes is true — for animated properties prefer setLayerKeyframe. For flat layer toggles and transforms use setLayerProperties instead.",
     inputSchema: {
       ...LayerIdentifierSchema,
       propertyPath: z.array(z.string()).describe("Path to the property as an array of names, e.g. ['Contents', 'Group 1', 'Stroke 1', 'Color'], ['Camera Options', 'Zoom'], or ['Effects', 'Drop Shadow', 'Opacity']."),
-      value: z.unknown().describe("New value for the property. Arrays may be passed as JSON strings and will be parsed automatically.")
+      value: z.unknown().describe("New value for the property. Arrays may be passed as JSON strings and will be parsed automatically."),
+      overwriteKeyframes: z.boolean().optional().describe("If true, clear existing keyframes before setting the value. Default false → throws if keyframes exist (use setLayerKeyframe to target a specific time instead).")
     }
   },
   async (parameters) => dispatchTool("setLayerProperty", parameters, 10000)
@@ -1079,13 +1076,15 @@ server.registerTool(
 server.registerTool(
   "setLayerProperties",
   {
-    description: "Set multiple non-keyframed properties on a layer in one call — transforms, layer toggles, text content. For arbitrary nested path addressing use setLayerProperty instead.",
+    description: "Set multiple non-keyframed properties on a layer in one call — transforms, layer toggles, text content. For arbitrary nested path addressing use setLayerProperty instead. Transforms with existing keyframes are rejected unless overwriteKeyframes is true.",
     inputSchema: {
       ...LayerIdentifierSchema,
-      position: z.array(z.number()).optional().describe("[x, y] or [x, y, z]. Rejected if the property already has keyframes."),
-      scale: z.array(z.number()).optional().describe("[x, y, z] in percent (e.g. [100, 100, 100])."),
-      rotation: z.number().optional().describe("Rotation in degrees (Z Rotation for 3D layers)."),
-      opacity: z.number().optional().describe("Opacity 0–100."),
+      position: z.array(z.number()).optional().describe("[x, y] or [x, y, z]. Rejected if the property already has keyframes unless overwriteKeyframes is true."),
+      scale: z.array(z.number()).optional().describe("[x, y, z] in percent (e.g. [100, 100, 100]). Rejected if keyframes exist unless overwriteKeyframes is true."),
+      rotation: z.number().optional().describe("Rotation in degrees (Z Rotation for 3D layers). Rejected if keyframes exist unless overwriteKeyframes is true."),
+      opacity: z.number().optional().describe("Opacity 0–100. Rejected if keyframes exist unless overwriteKeyframes is true."),
+      anchorPoint: z.array(z.number()).optional().describe("Anchor point [x, y] or [x, y, z]. Rejected if keyframes exist unless overwriteKeyframes is true."),
+      overwriteKeyframes: z.boolean().optional().describe("If true, silently clear existing keyframes on any transform (position/scale/rotation/opacity/anchorPoint) being set in this call. Default false → throws if any has keyframes."),
       startTime: z.number().optional().describe("Layer in-point / start time in seconds."),
       duration: z.number().positive().optional().describe("Layer duration in seconds (sets outPoint = startTime + duration)."),
       enabled: z.boolean().optional().describe("Show/hide the layer (eye toggle)."),

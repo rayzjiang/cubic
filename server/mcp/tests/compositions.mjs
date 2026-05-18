@@ -3,6 +3,7 @@
 // Covers:
 //   getProjectInfo           (R)
 //   listCompositions         (R)
+//   getCompositionInfo       (R — single-comp full detail; mirror of listCompositions)
 //   createComposition        (C)
 //   setCompositionProperties (U)
 //   deleteComposition        (D)
@@ -91,6 +92,32 @@ export async function run(ctx, opts) {
     assertField(r.composition, 'name', 'string');
     assertArray(r, 'changedProperties');
     assertIncludes(r, 'changedProperties', 'frameRate');
+  });
+
+  await test('getCompositionInfo — full single-comp detail with name, dimensions, work area, render flags', async () => {
+    const r = await send('getCompositionInfo', { compName: COMP_NAME });
+    assertNoError(r);
+    assertField(r, 'composition', 'object');
+    const c = r.composition;
+    assertValue(c, 'name', COMP_NAME);
+    assertField(c, 'id', 'number');
+    assertField(c, 'width', 'number');
+    assertField(c, 'height', 'number');
+    assertField(c, 'duration', 'number');
+    assertField(c, 'frameRate', 'number');
+    assertField(c, 'numLayers', 'number');
+    assertField(c, 'workAreaStart', 'number');
+    assertField(c, 'workAreaDuration', 'number');
+    assertField(c, 'motionBlur', 'boolean');
+    return `${c.width}×${c.height} @ ${c.frameRate}fps`;
+  });
+
+  await test('getCompositionInfo — unknown comp returns COMP_NOT_FOUND', async () => {
+    const r = await send('getCompositionInfo', { compName: '__no_such_comp_getCompInfo_test__' });
+    assertValue(r, 'status', 'error');
+    if (r.errorCode !== 'COMP_NOT_FOUND') {
+      throw new Error(`expected COMP_NOT_FOUND, got "${r.errorCode}"`);
+    }
   });
 
   await test('deleteComposition — removes comp, no longer in listCompositions', async () => {

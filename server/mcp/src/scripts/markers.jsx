@@ -8,28 +8,19 @@
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function _resolveMarkerProp(args) {
-    var compName = args.compName || "";
-    var comp = null;
-    for (var i = 1; i <= app.project.numItems; i++) {
-        var it = app.project.item(i);
-        if (it instanceof CompItem && it.name === compName) { comp = it; break; }
-    }
-    if (!comp) {
-        if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-        else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-    }
+    var comp = _resolveComp(args);
     var layerIndex = args.layerIndex;
     var layerName  = args.layerName || "";
     if ((layerIndex !== undefined && layerIndex !== null) || layerName) {
         var layer = null;
         if (layerIndex !== undefined && layerIndex !== null) {
             if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
+            else { throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + layerIndex); }
         } else {
             for (var j = 1; j <= comp.numLayers; j++) {
                 if (comp.layer(j).name === layerName) { layer = comp.layer(j); break; }
             }
-            if (!layer) { throw new Error("Layer not found: '" + layerName + "'"); }
+            if (!layer) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Layer not found: '" + layerName + "'"); }
         }
         return { comp: comp, layer: layer, markerProp: layer.property("Marker"), target: "layer" };
     }
@@ -41,7 +32,7 @@ function _findMarkerKey(markerProp, args) {
     if (args.markerIndex !== undefined && args.markerIndex !== null) {
         var ki = parseInt(args.markerIndex);
         if (ki < 1 || ki > markerProp.numKeys) {
-            throw new Error("Marker index " + ki + " out of range (1–" + markerProp.numKeys + ")");
+            throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Marker index " + ki + " out of range (1–" + markerProp.numKeys + ")");
         }
         return ki;
     }
@@ -50,9 +41,9 @@ function _findMarkerKey(markerProp, args) {
         for (var k = 1; k <= markerProp.numKeys; k++) {
             if (Math.abs(markerProp.keyTime(k) - t) <= 0.001) { return k; }
         }
-        throw new Error("No marker at time " + t + "s (±0.001s tolerance)");
+        throw _err(ERROR_CODES.INVALID_ARGS, "No marker at time " + t + "s (±0.001s tolerance)");
     }
-    throw new Error("Provide markerIndex (1-based) or time (seconds) to identify the marker");
+    throw _err(ERROR_CODES.INVALID_ARGS, "Provide markerIndex (1-based) or time (seconds) to identify the marker");
 }
 
 function _markerToObj(markerProp, keyIndex) {
@@ -78,7 +69,7 @@ function addMarker(args) {
         var resolved = _resolveMarkerProp(args);
         var markerProp = resolved.markerProp;
 
-        if (args.time === undefined || args.time === null) { throw new Error("time (seconds) is required"); }
+        if (args.time === undefined || args.time === null) { throw _err(ERROR_CODES.INVALID_ARGS, "time (seconds) is required"); }
         var t = parseFloat(args.time);
 
         var mv = new MarkerValue(args.comment || "");
@@ -102,7 +93,7 @@ function addMarker(args) {
             marker: _markerToObj(markerProp, newKeyIndex)
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -128,7 +119,7 @@ function listMarkers(args) {
             markers: markers
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -158,7 +149,7 @@ function updateMarker(args) {
             marker: _markerToObj(markerProp, keyIndex)
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -190,6 +181,6 @@ function removeMarker(args) {
             removedAt: markerTime
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

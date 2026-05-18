@@ -1,4 +1,4 @@
-// text.mjs — tests for text animator commands in layers.jsx
+// text.mjs — tests for text layer + text animator commands in text.jsx
 //
 // Covers:
 //   addTextAnimator             (C  — properties array, name, initialValues)

@@ -42,16 +42,16 @@ function listProjectItems(args) {
         }
         return JSON.stringify({ status: "success", items: items, count: items.length }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // C: importFootage — import a file from disk into the project panel
 function importFootage(args) {
     try {
-        if (!args || !args.filePath) { throw new Error("filePath is required"); }
+        if (!args || !args.filePath) { throw _err(ERROR_CODES.INVALID_ARGS, "filePath is required"); }
         var f = new File(args.filePath);
-        if (!f.exists) { throw new Error("File not found: " + args.filePath); }
+        if (!f.exists) { throw _err(ERROR_CODES.INVALID_ARGS, "File not found: " + args.filePath); }
 
         var importOptions = new ImportOptions(f);
         if (args.sequence === true) { importOptions.sequence = true; }
@@ -73,23 +73,14 @@ function importFootage(args) {
             }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // C: addFootageToComp — place a project-panel item onto a comp's timeline as an AVLayer
 function addFootageToComp(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var it = app.project.item(i);
-            if (it instanceof CompItem && it.name === compName) { comp = it; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition '" + compName + "' and no active comp"); }
-        }
+        var comp = _resolveComp(args);
 
         // Resolve source: by itemId, itemName, or itemIndex
         var source = null;
@@ -106,8 +97,8 @@ function addFootageToComp(args) {
                 source = app.project.item(args.itemIndex);
             }
         }
-        if (!source) { throw new Error("Source item not found. Specify itemName, itemId, or itemIndex."); }
-        if (source instanceof FolderItem) { throw new Error("Cannot add a folder to a composition."); }
+        if (!source) { throw _err(ERROR_CODES.INVALID_ARGS, "Source item not found. Specify itemName, itemId, or itemIndex."); }
+        if (source instanceof FolderItem) { throw _err(ERROR_CODES.INVALID_ARGS, "Cannot add a folder to a composition."); }
 
         var layer = comp.layers.add(source);
         if (args.position !== undefined && args.position !== null) { layer.property("Position").setValue(args.position); }
@@ -131,7 +122,7 @@ function addFootageToComp(args) {
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
@@ -149,14 +140,14 @@ function deleteProjectItem(args) {
                 if (app.project.item(j).name === args.itemName) { item = app.project.item(j); break; }
             }
         }
-        if (!item) { throw new Error("Project item not found (specify itemId or itemName)"); }
-        if (item instanceof CompItem) { throw new Error("Use deleteComposition to remove compositions"); }
+        if (!item) { throw _err(ERROR_CODES.INVALID_ARGS, "Project item not found (specify itemId or itemName)"); }
+        if (item instanceof CompItem) { throw _err(ERROR_CODES.INVALID_ARGS, "Use deleteComposition to remove compositions"); }
         var name = item.name;
         var id = item.id;
         item.remove();
         return JSON.stringify({ status: "success", deleted: { name: name, id: id } }, null, 2);
     } catch (error) {
-        return JSON.stringify({ status: "error", errorCode: error.code || "INTERNAL_ERROR", message: error.toString(), line: error.line }, null, 2);
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 

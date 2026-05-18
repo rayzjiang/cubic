@@ -112,6 +112,31 @@ export async function run(ctx, opts) {
     }
   });
 
+  // Multi-effect template + per-index customSettings: override Vibrance (sub-effect 1) to 30.
+  await test('applyEffectTemplate — cinematic-look with per-index customSettings honors override', async () => {
+    const r = await send('applyEffectTemplate', {
+      compName: COMP_NAME, layerIndex: li,
+      templateName: 'cinematic-look',
+      customSettings: { "1": { Vibrance: 30 } }
+    });
+    assertNoError(r);
+    assertArray(r, 'appliedEffects');
+    if (r.appliedEffects.length < 2) throw new Error('expected ≥2 effects from cinematic-look');
+
+    // Verify the most recently added Vibrance carries Vibrance=30 (was 15 in template default)
+    const list = await send('getLayerEffects', { compName: COMP_NAME, layerIndex: li });
+    assertNoError(list);
+    const vibranceEffects = list.effects.filter(e => e.matchName === 'ADBE Vibrance');
+    if (vibranceEffects.length === 0) throw new Error('no Vibrance effect found after template');
+    const latest = vibranceEffects[vibranceEffects.length - 1];
+    const vibProp = latest.properties.find(p => p.name === 'Vibrance');
+    if (!vibProp) throw new Error('Vibrance property missing on latest Vibrance effect');
+    if (Math.abs(vibProp.value - 30) > 0.5) {
+      throw new Error(`expected Vibrance=30 (override), got ${vibProp.value}`);
+    }
+    return `Vibrance=${vibProp.value} (overridden)`;
+  });
+
   // ── Read ──────────────────────────────────────────────────────────────────
 
   await test('getLayerEffects — ≥4 effects with index, name, matchName, enabled, properties', async () => {

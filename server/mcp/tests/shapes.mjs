@@ -1,4 +1,4 @@
-// shapes.mjs — tests for shape operator commands in layers.jsx
+// shapes.mjs — tests for shape layer + shape operator commands in shapes.jsx
 //
 // Covers:
 //   addShapeOperator        (C  — type: trimPaths, repeater, roundedCorners,

@@ -34,28 +34,8 @@ function resolveProperty(layer, propertyName) {
 // R: getLayerExpressions
 function getLayerExpressions(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var expressions = [];
 
@@ -80,39 +60,19 @@ function getLayerExpressions(args) {
             count: expressions.length
         }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }
 
 // R: getLayerKeyframes
 function getLayerKeyframes(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var property = resolveProperty(layer, args.propertyName);
         if (!property) {
-            throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
 
         var interpLabels = {};
@@ -143,51 +103,26 @@ function getLayerKeyframes(args) {
             count: keyframes.length
         }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }
 
 // C: setLayerKeyframe
 function setLayerKeyframe(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var property = resolveProperty(layer, args.propertyName);
         if (!property) {
-            throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
         if (!property.canVaryOverTime) {
-            throw new Error("Property '" + args.propertyName + "' cannot be keyframed.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + args.propertyName + "' cannot be keyframed.");
         }
 
         var value = args.value;
         var timeInSeconds = args.timeInSeconds;
-
-        // Value arrives as a string (e.g. "[0, 0]") due to z.unknown() in the MCP schema — parse it
-        if (typeof value === "string") {
-            try { value = eval("(" + value + ")"); } catch(e) { value = parseFloat(value); }
-        }
 
         // Reconstruct as a literal array so AE always gets a native ExtendScript array type.
         var currentVal = property.value;
@@ -204,87 +139,47 @@ function setLayerKeyframe(args) {
 
         property.setValueAtTime(timeInSeconds, finalVal);
 
-        return JSON.stringify({ status: "success", message: "Keyframe set for '" + args.propertyName + "' on layer '" + layer.name + "' at " + timeInSeconds + "s." });
+        return JSON.stringify({ status: "success", message: "Keyframe set for '" + args.propertyName + "' on layer '" + layer.name + "' at " + timeInSeconds + "s." }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: "Error setting keyframe: " + e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: "Error setting keyframe: " + e.toString(), line: e.line }, null, 2);
     }
 }
 
 // C/U: setLayerExpression
 function setLayerExpression(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var property = resolveProperty(layer, args.propertyName);
         if (!property) {
-            throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
         if (!property.canSetExpression) {
-            throw new Error("Property '" + args.propertyName + "' does not support expressions.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + args.propertyName + "' does not support expressions.");
         }
 
         property.expression = args.expressionString;
 
         var action = args.expressionString === "" ? "removed" : "set";
-        return JSON.stringify({ status: "success", message: "Expression " + action + " for '" + args.propertyName + "' on layer '" + layer.name + "'." });
+        return JSON.stringify({ status: "success", message: "Expression " + action + " for '" + args.propertyName + "' on layer '" + layer.name + "'." }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: "Error setting expression: " + e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: "Error setting expression: " + e.toString(), line: e.line }, null, 2);
     }
 }
 
 // U: setKeyframeEasing
 function setKeyframeEasing(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var property = resolveProperty(layer, args.propertyName);
         if (!property) {
-            throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
         if (property.numKeys === 0) {
-            throw new Error("No keyframes on property '" + args.propertyName + "'.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "No keyframes on property '" + args.propertyName + "'.");
         }
 
         // Resolve which keyframe(s) to target
@@ -302,7 +197,7 @@ function setKeyframeEasing(args) {
         }
 
         if (indices.length === 0) {
-            throw new Error("No matching keyframe found.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "No matching keyframe found.");
         }
 
         var easeType = args.easeType || "easyEase";
@@ -358,156 +253,27 @@ function setKeyframeEasing(args) {
             message: "Easing set on " + changed.length + " keyframe(s) for '" + args.propertyName + "'.",
             keyframesModified: changed,
             easeType: easeType
-        });
-    } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
-    }
-}
-
-// R: getLayerProperty — read a property value at optional time via path array
-function getLayerProperty(args) {
-    try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "'"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
-
-        var propertyPath = args.propertyPath;
-        if (!propertyPath || typeof propertyPath.length === "undefined" || propertyPath.length === 0) {
-            throw new Error("propertyPath must be a non-empty array.");
-        }
-
-        var property = _resolvePropertyByPath(layer, propertyPath);
-
-        var propInfo = {
-            name: property.name,
-            path: propertyPath,
-            value: property.value,
-            numKeys: property.numKeys || 0,
-            isTimeVarying: (property.numKeys || 0) > 0
-        };
-
-        if (args.timeInSeconds !== undefined) {
-            propInfo.valueAtTime = property.valueAtTime(args.timeInSeconds, false);
-            propInfo.timeInSeconds = args.timeInSeconds;
-        }
-
-        if (property.canSetExpression !== undefined) {
-            propInfo.canSetExpression = property.canSetExpression;
-            propInfo.hasExpression = property.canSetExpression && property.expressionEnabled;
-            propInfo.expression = (property.canSetExpression && property.expressionEnabled) ? property.expression : "";
-            if (propInfo.hasExpression) { propInfo.isTimeVarying = true; }
-        }
-
-        return JSON.stringify({ status: "success", property: propInfo }, null, 2);
-    } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
-    }
-}
-
-// U: setLayerProperty — generic path-based setter (mirror of getLayerProperty)
-function setLayerProperty(args) {
-    try {
-        var resolved = _resolveCompAndLayer(args);
-        var layer = resolved.layer;
-
-        var propertyPath = args.propertyPath;
-        if (!propertyPath || typeof propertyPath.length === "undefined" || propertyPath.length === 0) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "propertyPath must be a non-empty array.");
-        }
-
-        var property = _resolvePropertyByPath(layer, propertyPath);
-
-        if (property.numKeys !== undefined && property.numKeys > 0) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' has " + property.numKeys + " keyframe(s) — use setLayerKeyframe to target individual keyframes.");
-        }
-
-        if (!property.setValue) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' is a group or read-only and cannot be set directly.");
-        }
-
-        var value = args.value;
-        if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
-
-        // Reconstruct as a literal array so AE always gets a native ExtendScript array type (same
-        // pattern as setLayerKeyframe:194).
-        var currentVal = property.value;
-        var finalVal;
-        if (typeof currentVal === "object" && typeof currentVal.length === "number" && currentVal.length >= 1 && value instanceof Array) {
-            finalVal = [];
-            for (var vi = 0; vi < currentVal.length; vi++) {
-                var inVal = +value[vi];
-                finalVal[vi] = isNaN(inVal) ? +currentVal[vi] : inVal;
-            }
-        } else {
-            finalVal = value;
-        }
-
-        property.setValue(finalVal);
-
-        return JSON.stringify({
-            status: "success",
-            message: "Property '" + property.name + "' updated.",
-            property: { path: propertyPath, name: property.name, value: property.value }
         }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }
 
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw new Error("No composition found with name '" + compName + "' and no active composition"); }
-        }
-
-        var layerIndex = args.layerIndex;
-        var layer = null;
-        if (layerIndex !== undefined && layerIndex !== null) {
-            if (layerIndex > 0 && layerIndex <= comp.numLayers) { layer = comp.layer(layerIndex); }
-            else { throw new Error("Layer index out of bounds: " + layerIndex); }
-        } else if (args.layerName) {
-            for (var j = 1; j <= comp.numLayers; j++) {
-                if (comp.layer(j).name === args.layerName) { layer = comp.layer(j); break; }
-            }
-        }
-        if (!layer) { throw new Error("Layer not found"); }
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
 
         var property = resolveProperty(layer, args.propertyName);
         if (!property) {
-            throw new Error("Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
         }
 
         var removed = property.numKeys;
         while (property.numKeys > 0) { property.removeKey(1); }
-        return JSON.stringify({ status: "success", message: "Removed " + removed + " keyframe(s) from '" + args.propertyName + "'.", removed: removed });
+        return JSON.stringify({ status: "success", message: "Removed " + removed + " keyframe(s) from '" + args.propertyName + "'.", removed: removed }, null, 2);
     } catch (e) {
-        return JSON.stringify({ status: "error", errorCode: e.code || "INTERNAL_ERROR", message: e.toString(), line: e.line });
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }

@@ -1,4 +1,4 @@
-// property-paths.mjs — tests for the generic setLayerProperty command (animation.jsx)
+// property-paths.mjs — tests for the generic setLayerProperty command (layers.jsx)
 //
 // Covers:
 //   setLayerProperty  (U  — path-based setter, mirrors getLayerProperty)
