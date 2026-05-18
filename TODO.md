@@ -8,7 +8,7 @@ Phase 5 (Post MVP stuff?)
 
 Do a comprehensive analysis of my @server/mcp/src/scripts/ modules, are all the commands organized into their proper domain files, and named robustly enough to cover that domains entire scope (eg. id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.). Also Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests. Finally Verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + ability to revert changes for the ai (like by calling the opposite command/resetting value + reading value beforehand if users dont do ctrl z)
 
-then after your analysis of the scripts, analyze the @server/mcp/tests/ to make sure all the information matches and is properly tested. Btw rn my tests are all passing and working as intended, but im more focused that the commands are in the right spots + organized properly + robustly designed
+Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to make sure all the information matches and all mcp functionality is properly tested/working. Btw rn my tests are all passing and working as intended, but im more focused that the commands are in the right spots + organized properly + robustly designed
 
 ---
 1. Obfuscation (meaningful protection, not foolproof)

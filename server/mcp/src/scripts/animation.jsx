@@ -31,6 +31,23 @@ function resolveProperty(layer, propertyName) {
     return null;
 }
 
+// Routes by propertyPath (walks nested groups via _resolvePropertyByPath)
+// or propertyName (legacy, top-level Transform/Effects/Text only via resolveProperty).
+function _resolveAnimProp(layer, args) {
+    if (args.propertyPath && args.propertyPath.length > 0) {
+        return _resolvePropertyByPath(layer, args.propertyPath);
+    }
+    if (args.propertyName) {
+        var prop = resolveProperty(layer, args.propertyName);
+        if (!prop) {
+            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND,
+                "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
+        }
+        return prop;
+    }
+    throw _err(ERROR_CODES.INVALID_ARGS, "Provide propertyPath (preferred) or propertyName.");
+}
+
 // R: getLayerExpressions
 function getLayerExpressions(args) {
     try {
@@ -70,10 +87,7 @@ function getLayerKeyframes(args) {
         var resolved = _resolveCompAndLayer(args);
         var layer = resolved.layer;
 
-        var property = resolveProperty(layer, args.propertyName);
-        if (!property) {
-            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
-        }
+        var property = _resolveAnimProp(layer, args);
 
         var interpLabels = {};
         interpLabels[KeyframeInterpolationType.LINEAR] = "linear";
@@ -98,7 +112,7 @@ function getLayerKeyframes(args) {
         return JSON.stringify({
             status: "success",
             layer: { name: layer.name, index: layer.index },
-            property: args.propertyName,
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
             keyframes: keyframes,
             count: keyframes.length
         }, null, 2);
@@ -113,21 +127,33 @@ function setLayerKeyframe(args) {
         var resolved = _resolveCompAndLayer(args);
         var layer = resolved.layer;
 
-        var property = resolveProperty(layer, args.propertyName);
-        if (!property) {
-            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
-        }
+        var property = _resolveAnimProp(layer, args);
         if (!property.canVaryOverTime) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + args.propertyName + "' cannot be keyframed.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' cannot be keyframed.");
         }
 
         var value = args.value;
         var timeInSeconds = args.timeInSeconds;
 
+        // Capture prior state for revert
+        var previousKey = { existed: false, value: null };
+        for (var pk = 1; pk <= property.numKeys; pk++) {
+            if (Math.abs(property.keyTime(pk) - timeInSeconds) < 0.0001) {
+                previousKey = { existed: true, value: property.keyValue(pk) };
+                break;
+            }
+        }
+
         // Reconstruct as a literal array so AE always gets a native ExtendScript array type.
         var currentVal = property.value;
         var finalVal;
-        if (typeof currentVal === "object" && typeof currentVal.length === "number" && currentVal.length >= 1) {
+        if (value && typeof value === "object" && value.vertices instanceof Array) {
+            finalVal = new Shape();
+            finalVal.vertices = value.vertices;
+            finalVal.closed = (value.closed !== false);
+            if (value.inTangents)  { finalVal.inTangents  = value.inTangents; }
+            if (value.outTangents) { finalVal.outTangents = value.outTangents; }
+        } else if (typeof currentVal === "object" && typeof currentVal.length === "number" && currentVal.length >= 1) {
             finalVal = [];
             for (var vi = 0; vi < currentVal.length; vi++) {
                 var inVal = +value[vi];
@@ -139,7 +165,12 @@ function setLayerKeyframe(args) {
 
         property.setValueAtTime(timeInSeconds, finalVal);
 
-        return JSON.stringify({ status: "success", message: "Keyframe set for '" + args.propertyName + "' on layer '" + layer.name + "' at " + timeInSeconds + "s." }, null, 2);
+        return JSON.stringify({
+            status: "success",
+            message: "Keyframe set for '" + property.name + "' on layer '" + layer.name + "' at " + timeInSeconds + "s.",
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            previousKey: previousKey
+        }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: "Error setting keyframe: " + e.toString(), line: e.line }, null, 2);
     }
@@ -151,18 +182,21 @@ function setLayerExpression(args) {
         var resolved = _resolveCompAndLayer(args);
         var layer = resolved.layer;
 
-        var property = resolveProperty(layer, args.propertyName);
-        if (!property) {
-            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
-        }
+        var property = _resolveAnimProp(layer, args);
         if (!property.canSetExpression) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + args.propertyName + "' does not support expressions.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' does not support expressions.");
         }
 
+        var previousValue = property.expression || "";
         property.expression = args.expressionString;
 
         var action = args.expressionString === "" ? "removed" : "set";
-        return JSON.stringify({ status: "success", message: "Expression " + action + " for '" + args.propertyName + "' on layer '" + layer.name + "'." }, null, 2);
+        return JSON.stringify({
+            status: "success",
+            message: "Expression " + action + " for '" + property.name + "' on layer '" + layer.name + "'.",
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            previousValue: previousValue
+        }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: "Error setting expression: " + e.toString(), line: e.line }, null, 2);
     }
@@ -174,12 +208,9 @@ function setKeyframeEasing(args) {
         var resolved = _resolveCompAndLayer(args);
         var layer = resolved.layer;
 
-        var property = resolveProperty(layer, args.propertyName);
-        if (!property) {
-            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
-        }
+        var property = _resolveAnimProp(layer, args);
         if (property.numKeys === 0) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "No keyframes on property '" + args.propertyName + "'.");
+            throw _err(ERROR_CODES.INVALID_ARGS, "No keyframes on property '" + property.name + "'.");
         }
 
         // Resolve which keyframe(s) to target
@@ -198,6 +229,22 @@ function setKeyframeEasing(args) {
 
         if (indices.length === 0) {
             throw _err(ERROR_CODES.INVALID_ARGS, "No matching keyframe found.");
+        }
+
+        // Capture prior easings for revert
+        var previousEasings = [];
+        for (var pe = 0; pe < indices.length; pe++) {
+            var pki = indices[pe];
+            if (pki < 1 || pki > property.numKeys) continue;
+            var prevIn  = property.keyInTemporalEase(pki);
+            var prevOut = property.keyOutTemporalEase(pki);
+            previousEasings.push({
+                keyIndex: pki,
+                inInterp: property.keyInInterpolationType(pki),
+                outInterp: property.keyOutInterpolationType(pki),
+                inEase: prevIn,
+                outEase: prevOut
+            });
         }
 
         var easeType = args.easeType || "easyEase";
@@ -250,9 +297,11 @@ function setKeyframeEasing(args) {
 
         return JSON.stringify({
             status: "success",
-            message: "Easing set on " + changed.length + " keyframe(s) for '" + args.propertyName + "'.",
+            message: "Easing set on " + changed.length + " keyframe(s) for '" + property.name + "'.",
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
             keyframesModified: changed,
-            easeType: easeType
+            easeType: easeType,
+            previousEasings: previousEasings
         }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
@@ -265,14 +314,16 @@ function removePropertyKeyframes(args) {
         var resolved = _resolveCompAndLayer(args);
         var layer = resolved.layer;
 
-        var property = resolveProperty(layer, args.propertyName);
-        if (!property) {
-            throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + args.propertyName + "' not found on layer '" + layer.name + "'.");
-        }
+        var property = _resolveAnimProp(layer, args);
 
         var removed = property.numKeys;
         while (property.numKeys > 0) { property.removeKey(1); }
-        return JSON.stringify({ status: "success", message: "Removed " + removed + " keyframe(s) from '" + args.propertyName + "'.", removed: removed }, null, 2);
+        return JSON.stringify({
+            status: "success",
+            message: "Removed " + removed + " keyframe(s) from '" + property.name + "'.",
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            removed: removed
+        }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }

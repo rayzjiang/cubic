@@ -3,31 +3,35 @@
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
-// Applies a settings dict to an effect — used by applyEffect and applyEffectTemplate
+// Applies a settings dict to an effect — used by applyEffect and applyEffectTemplate.
+// Returns an array of { name, reason } for any properties that could not be set.
 function applyEffectSettings(effect, settings) {
-    if (!settings) return;
+    var failed = [];
+    if (!settings) return failed;
     var hasKeys = false;
     for (var k in settings) { if (settings.hasOwnProperty(k)) { hasKeys = true; break; } }
-    if (!hasKeys) return;
+    if (!hasKeys) return failed;
 
     for (var propName in settings) {
         if (settings.hasOwnProperty(propName)) {
+            var property = null;
             try {
-                var property = null;
-                try {
-                    property = effect.property(propName);
-                } catch (e) {
-                    for (var i = 1; i <= effect.numProperties; i++) {
-                        var prop = effect.property(i);
-                        if (prop.name === propName) { property = prop; break; }
-                    }
-                }
-                if (property && property.setValue) { property.setValue(settings[propName]); }
+                property = effect.property(propName);
             } catch (e) {
-                $.writeln("Error setting effect property '" + propName + "': " + e.toString());
+                for (var i = 1; i <= effect.numProperties; i++) {
+                    var prop = effect.property(i);
+                    if (prop.name === propName) { property = prop; break; }
+                }
             }
+            if (!property || !property.setValue) {
+                failed.push({ name: propName, reason: "not found" });
+                continue;
+            }
+            try { property.setValue(settings[propName]); }
+            catch (e) { failed.push({ name: propName, reason: e.toString() }); }
         }
     }
+    return failed;
 }
 
 // ── R: getLayerEffects ────────────────────────────────────────────────────────
@@ -87,6 +91,7 @@ function applyEffect(args) {
 
         var effectResult;
         var effect;
+        var failedProps = [];
 
         if (presetPath) {
             var presetFile = new File(presetPath);
@@ -96,11 +101,11 @@ function applyEffect(args) {
         } else if (effectMatchName) {
             effect = layer.Effects.addProperty(effectMatchName);
             effectResult = { type: "effect", name: effect.name, matchName: effect.matchName, index: effect.propertyIndex };
-            applyEffectSettings(effect, effectSettings);
+            failedProps = applyEffectSettings(effect, effectSettings);
         } else {
             effect = layer.Effects.addProperty(effectName);
             effectResult = { type: "effect", name: effect.name, matchName: effect.matchName, index: effect.propertyIndex };
-            applyEffectSettings(effect, effectSettings);
+            failedProps = applyEffectSettings(effect, effectSettings);
         }
 
         return JSON.stringify({
@@ -108,7 +113,8 @@ function applyEffect(args) {
             message: "Effect applied successfully",
             effect: effectResult,
             layer: { name: layer.name, index: layer.index },
-            composition: { name: comp.name }
+            composition: { name: comp.name },
+            failedProperties: failedProps.length > 0 ? failedProps : undefined
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -193,12 +199,14 @@ function applyEffectTemplate(args) {
         }
 
         var appliedEffects = [];
+        var allFailed = [];
 
         if (template.effectMatchName) {
             var effect = layer.Effects.addProperty(template.effectMatchName);
             // Single-effect templates: settings are already merged with customSettings above (per-key
             // resolution in the templates dict), so just apply them as-is.
-            applyEffectSettings(effect, template.settings || {});
+            var fp = applyEffectSettings(effect, template.settings || {});
+            for (var fpi = 0; fpi < fp.length; fpi++) { allFailed.push({ effectName: effect.name, name: fp[fpi].name, reason: fp[fpi].reason }); }
             appliedEffects.push({ name: effect.name, matchName: effect.matchName });
         } else if (template.effects) {
             // Multi-effect templates: customSettings can be flat (apply to every sub-effect) or
@@ -222,7 +230,8 @@ function applyEffectTemplate(args) {
                     }
                 }
 
-                applyEffectSettings(effect, merged);
+                var fp = applyEffectSettings(effect, merged);
+                for (var fpi = 0; fpi < fp.length; fpi++) { allFailed.push({ effectName: effect.name, name: fp[fpi].name, reason: fp[fpi].reason }); }
                 appliedEffects.push({ name: effect.name, matchName: effect.matchName });
             }
         }
@@ -232,7 +241,8 @@ function applyEffectTemplate(args) {
             message: "Effect template '" + templateName + "' applied successfully",
             appliedEffects: appliedEffects,
             layer: { name: layer.name, index: layer.index },
-            composition: { name: comp.name }
+            composition: { name: comp.name },
+            failedProperties: allFailed.length > 0 ? allFailed : undefined
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

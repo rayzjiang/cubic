@@ -16,6 +16,18 @@ function _guardKeyframeOverwrite(prop, propLabel, overwriteKeyframes) {
     return true;
 }
 
+var BLEND_MODES = {
+    "normal": BlendingMode.NORMAL, "add": BlendingMode.ADD, "multiply": BlendingMode.MULTIPLY,
+    "screen": BlendingMode.SCREEN, "overlay": BlendingMode.OVERLAY, "softLight": BlendingMode.SOFT_LIGHT,
+    "hardLight": BlendingMode.HARD_LIGHT, "colorDodge": BlendingMode.COLOR_DODGE, "colorBurn": BlendingMode.COLOR_BURN,
+    "darken": BlendingMode.DARKEN, "lighten": BlendingMode.LIGHTEN, "difference": BlendingMode.DIFFERENCE,
+    "exclusion": BlendingMode.EXCLUSION, "hue": BlendingMode.HUE, "saturation": BlendingMode.SATURATION,
+    "color": BlendingMode.COLOR, "luminosity": BlendingMode.LUMINOSITY
+};
+var QUALITY_MAP = { "best": LayerQuality.BEST, "draft": LayerQuality.DRAFT, "wireframe": LayerQuality.WIREFRAME };
+var AUTO_ORIENT_MAP = { "off": AutoOrientType.NO_AUTO_ORIENT, "alongPath": AutoOrientType.ALONG_PATH, "cameraOrPOI": AutoOrientType.CAMERA_OR_POINT_OF_INTEREST, "charactersTowardsCamera": AutoOrientType.CHARACTERS_TOWARDS_CAMERA };
+var MATTE_TYPES = { "none": TrackMatteType.NO_TRACK_MATTE, "alpha": TrackMatteType.ALPHA, "alphaInverted": TrackMatteType.ALPHA_INVERTED, "luma": TrackMatteType.LUMA, "lumaInverted": TrackMatteType.LUMA_INVERTED };
+
 // R: getLayerInfo
 function getLayerInfo(args) {
     try {
@@ -274,6 +286,39 @@ function setLayerProperties(args) {
         var layer = resolved.layer;
         var overwriteKeyframes = args.overwriteKeyframes === true;
 
+        // Capture prior state for revert (only for fields the args touch)
+        var previousValues = {};
+        if (args.enabled !== undefined && args.enabled !== null) { previousValues.enabled = layer.enabled; }
+        if (args.threeDLayer !== undefined && args.threeDLayer !== null) { previousValues.threeDLayer = layer.threeDLayer; }
+        if (args.motionBlur !== undefined && args.motionBlur !== null) { previousValues.motionBlur = layer.motionBlur; }
+        if (args.blendMode !== undefined && args.blendMode !== null) {
+            var prevBM = "unknown";
+            for (var bk in BLEND_MODES) { if (BLEND_MODES.hasOwnProperty(bk) && BLEND_MODES[bk] === layer.blendingMode) { prevBM = bk; break; } }
+            previousValues.blendMode = prevBM;
+        }
+        if (args.trackMatteType !== undefined && args.trackMatteType !== null) {
+            var prevMT = "unknown";
+            for (var mk in MATTE_TYPES) { if (MATTE_TYPES.hasOwnProperty(mk) && MATTE_TYPES[mk] === layer.trackMatteType) { prevMT = mk; break; } }
+            previousValues.trackMatteType = prevMT;
+        }
+        if (args.position !== undefined && args.position !== null) { previousValues.position = layer.property("Position").value; }
+        if (args.scale !== undefined && args.scale !== null) { previousValues.scale = layer.property("Scale").value; }
+        if (args.rotation !== undefined && args.rotation !== null) { previousValues.rotation = layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value; }
+        if (args.opacity !== undefined && args.opacity !== null) { previousValues.opacity = layer.property("Opacity").value; }
+        if (args.anchorPoint !== undefined && args.anchorPoint !== null) { previousValues.anchorPoint = layer.property("Anchor Point").value; }
+        if (args.startTime !== undefined && args.startTime !== null) { previousValues.startTime = layer.startTime; }
+        if (args.duration !== undefined && args.duration !== null) { previousValues.duration = layer.outPoint - layer.inPoint; }
+        if (layer instanceof TextLayer) {
+            var srcSnap = layer.property("Source Text");
+            if (srcSnap && srcSnap.value) {
+                var tdSnap = srcSnap.value;
+                if (args.text !== undefined && args.text !== null) { previousValues.text = tdSnap.text; }
+                if (args.fontFamily !== undefined && args.fontFamily !== null) { previousValues.fontFamily = tdSnap.font; }
+                if (args.fontSize !== undefined && args.fontSize !== null) { previousValues.fontSize = tdSnap.fontSize; }
+                if (args.fillColor !== undefined && args.fillColor !== null) { previousValues.fillColor = tdSnap.fillColor; }
+            }
+        }
+
         var changedProperties = [];
         var textDocument = null;
 
@@ -322,27 +367,15 @@ function setLayerProperties(args) {
         if (args.selected !== undefined && args.selected !== null) { layer.selected = !!args.selected; changedProperties.push("selected"); }
 
         if (args.blendMode !== undefined && args.blendMode !== null) {
-            var modes = {
-                "normal": BlendingMode.NORMAL, "add": BlendingMode.ADD, "multiply": BlendingMode.MULTIPLY,
-                "screen": BlendingMode.SCREEN, "overlay": BlendingMode.OVERLAY, "softLight": BlendingMode.SOFT_LIGHT,
-                "hardLight": BlendingMode.HARD_LIGHT, "colorDodge": BlendingMode.COLOR_DODGE, "colorBurn": BlendingMode.COLOR_BURN,
-                "darken": BlendingMode.DARKEN, "lighten": BlendingMode.LIGHTEN, "difference": BlendingMode.DIFFERENCE,
-                "exclusion": BlendingMode.EXCLUSION, "hue": BlendingMode.HUE, "saturation": BlendingMode.SATURATION,
-                "color": BlendingMode.COLOR, "luminosity": BlendingMode.LUMINOSITY
-            };
-            if (modes[args.blendMode] !== undefined) {
-                layer.blendingMode = modes[args.blendMode];
+            if (BLEND_MODES[args.blendMode] !== undefined) {
+                layer.blendingMode = BLEND_MODES[args.blendMode];
                 changedProperties.push("blendMode");
             }
         }
 
         if (args.trackMatteType !== undefined && args.trackMatteType !== null) {
-            var matteTypes = {
-                "none": TrackMatteType.NO_TRACK_MATTE, "alpha": TrackMatteType.ALPHA, "alphaInverted": TrackMatteType.ALPHA_INVERTED,
-                "luma": TrackMatteType.LUMA, "lumaInverted": TrackMatteType.LUMA_INVERTED
-            };
-            if (matteTypes[args.trackMatteType] !== undefined) {
-                layer.trackMatteType = matteTypes[args.trackMatteType];
+            if (MATTE_TYPES[args.trackMatteType] !== undefined) {
+                layer.trackMatteType = MATTE_TYPES[args.trackMatteType];
                 changedProperties.push("trackMatteType");
             }
         }
@@ -355,13 +388,11 @@ function setLayerProperties(args) {
         if (args.guideLayer !== undefined && args.guideLayer !== null) { layer.guideLayer = !!args.guideLayer; changedProperties.push("guideLayer"); }
 
         if (args.quality !== undefined && args.quality !== null) {
-            var qualityMap = { "best": LayerQuality.BEST, "draft": LayerQuality.DRAFT, "wireframe": LayerQuality.WIREFRAME };
-            if (qualityMap[args.quality] !== undefined) { layer.quality = qualityMap[args.quality]; changedProperties.push("quality"); }
+            if (QUALITY_MAP[args.quality] !== undefined) { layer.quality = QUALITY_MAP[args.quality]; changedProperties.push("quality"); }
         }
 
         if (args.autoOrient !== undefined && args.autoOrient !== null) {
-            var orientMap = { "off": AutoOrientType.NO_AUTO_ORIENT, "alongPath": AutoOrientType.ALONG_PATH, "cameraOrPOI": AutoOrientType.CAMERA_OR_POINT_OF_INTEREST, "charactersTowardsCamera": AutoOrientType.CHARACTERS_TOWARDS_CAMERA };
-            if (orientMap[args.autoOrient] !== undefined) { layer.autoOrient = orientMap[args.autoOrient]; changedProperties.push("autoOrient"); }
+            if (AUTO_ORIENT_MAP[args.autoOrient] !== undefined) { layer.autoOrient = AUTO_ORIENT_MAP[args.autoOrient]; changedProperties.push("autoOrient"); }
         }
 
         if (args.label !== undefined && args.label !== null) { layer.label = args.label; changedProperties.push("label"); }
@@ -429,7 +460,8 @@ function setLayerProperties(args) {
 
         return JSON.stringify({
             status: "success", message: "Layer properties updated successfully",
-            layer: returnLayerInfo
+            layer: returnLayerInfo,
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -464,6 +496,32 @@ function batchSetLayerProperties(args) {
             if (!layer) { results.push({ layerIndex: op.layerIndex, layerName: op.layerName, status: "error", errorCode: ERROR_CODES.LAYER_NOT_FOUND, message: "Layer not found" }); continue; }
 
             try {
+                // Capture prior state for revert (only for fields this op touches)
+                var prevVals = {};
+                if (layer instanceof TextLayer) {
+                    var bSrcSnap = layer.property("Source Text");
+                    if (bSrcSnap && bSrcSnap.value) {
+                        var bTdSnap = bSrcSnap.value;
+                        if (op.text !== undefined && op.text !== null) { prevVals.text = bTdSnap.text; }
+                        if (op.fontFamily !== undefined && op.fontFamily !== null) { prevVals.fontFamily = bTdSnap.font; }
+                        if (op.fontSize !== undefined && op.fontSize !== null) { prevVals.fontSize = bTdSnap.fontSize; }
+                        if (op.fillColor !== undefined && op.fillColor !== null) { prevVals.fillColor = bTdSnap.fillColor; }
+                    }
+                }
+                if (op.threeDLayer !== undefined && op.threeDLayer !== null) { prevVals.threeDLayer = layer.threeDLayer; }
+                if (op.position !== undefined && op.position !== null) { prevVals.position = layer.property("Position").value; }
+                if (op.scale !== undefined && op.scale !== null) { prevVals.scale = layer.property("Scale").value; }
+                if (op.rotation !== undefined && op.rotation !== null) { prevVals.rotation = layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value; }
+                if (op.opacity !== undefined && op.opacity !== null) { prevVals.opacity = layer.property("Opacity").value; }
+                if (op.anchorPoint !== undefined && op.anchorPoint !== null) { prevVals.anchorPoint = layer.property("Anchor Point").value; }
+                if (op.blendMode !== undefined && op.blendMode !== null) {
+                    var bPrevBM = "unknown";
+                    for (var bkk in BLEND_MODES) { if (BLEND_MODES.hasOwnProperty(bkk) && BLEND_MODES[bkk] === layer.blendingMode) { bPrevBM = bkk; break; } }
+                    prevVals.blendMode = bPrevBM;
+                }
+                if (op.startTime !== undefined && op.startTime !== null) { prevVals.startTime = layer.startTime; }
+                if (op.motionBlur !== undefined && op.motionBlur !== null) { prevVals.motionBlur = layer.motionBlur; }
+
                 var changed = [];
 
                 if (layer instanceof TextLayer && (op.text !== undefined || op.fontFamily !== undefined || op.fontSize !== undefined || op.fillColor !== undefined)) {
@@ -513,8 +571,7 @@ function batchSetLayerProperties(args) {
                 }
 
                 if (op.blendMode !== undefined && op.blendMode !== null) {
-                    var bModes = {"normal":BlendingMode.NORMAL,"add":BlendingMode.ADD,"multiply":BlendingMode.MULTIPLY,"screen":BlendingMode.SCREEN,"overlay":BlendingMode.OVERLAY,"softLight":BlendingMode.SOFT_LIGHT,"hardLight":BlendingMode.HARD_LIGHT,"colorDodge":BlendingMode.COLOR_DODGE,"colorBurn":BlendingMode.COLOR_BURN,"darken":BlendingMode.DARKEN,"lighten":BlendingMode.LIGHTEN,"difference":BlendingMode.DIFFERENCE,"exclusion":BlendingMode.EXCLUSION,"hue":BlendingMode.HUE,"saturation":BlendingMode.SATURATION,"color":BlendingMode.COLOR,"luminosity":BlendingMode.LUMINOSITY};
-                    if (bModes[op.blendMode] !== undefined) { layer.blendingMode = bModes[op.blendMode]; changed.push("blendMode"); }
+                    if (BLEND_MODES[op.blendMode] !== undefined) { layer.blendingMode = BLEND_MODES[op.blendMode]; changed.push("blendMode"); }
                 }
                 if (op.startTime !== undefined && op.startTime !== null) { layer.startTime = op.startTime; changed.push("startTime"); }
                 if (op.duration !== undefined && op.duration !== null && op.duration > 0) {
@@ -529,12 +586,10 @@ function batchSetLayerProperties(args) {
                 if (op.solo !== undefined && op.solo !== null) { layer.solo = !!op.solo; changed.push("solo"); }
                 if (op.guideLayer !== undefined && op.guideLayer !== null) { layer.guideLayer = !!op.guideLayer; changed.push("guideLayer"); }
                 if (op.quality !== undefined && op.quality !== null) {
-                    var bQualityMap = { "best": LayerQuality.BEST, "draft": LayerQuality.DRAFT, "wireframe": LayerQuality.WIREFRAME };
-                    if (bQualityMap[op.quality] !== undefined) { layer.quality = bQualityMap[op.quality]; changed.push("quality"); }
+                    if (QUALITY_MAP[op.quality] !== undefined) { layer.quality = QUALITY_MAP[op.quality]; changed.push("quality"); }
                 }
                 if (op.autoOrient !== undefined && op.autoOrient !== null) {
-                    var bOrientMap = { "off": AutoOrientType.NO_AUTO_ORIENT, "alongPath": AutoOrientType.ALONG_PATH, "cameraOrPOI": AutoOrientType.CAMERA_OR_POINT_OF_INTEREST, "charactersTowardsCamera": AutoOrientType.CHARACTERS_TOWARDS_CAMERA };
-                    if (bOrientMap[op.autoOrient] !== undefined) { layer.autoOrient = bOrientMap[op.autoOrient]; changed.push("autoOrient"); }
+                    if (AUTO_ORIENT_MAP[op.autoOrient] !== undefined) { layer.autoOrient = AUTO_ORIENT_MAP[op.autoOrient]; changed.push("autoOrient"); }
                 }
                 if (op.label !== undefined && op.label !== null) { layer.label = op.label; changed.push("label"); }
                 if (op.comment !== undefined && op.comment !== null) { layer.comment = op.comment; changed.push("comment"); }
@@ -549,7 +604,8 @@ function batchSetLayerProperties(args) {
                     rotation: layer.threeDLayer ? layer.property("Z Rotation").value : layer.property("Rotation").value,
                     opacity: layer.property("Opacity").value,
                     anchorPoint: layer.property("Anchor Point").value,
-                    changedProperties: changed
+                    changedProperties: changed,
+                    previousValues: prevVals
                 });
             } catch (opErr) {
                 results.push({
@@ -1188,12 +1244,15 @@ function setLayerProperty(args) {
             finalVal = value;
         }
 
+        var previousValue = null;
+        try { previousValue = property.value; } catch(e) {}
         property.setValue(finalVal);
 
         return JSON.stringify({
             status: "success",
             message: "Property '" + property.name + "' updated.",
-            property: { path: propertyPath, name: property.name, value: property.value }
+            property: { path: propertyPath, name: property.name, value: property.value },
+            previousValue: previousValue
         }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);

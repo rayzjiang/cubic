@@ -26,7 +26,7 @@ export async function run(ctx, opts) {
     const r = await send('getCurrentTime', {});
     if (r.status === 'error') throw new Error(`bridge error: ${r.message}`);
     // Either returns a real time or the "no active comp" response
-    if (r.activeComp === null) return 'no active comp (ok)';
+    if (!r.activeComp) return 'no active comp (ok)';
     assertField(r, 'timeInSeconds');
     assertField(r, 'frame');
     assertField(r, 'frameRate');

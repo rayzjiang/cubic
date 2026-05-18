@@ -162,6 +162,7 @@ function setTextAnimatorProperty(args) {
 
         if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
         var curVal = prop.value;
+        var previousValue = curVal;
         var finalVal;
         if (typeof curVal === "object" && typeof curVal.length === "number" && curVal.length >= 1) {
             finalVal = [];
@@ -177,7 +178,8 @@ function setTextAnimatorProperty(args) {
             status: "success",
             message: "Text animator property '" + propertyName + "' set.",
             animator: { index: animatorIndex, name: animator.name },
-            property: { name: prop.name, value: prop.value }
+            property: { name: prop.name, value: prop.value },
+            previousValue: previousValue
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -208,6 +210,19 @@ function setTextAnimatorRangeSelector(args) {
         }
 
         var selector = selectors.property(rangeSelectorIndex);
+
+        // Capture prior state for revert (only for fields the args touch)
+        var previousValues = {};
+        if (args.start !== undefined)  { previousValues.start  = selector.property("Start").value;  }
+        if (args.end !== undefined)    { previousValues.end    = selector.property("End").value;    }
+        if (args.offset !== undefined) { previousValues.offset = selector.property("Offset").value; }
+        var advancedSnap = null;
+        try { advancedSnap = selector.property("ADBE Text Range Advanced"); } catch(e) {}
+        if (advancedSnap) {
+            if (args.units !== undefined) { try { previousValues.units = advancedSnap.property("ADBE Text Range Units").value; } catch(e) {} }
+            if (args.shape !== undefined) { try { previousValues.shape = advancedSnap.property("ADBE Text Range Shape").value; } catch(e) {} }
+        }
+
         var changed = [];
 
         if (args.start !== undefined)  { selector.property("Start").setValue(args.start);   changed.push("start");  }
@@ -258,7 +273,8 @@ function setTextAnimatorRangeSelector(args) {
                 start: selector.property("Start").value,
                 end: selector.property("End").value,
                 offset: selector.property("Offset").value
-            }
+            },
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

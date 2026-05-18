@@ -39,7 +39,16 @@ async function dispatchTool(command: string, args: object, timeoutMs = 10000): P
         }
       };
     }
-    return { content: [{ type: "text", text: raw }], structuredContent: { ok: true, command, result: parsed } };
+    const contentBlocks: any[] = [{ type: "text", text: raw }];
+    if (command === "saveFrameToPng" && parsed?.path) {
+      try {
+        const buf = fs.readFileSync(parsed.path);
+        contentBlocks.push({ type: "image", data: buf.toString("base64"), mimeType: "image/png" });
+      } catch (e) {
+        // File missing — fall through with text-only; structuredContent carries the path
+      }
+    }
+    return { content: contentBlocks, structuredContent: { ok: true, command, result: parsed } };
   } catch (e: any) {
     return {
       content: [{ type: "text", text: `Error: ${e?.message ?? String(e)}` }],
@@ -226,7 +235,7 @@ server.registerTool(
       };
     }
 
-    const timeoutMs = script === "batch" ? 30000 : 10000;
+    const timeoutMs = (script === "batch" || script === "saveFrameToPng") ? 30000 : 10000;
     return dispatchTool(script, parameters, timeoutMs);
   }
 );

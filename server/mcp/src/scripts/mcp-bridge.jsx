@@ -110,7 +110,14 @@ function _resolveCompAndLayer(args) {
 }
 
 // Comp-only resolver — for handlers that don't take a layer argument.
+// Accepts compName (preferred), compIndex (1-based project item index), or active comp fallback.
 function _resolveComp(args) {
+    var compIndex = (args.compIndex !== undefined && args.compIndex !== null) ? parseInt(args.compIndex) : null;
+    if (compIndex !== null && compIndex > 0 && compIndex <= app.project.numItems) {
+        var candidate = app.project.item(compIndex);
+        if (candidate instanceof CompItem) { return candidate; }
+        throw _err(ERROR_CODES.COMP_NOT_FOUND, "Item at compIndex " + compIndex + " is not a composition.");
+    }
     var compName = args.compName || "";
     var comp = null;
     for (var i = 1; i <= app.project.numItems; i++) {

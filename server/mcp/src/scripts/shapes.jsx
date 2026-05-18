@@ -165,13 +165,16 @@ function setShapeOperatorProperty(args) {
         if (!prop) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + propertyName + "' not found on operator."); }
 
         if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
+        var previousValue = null;
+        try { previousValue = prop.value; } catch(e) {}
         prop.setValue(value);
 
         return JSON.stringify({
             status: "success",
             message: "Shape operator property '" + propertyName + "' set.",
             operator: { path: operatorPath },
-            property: { name: prop.name, value: prop.value }
+            property: { name: prop.name, value: prop.value },
+            previousValue: previousValue
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

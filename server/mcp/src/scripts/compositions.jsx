@@ -132,16 +132,25 @@ function createComposition(args) {
 function setCompositionProperties(args) {
     try {
         var comp = _resolveComp(args);
-        var changed = [];
-        if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
-        if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
-        if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = args.frameRate; changed.push("frameRate"); }
         var hasW = (args.width  !== undefined && args.width  !== null);
         var hasH = (args.height !== undefined && args.height !== null);
         if (hasW !== hasH) {
             throw _err(ERROR_CODES.INVALID_ARGS,
                 "Pass both width and height together — AE applies dimension changes as a pair.");
         }
+
+        // Capture prior state for revert (only for fields the args touch)
+        var previousValues = {};
+        if (args.name !== undefined && args.name !== null) { previousValues.name = comp.name; }
+        if (args.duration !== undefined && args.duration !== null) { previousValues.duration = comp.duration; }
+        if (args.frameRate !== undefined && args.frameRate !== null) { previousValues.frameRate = comp.frameRate; }
+        if (hasW && hasH) { previousValues.width = comp.width; previousValues.height = comp.height; }
+        if (args.backgroundColor !== undefined && args.backgroundColor !== null) { previousValues.backgroundColor = comp.bgColor; }
+
+        var changed = [];
+        if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
+        if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
+        if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = args.frameRate; changed.push("frameRate"); }
         if (hasW && hasH) { comp.width = args.width; comp.height = args.height; changed.push("dimensions"); }
         if (args.backgroundColor !== undefined && args.backgroundColor !== null) {
             comp.bgColor = [args.backgroundColor.r / 255, args.backgroundColor.g / 255, args.backgroundColor.b / 255];
@@ -150,7 +159,8 @@ function setCompositionProperties(args) {
         return JSON.stringify({
             status: "success",
             composition: { name: comp.name, duration: comp.duration, frameRate: comp.frameRate, width: comp.width, height: comp.height, bgColor: comp.bgColor },
-            changedProperties: changed
+            changedProperties: changed,
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -167,7 +177,7 @@ function getCurrentTime(args) {
             if (app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
         }
         if (!comp) {
-            return JSON.stringify({ status: "success", activeComp: null, timeInSeconds: null, message: "No active composition" }, null, 2);
+            return JSON.stringify({ status: "success", activeComp: false, message: "No active composition" }, null, 2);
         }
         return JSON.stringify({
             status: "success",
@@ -206,6 +216,7 @@ function setCurrentTime(args) {
         if (t < 0) { t = 0; }
         if (t >= comp.duration) { t = comp.duration - (1 / comp.frameRate); }
 
+        var previousValue = comp.time;
         comp.time = t;
 
         return JSON.stringify({
@@ -213,7 +224,8 @@ function setCurrentTime(args) {
             compName: comp.name,
             timeInSeconds: comp.time,
             frame: Math.round(comp.time * comp.frameRate),
-            frameRate: comp.frameRate
+            frameRate: comp.frameRate,
+            previousValue: previousValue
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -223,16 +235,7 @@ function setCurrentTime(args) {
 // R: saveFrameToPng — render a single frame to disk as PNG
 function saveFrameToPng(args) {
     try {
-        var compName = args.compName || "";
-        var comp = null;
-        for (var i = 1; i <= app.project.numItems; i++) {
-            var item = app.project.item(i);
-            if (item instanceof CompItem && item.name === compName) { comp = item; break; }
-        }
-        if (!comp) {
-            if (!compName && app.project.activeItem instanceof CompItem) { comp = app.project.activeItem; }
-            else { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No composition found with name '" + compName + "'"); }
-        }
+        var comp = _resolveComp(args);
 
         var time = (typeof args.timeInSeconds === "number") ? args.timeInSeconds : comp.time;
         if (time < 0 || time > comp.duration) {
@@ -287,19 +290,7 @@ function saveFrameToPng(args) {
 // D: deleteComposition
 function deleteComposition(args) {
     try {
-        var comp = null;
-        if (args.compName) {
-            for (var i = 1; i <= app.project.numItems; i++) {
-                var item = app.project.item(i);
-                if (item instanceof CompItem && item.name === args.compName) { comp = item; break; }
-            }
-        } else if (args.compIndex) {
-            var candidate = app.project.item(parseInt(args.compIndex));
-            if (candidate instanceof CompItem) { comp = candidate; }
-        }
-        if (!comp) {
-            return JSON.stringify({ status: "error", message: "Composition not found: " + (args.compName || args.compIndex) }, null, 2);
-        }
+        var comp = _resolveComp(args);
         var name = comp.name;
         var id   = comp.id;
         comp.remove();
