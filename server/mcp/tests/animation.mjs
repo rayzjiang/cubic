@@ -2,11 +2,11 @@
 //
 // Covers:
 //   getLayerExpressions    (R  — expressions)
-//   setLayerExpression     (C/U — expressions; set + remove via empty string)
-//   getLayerKeyframes      (R  — keyframes)
-//   setLayerKeyframe       (C  — keyframes)
-//   setKeyframeEasing      (U  — keyframes)
-//   removePropertyKeyframes (D — keyframes)
+//   setLayerExpression     (C/U — expressions; set + remove via empty string; previousValue capture)
+//   getLayerKeyframes      (R  — keyframes; via propertyName and propertyPath)
+//   setLayerKeyframe       (C  — keyframes; previousKey capture; propertyPath for nested props)
+//   setKeyframeEasing      (U  — keyframes; previousEasings capture; propertyPath)
+//   removePropertyKeyframes (D — keyframes; propertyPath)
 //   getLayerProperty       (R  — path-based property read, at current time and at given time)
 //
 // Missing: none — all CRUD covered for both keyframes and expressions.
@@ -87,15 +87,19 @@ export async function run(ctx, opts) {
       compName: COMP_NAME, layerIndex: li, propertyName: 'Opacity', expressionString: 'value'
     });
     assertNoError(set);
+    assertField(set, 'previousValue', 'string');
 
     const remove = await send('setLayerExpression', {
       compName: COMP_NAME, layerIndex: li, propertyName: 'Opacity', expressionString: ''
     });
     assertNoError(remove);
+    if (remove.previousValue !== 'value') {
+      throw new Error(`expected previousValue="value", got "${remove.previousValue}"`);
+    }
     if (!remove.message.toLowerCase().includes('remov')) {
       throw new Error(`expected "removed" in message, got: "${remove.message}"`);
     }
-    return 'set + removed';
+    return 'set + removed, previousValue captured';
   });
 
   // ── Keyframes (stay on layer for visual verification) ─────────────────────
@@ -108,6 +112,8 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertField(r, 'message', 'string');
     if (!r.message.includes('Position')) throw new Error(`unexpected message: ${r.message}`);
+    assertField(r, 'previousKey', 'object');
+    if (r.previousKey.existed !== false) throw new Error('expected previousKey.existed=false for first keyframe');
   });
 
   await test('setLayerKeyframe — Position @ 4s: right edge', async () => {
@@ -168,6 +174,14 @@ export async function run(ctx, opts) {
     if (!Array.isArray(r.keyframesModified)) throw new Error('"keyframesModified" is not an array');
     if (r.keyframesModified.length === 0) throw new Error('no keyframes were modified');
     assertValue(r, 'easeType', 'easyEase');
+    assertField(r, 'previousEasings');
+    if (!Array.isArray(r.previousEasings)) throw new Error('previousEasings is not an array');
+    if (r.previousEasings.length === 0) throw new Error('expected previousEasings to capture prior state');
+    const pe = r.previousEasings[0];
+    assertField(pe, 'keyIndex', 'number');
+    assertField(pe, 'inInterp', 'number');
+    assertField(pe, 'outInterp', 'number');
+    return `${r.previousEasings.length} prior easings captured`;
   });
 
   await test('setKeyframeEasing — easeIn on Opacity keyframe 1', async () => {
@@ -201,6 +215,93 @@ export async function run(ctx, opts) {
     if (r.removed < 2) throw new Error(`expected ≥2 keyframes removed, got ${r.removed}`);
     return `${r.removed} keyframe(s) removed`;
   });
+
+  // ── propertyPath — nested keyframing on shape Trim Paths (Issue A) ────────
+
+  let shapeLi;
+  let trimPathsOpName = 'Trim Paths 1';
+
+  const shapeSetupOk = await test('propertyPath setup — shape layer + Trim Paths operator', async () => {
+    const sl = await send('createShapeLayer', {
+      compName: COMP_NAME, name: 'Trim Paths Test', shapeType: 'rectangle',
+      size: [400, 400], fillColor: [0.2, 0.6, 1], duration: 10
+    });
+    assertNoError(sl);
+    shapeLi = sl.layer.index;
+
+    const tp = await send('addShapeOperator', {
+      compName: COMP_NAME, layerIndex: shapeLi, type: 'trimPaths'
+    });
+    assertNoError(tp);
+    trimPathsOpName = tp.operator.name;
+    return `layer ${shapeLi}, operator "${trimPathsOpName}"`;
+  });
+
+  if (shapeSetupOk) {
+    li++; // shape layer landed at index 1 (top), text layer shifted down to li
+
+    await test('setLayerKeyframe — propertyPath: Trim Paths End @ 0s = 0', async () => {
+      const path = ['Contents', 'Group 1', trimPathsOpName, 'End'];
+      const r = await send('setLayerKeyframe', {
+        compName: COMP_NAME, layerIndex: shapeLi,
+        propertyPath: path, timeInSeconds: 0, value: 0
+      });
+      assertNoError(r);
+      assertField(r, 'previousKey', 'object');
+      if (r.previousKey.existed !== false) throw new Error('expected previousKey.existed=false for first keyframe');
+      return `previousKey.existed=${r.previousKey.existed}`;
+    });
+
+    await test('setLayerKeyframe — propertyPath: Trim Paths End @ 2s = 100', async () => {
+      const path = ['Contents', 'Group 1', trimPathsOpName, 'End'];
+      const r = await send('setLayerKeyframe', {
+        compName: COMP_NAME, layerIndex: shapeLi,
+        propertyPath: path, timeInSeconds: 2, value: 100
+      });
+      assertNoError(r);
+    });
+
+    await test('getLayerKeyframes — propertyPath: Trim Paths End has 2 keyframes, property is object', async () => {
+      const path = ['Contents', 'Group 1', trimPathsOpName, 'End'];
+      const r = await send('getLayerKeyframes', {
+        compName: COMP_NAME, layerIndex: shapeLi,
+        propertyPath: path
+      });
+      assertNoError(r);
+      assertArray(r, 'keyframes');
+      if (r.count !== 2) throw new Error(`expected 2 keyframes, got ${r.count}`);
+      assertField(r, 'property', 'object');
+      if (typeof r.property !== 'object' || Array.isArray(r.property)) {
+        throw new Error('expected property to be an object (not a flat string)');
+      }
+      return `${r.count} keyframes, property.name="${r.property.name}"`;
+    });
+
+    await test('setKeyframeEasing — propertyPath: easyEase on Trim Paths End', async () => {
+      const path = ['Contents', 'Group 1', trimPathsOpName, 'End'];
+      const r = await send('setKeyframeEasing', {
+        compName: COMP_NAME, layerIndex: shapeLi,
+        propertyPath: path, easeType: 'easyEase'
+      });
+      assertNoError(r);
+      assertField(r, 'previousEasings');
+      if (!Array.isArray(r.previousEasings)) throw new Error('previousEasings not an array');
+      if (r.previousEasings.length === 0) throw new Error('expected previousEasings entries');
+      return `${r.previousEasings.length} prior easings captured`;
+    });
+
+    await test('removePropertyKeyframes — propertyPath: clears Trim Paths End keyframes', async () => {
+      const path = ['Contents', 'Group 1', trimPathsOpName, 'End'];
+      const r = await send('removePropertyKeyframes', {
+        compName: COMP_NAME, layerIndex: shapeLi,
+        propertyPath: path
+      });
+      assertNoError(r);
+      assertField(r, 'removed', 'number');
+      if (r.removed < 2) throw new Error(`expected ≥2 keyframes removed, got ${r.removed}`);
+      return `${r.removed} keyframe(s) removed`;
+    });
+  }
 
   // ── getLayerProperty (path-based reads) ──────────────────────────────────
 

@@ -200,4 +200,40 @@ export async function run(ctx, opts) {
     }
     return `deleted "${r.deleted.name}", ${after.count} effects remaining`;
   });
+
+  // ── failedProperties — verify failures surface instead of silently swallow ─
+
+  await test('applyEffect — bogus effectSettings key appears in failedProperties', async () => {
+    const r = await send('applyEffect', {
+      compName: COMP_NAME, layerIndex: li,
+      effectMatchName: 'ADBE Gaussian Blur 2',
+      effectSettings: { Blurriness: 5, 'NonExistentProp': 999 }
+    });
+    assertNoError(r);
+    assertField(r, 'failedProperties', 'object');
+    if (!Array.isArray(r.failedProperties)) throw new Error('failedProperties should be an array');
+    if (r.failedProperties.length === 0) throw new Error('expected ≥1 failed property for bogus key');
+    const fp = r.failedProperties[0];
+    assertField(fp, 'name', 'string');
+    assertField(fp, 'reason', 'string');
+    if (fp.name !== 'NonExistentProp') throw new Error(`expected "NonExistentProp" in failedProperties, got "${fp.name}"`);
+    return `failedProperties[0]: name="${fp.name}", reason="${fp.reason.slice(0, 40)}"`;
+  });
+
+  await test('applyEffectTemplate — bogus flat customSettings key appears in failedProperties with effectName', async () => {
+    const r = await send('applyEffectTemplate', {
+      compName: COMP_NAME, layerIndex: li,
+      templateName: 'cinematic-look',
+      customSettings: { 'BogusKey': 42 }
+    });
+    assertNoError(r);
+    assertField(r, 'failedProperties', 'object');
+    if (!Array.isArray(r.failedProperties)) throw new Error('failedProperties should be an array');
+    if (r.failedProperties.length === 0) throw new Error('expected ≥1 failed property for bogus key');
+    const fp = r.failedProperties[0];
+    assertField(fp, 'name', 'string');
+    assertField(fp, 'reason', 'string');
+    assertField(fp, 'effectName', 'string');
+    return `failedProperties[0]: effectName="${fp.effectName}", name="${fp.name}"`;
+  });
 }

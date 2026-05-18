@@ -11,7 +11,7 @@
 // Cleanup: --cleanup removes all ctx.renderPaths entries from disk.
 
 import { test, send, assertNoError, assertField, assertValue, assertStructuredError, requireSetup, bold, yellow } from './helpers.mjs';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -74,6 +74,24 @@ export async function run(ctx, opts) {
     }
     if (!existsSync(r.path)) throw new Error('custom-path PNG not found on disk');
     return r.path;
+  });
+
+  await test('render — PNG magic header validates file on disk is a valid PNG', async () => {
+    const hdrPath = join(FRAMES_DIR, `__MCP_TEST_render_pnghdr_${Date.now()}.png`);
+    const r = await send('saveFrameToPng', { compName: COMP_NAME, outputPath: hdrPath });
+    if (r.path) ctx.renderPaths.push(r.path);
+    assertNoError(r);
+    if (!existsSync(r.path)) throw new Error(`PNG file missing: ${r.path}`);
+    const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const buf = readFileSync(r.path);
+    for (let i = 0; i < PNG_MAGIC.length; i++) {
+      if (buf[i] !== PNG_MAGIC[i]) {
+        throw new Error(`PNG header byte ${i} = 0x${buf[i].toString(16).padStart(2, '0')}, expected 0x${PNG_MAGIC[i].toString(16).padStart(2, '0')}`);
+      }
+    }
+    // The MCP image content block (inline base64) is attached by index.ts and requires
+    // testing through the full MCP stack — not verifiable via the WebSocket-only test bridge.
+    return `valid PNG header confirmed (${buf.length} bytes)`;
   });
 
   await test('render — time past duration returns structured error', async () => {
