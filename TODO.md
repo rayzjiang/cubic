@@ -61,7 +61,7 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
     - A6: full camera/light surface (createCamera: startTime/duration/DOF/focusDistance/aperture/blurLevel; createLightLayer: cone/falloff/shadow opts; getLayerInfo/setLayerProperties extended)
     - B1-B7: all revert gaps fixed (moveLayer.previousIndex, setLayerParent.previousParent, updateMarker.previousValues, removeMarker.removedMarker snapshot, trimLayer.previousValues, centerAnchorPoint.previousValues, setSelectedLayers.previousSelection)
     - markers.jsx: label + protectedRegion round-tripped through all handlers
-- [ ] **opus testing audit v4 - opusplan + fix those**
+- [x] **opus testing audit v4 - opusplan + fix those**
 - [ ] **implement test coverage for opus scripting audit v4**
 - [ ] ^^After above 3 are done, move onto Phase 2
 
