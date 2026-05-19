@@ -201,6 +201,7 @@ function _dispatchSwitch(command, args) {
         case "createComposition":        return createComposition(args);
         case "setCompositionProperties": return setCompositionProperties(args);
         case "deleteComposition":        return deleteComposition(args);
+        case "duplicateComposition":     return duplicateComposition(args);
         case "getCurrentTime":           return getCurrentTime(args);
         case "setCurrentTime":           return setCurrentTime(args);
         case "saveFrameToPng":           return saveFrameToPng(args);
@@ -222,6 +223,9 @@ function _dispatchSwitch(command, args) {
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "centerAnchorPoint":        return centerAnchorPoint(args);
+        case "setAnchorPoint":           return setAnchorPoint(args);
+        case "alignLayers":              return alignLayers(args);
+        case "sequenceLayers":           return sequenceLayers(args);
         case "setTimeRemapEnabled":      return setTimeRemapEnabled(args);
         case "deleteLayer":              return deleteLayer(args);
         case "precompose":               return precompose(args);
@@ -235,10 +239,12 @@ function _dispatchSwitch(command, args) {
         case "addTextAnimator":          return addTextAnimator(args);
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
+        case "explodeTextLayer":         return explodeTextLayer(args);
         // shapes.jsx
         case "createShapeLayer":         return createShapeLayer(args);
         case "addShapeOperator":         return addShapeOperator(args);
         case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
+        case "convertToShape":           return convertToShape(args);
         // markers.jsx
         case "addMarker":                return addMarker(args);
         case "listMarkers":              return listMarkers(args);
@@ -255,6 +261,7 @@ function _dispatchSwitch(command, args) {
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
+        case "copyKeyframeEasing":       return copyKeyframeEasing(args);
         // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);
@@ -269,6 +276,7 @@ function _dispatchSwitch(command, args) {
         case "listProjectItems":         return listProjectItems(args);
         case "importFootage":            return importFootage(args);
         case "addFootageToComp":         return addFootageToComp(args);
+        case "importAssetToComp":        return importAssetToComp(args);
         case "deleteProjectItem":         return deleteProjectItem(args);
         case "deleteUnusedSolids":       return deleteUnusedSolids();
         // mcp-bridge.jsx

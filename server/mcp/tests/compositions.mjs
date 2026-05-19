@@ -10,6 +10,7 @@
 //                                 displayStartTime, resolutionFactor; shutterAngle clamped 0–720;
 //                                 shutterPhase clamped ±360; motionBlur + draft3d; previousValues)
 //   deleteComposition        (D)
+//   duplicateComposition     (C — shallow: CompItem.duplicate; deep: recursive nested-comp remap)
 //
 // Note: there is no programmatic undo. AE gates app.executeCommand(Undo) from
 // CEP's evalScript context. Rollback is handled via inverse-CRUD (each create*
@@ -226,4 +227,65 @@ export async function run(ctx, opts) {
     if (still) throw new Error(`"${COMP_NAME}" still present in listCompositions after deletion`);
     return `deleted "${r.deleted.name}"`;
   });
+
+  // ── duplicateComposition ──────────────────────────────────────────────────
+
+  if (opts.write) {
+    const DUP_SRC    = '__MCP_TEST_dup_src__';
+    const DUP_NESTED = '__MCP_TEST_dup_nested__';
+
+    const dupSetup = await test('duplicateComposition setup — source + nested comp', async () => {
+      const nc = await send('createComposition', {
+        name: DUP_NESTED, width: 1920, height: 1080, frameRate: 30, duration: 5
+      });
+      assertField(nc, 'composition', 'object');
+      const sc = await send('createComposition', {
+        name: DUP_SRC, width: 1920, height: 1080, frameRate: 30, duration: 5
+      });
+      assertField(sc, 'composition', 'object');
+      // Place nested comp inside src comp
+      const nested = await send('addFootageToComp', { compName: DUP_SRC, itemName: DUP_NESTED });
+      assertNoError(nested);
+      return 'src + nested comps created';
+    });
+
+    if (requireSetup(dupSetup)) {
+      await test('duplicateComposition — shallow duplicate creates new comp with correct name', async () => {
+        const r = await send('duplicateComposition', {
+          compName: DUP_SRC, newName: DUP_SRC + '_shallow'
+        });
+        assertNoError(r);
+        assertField(r, 'original', 'object');
+        assertField(r, 'duplicate', 'object');
+        assertField(r.duplicate, 'id', 'number');
+        if (r.duplicate.name !== DUP_SRC + '_shallow') {
+          throw new Error(`Expected name="${DUP_SRC}_shallow", got "${r.duplicate.name}"`);
+        }
+        const list = await send('listCompositions');
+        if (!list.compositions.find(c => c.name === DUP_SRC + '_shallow')) {
+          throw new Error('Shallow duplicate not found in listCompositions');
+        }
+        return `id=${r.duplicate.id}`;
+      });
+
+      await test('duplicateComposition — deep:true returns duplicatedCompIds with root + nested', async () => {
+        const r = await send('duplicateComposition', {
+          compName: DUP_SRC, newName: DUP_SRC + '_deep', deep: true
+        });
+        assertNoError(r);
+        assertField(r, 'rootDuplicate', 'object');
+        assertField(r, 'duplicatedCompIds');
+        if (!Array.isArray(r.duplicatedCompIds)) throw new Error('duplicatedCompIds should be array');
+        if (r.duplicatedCompIds.length < 2) {
+          throw new Error(`Expected >=2 comps (root + nested), got ${r.duplicatedCompIds.length}`);
+        }
+        return `${r.duplicatedCompIds.length} comp(s), root="${r.rootDuplicate.name}"`;
+      });
+
+      // Cleanup duplicates and originals
+      for (const n of [DUP_SRC + '_shallow', DUP_SRC + '_deep', DUP_SRC, DUP_NESTED]) {
+        await send('deleteComposition', { compName: n });
+      }
+    }
+  }
 }

@@ -1,11 +1,71 @@
 // shapes.jsx
 // Shape layers + vector operators (Trim Paths, Repeater, Rounded Corners, gradients).
 // CRUD: C ✓  R via getLayerInfo/getLayerProperty  U ✓  D via deleteLayer
+// convertToShape: triggers the native AE menu command; may be gated in CEP context (see handler).
 
 // NOTE: ADBE Vector Grad Colors (gradient color stops on shape operators) is NOT scriptable
 // in AE 2026. PropertyValueType.NO_VALUE blocks all approaches: setValue, setValueAtTime,
 // GradientColor constructor — all throw from AE's C++ layer. No workaround exists within
 // ExtendScript. For controllable gradient colors use applyEffect("ADBE Ramp") + setEffectProperty.
+
+// U: convertToShape — convert a text or vector layer to a shape layer via AE's native menu command.
+// RISK: app.executeCommand is documented as gated from CEP/evalScript for the Undo command;
+// this handler detects a no-op result and returns a structured error so the agent can report it clearly.
+function convertToShape(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp  = resolved.comp;
+        var layer = resolved.layer;
+
+        // Pick menu command based on layer type
+        var isText = false;
+        try { isText = (layer.property("Source Text") !== null); } catch(e) {}
+        var menuName = isText ? "Create Shapes from Text" : "Create Shapes from Vector Layer";
+
+        var menuId = null;
+        try { menuId = app.findMenuCommandId(menuName); } catch(e) {}
+        if (!menuId) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Menu command '" + menuName + "' not found. Layer may not be a supported type (text or vector AV layer).");
+        }
+
+        // Deselect all, select target layer — menu commands operate on selection
+        for (var di = 1; di <= comp.numLayers; di++) { try { comp.layer(di).selected = false; } catch(e) {} }
+        layer.selected = true;
+
+        var layersBefore = comp.numLayers;
+        app.executeCommand(menuId);
+        var layersAfter = comp.numLayers;
+
+        if (layersAfter <= layersBefore) {
+            return JSON.stringify({
+                status: "error",
+                errorCode: ERROR_CODES.INTERNAL_ERROR,
+                message: "convertToShape: app.executeCommand('" + menuName + "') was a no-op — this command may be gated from the CEP/evalScript context. Workaround: select the layer in AE and run Layer > " + menuName + " manually."
+            }, null, 2);
+        }
+
+        // Find the newly added shape layer (inserted above the original)
+        var newLayer = null;
+        for (var ni = 1; ni <= comp.numLayers; ni++) {
+            var l = comp.layer(ni);
+            var isSL = false;
+            try { isSL = (l instanceof ShapeLayer); } catch(e) {}
+            if (isSL && l.index < layer.index) { newLayer = l; break; }
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Layer converted to shape via '" + menuName + "'.",
+            originalLayer: { index: layer.index, name: layer.name },
+            shapeLayer: newLayer ? { index: newLayer.index, name: newLayer.name } : null,
+            menuCommand: menuName,
+            menuId: menuId
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
 
 // C: createShapeLayer
 function createShapeLayer(args) {

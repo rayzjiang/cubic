@@ -5,6 +5,8 @@
 //   setTextAnimatorProperty     (U  — update an animated property value)
 //   setTextAnimatorRangeSelector (U  — start, end, offset, basedOn, shape)
 //   getLayerProperty             (R  — read animator subtree, verifies mutations above)
+//   explodeTextLayer            (C  — CHARACTERS/WORDS/LINES; animator-mask layout preservation;
+//                                     createdLayers + hiddenSourceIndex + previousValues)
 //
 // Visual verification (after --write, open __MCP_TEST_text__ in After Effects):
 //   "HELLO" text layer in timeline. Expand Text > Animators:
@@ -184,5 +186,73 @@ export async function run(ctx, opts) {
     if (!r.message.toLowerCase().includes('text')) {
       throw new Error('Expected error message mentioning text layer requirement');
     }
+  });
+
+  // ── explodeTextLayer ──────────────────────────────────────────────────────
+
+  let explodeSourceIndex;
+  const EXPLODE_TEXT = 'HI';
+
+  await test('explodeTextLayer setup — create short text layer for explode', async () => {
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: EXPLODE_TEXT,
+      fontSize: 200, position: [960, 540], color: [1, 1, 1], name: 'ExplodeSource'
+    });
+    assertNoError(lr);
+    explodeSourceIndex = 1;
+    return `layer ${explodeSourceIndex}, text="${EXPLODE_TEXT}"`;
+  });
+
+  await test('explodeTextLayer — CHARACTERS produces N=text.length duplicate layers', async () => {
+    const r = await send('explodeTextLayer', {
+      compName: COMP_NAME, layerIndex: explodeSourceIndex, splitMethod: 'CHARACTERS'
+    });
+    assertNoError(r);
+    assertField(r, 'tokenCount', 'number');
+    assertArray(r, 'createdLayers');
+    assertField(r, 'hiddenSourceIndex', 'number');
+    assertField(r, 'previousValues', 'object');
+    if (r.tokenCount !== EXPLODE_TEXT.length) {
+      throw new Error(`Expected tokenCount=${EXPLODE_TEXT.length}, got ${r.tokenCount}`);
+    }
+    if (r.createdLayers.length !== EXPLODE_TEXT.length) {
+      throw new Error(`Expected ${EXPLODE_TEXT.length} created layers, got ${r.createdLayers.length}`);
+    }
+    if (!('sourceEnabled' in r.previousValues)) throw new Error('previousValues.sourceEnabled missing');
+    return `${r.tokenCount} token layer(s) created, source hidden at index ${r.hiddenSourceIndex}`;
+  });
+
+  await test('explodeTextLayer — WORDS on multi-word text creates correct count', async () => {
+    const wordsLayer = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'ONE TWO',
+      fontSize: 100, position: [960, 400], color: [1, 1, 0], name: 'WordsSource'
+    });
+    assertNoError(wordsLayer);
+    const wordsSrcIdx = 1;
+
+    const r = await send('explodeTextLayer', {
+      compName: COMP_NAME, layerIndex: wordsSrcIdx, splitMethod: 'WORDS'
+    });
+    assertNoError(r);
+    if (r.tokenCount !== 2) throw new Error(`Expected 2 word tokens, got ${r.tokenCount}`);
+    return `words: ${r.createdLayers.map(l => l.token).join(', ')}`;
+  });
+
+  await test('explodeTextLayer — invalid splitMethod returns INVALID_ARGS', async () => {
+    const r = await send('explodeTextLayer', {
+      compName: COMP_NAME, layerIndex: explodeSourceIndex, splitMethod: 'PARAGRAPHS'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+  });
+
+  await test('explodeTextLayer — on a non-text layer returns INVALID_ARGS', async () => {
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'SolidForExplode', color: [0.3, 0.3, 0.3]
+    });
+    assertNoError(lr);
+    const r = await send('explodeTextLayer', {
+      compName: COMP_NAME, layerIndex: 1, splitMethod: 'CHARACTERS'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
   });
 }

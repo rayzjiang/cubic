@@ -239,4 +239,39 @@ export async function run(ctx, opts) {
     // count may be 0 or more depending on project state; just verify shape is correct
     return `count=${r.count}`;
   });
+
+  // ── importAssetToComp ─────────────────────────────────────────────────────
+
+  if (opts.write) {
+    const ASSET_COMP = '__MCP_TEST_footage_asset__';
+
+    const assetSetup = await test('importAssetToComp setup — create target comp', async () => {
+      const cr = await send('createComposition', {
+        name: ASSET_COMP, width: 1920, height: 1080, frameRate: 30, duration: 5
+      });
+      assertField(cr, 'composition', 'object');
+      return 'comp created';
+    });
+
+    if (requireSetup(assetSetup)) {
+      await test('importAssetToComp — missing filePath returns INVALID_ARGS', async () => {
+        const r = await send('importAssetToComp', { compName: ASSET_COMP });
+        assertStructuredError(r, 'INVALID_ARGS');
+      });
+
+      await test('importAssetToComp — non-existent file returns INVALID_ARGS', async () => {
+        const r = await send('importAssetToComp', {
+          compName: ASSET_COMP,
+          filePath: '/tmp/__nonexistent_cubic_test__.png'
+        });
+        assertStructuredError(r, 'INVALID_ARGS');
+        if (!r.message.toLowerCase().includes('not found') && !r.message.toLowerCase().includes('file')) {
+          throw new Error(`Expected "file not found" message, got: "${r.message}"`);
+        }
+      });
+
+      // Cleanup
+      await send('deleteComposition', { compName: ASSET_COMP });
+    }
+  }
 }

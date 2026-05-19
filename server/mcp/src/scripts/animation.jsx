@@ -2,6 +2,53 @@
 // Keyframes  — CRUD: C ✓  R ✓  U ✓  D ✓
 // Expressions — CRUD: C/U ✓  R ✓  D ✓ (via empty string)
 
+// ── Expression preset library ──────────────────────────────────────────────
+// Each entry: { defaults: {...}, template: "..." }
+// Template uses ${paramName} placeholders substituted at apply-time.
+var EXPRESSION_PRESETS = (function() {
+    var _bounceTpl = [
+        "var amp=${amp};var freq=${freq};var decay=${decay};",
+        "var n=0;",
+        "if(numKeys>0){n=nearestKey(time).index;if(nearestKey(time).time>time)n--;}",
+        "var t=(n===0)?0:time-key(n).time;",
+        "if(n>0){var v=velocityAtTime(key(n).time-thisComp.frameDuration/10);",
+        "value+v*amp*Math.sin(freq*2*Math.PI*t)/Math.exp(decay*t);}else{value;}"
+    ].join("\n");
+    return {
+        INERTIAL_BOUNCE: { defaults: { amp: 0.1,  freq: 2.5, decay: 4 }, template: _bounceTpl },
+        ELASTIC:         { defaults: { amp: 0.1,  freq: 4,   decay: 3 }, template: _bounceTpl },
+        OVERSHOOT:       { defaults: { amp: 0.05, freq: 1.5, decay: 8 }, template: _bounceTpl },
+        WIGGLE: {
+            defaults: { freq: 3, amp: 25 },
+            template: "wiggle(${freq},${amp});"
+        },
+        AUTO_FADE: {
+            defaults: { fadeIn: 0.5, fadeOut: 0.5 },
+            template: [
+                "var fadeIn=${fadeIn};var fadeOut=${fadeOut};",
+                "var t=time-inPoint;var t2=outPoint-time;",
+                "if(t<fadeIn){linear(t,0,fadeIn,0,value);}",
+                "else if(t2<fadeOut){linear(t2,0,fadeOut,0,value);}",
+                "else{value;}"
+            ].join("\n")
+        },
+        LOOP_OUT:     { defaults: {}, template: 'loopOut("cycle");' },
+        LOOP_IN:      { defaults: {}, template: 'loopIn("cycle");' },
+        LOOP_PINGPONG:{ defaults: {}, template: 'loopOut("pingpong");' }
+    };
+}());
+
+function _buildPresetExpression(presetName, params) {
+    var preset = EXPRESSION_PRESETS[presetName];
+    if (!preset) throw _err(ERROR_CODES.INVALID_ARGS, "Unknown expression preset: '" + presetName + "'. Valid: INERTIAL_BOUNCE, ELASTIC, OVERSHOOT, WIGGLE, AUTO_FADE, LOOP_OUT, LOOP_IN, LOOP_PINGPONG");
+    var p = {};
+    for (var k in preset.defaults) { if (preset.defaults.hasOwnProperty(k)) p[k] = preset.defaults[k]; }
+    if (params) { for (var pk in params) { if (params.hasOwnProperty(pk)) p[pk] = params[pk]; } }
+    var result = preset.template;
+    for (var v in p) { if (p.hasOwnProperty(v)) { result = result.split("${" + v + "}").join(String(p[v])); } }
+    return result;
+}
+
 // Shared helper: resolve a property by name across Transform, Effects (flat + nested), and Text
 function resolveProperty(layer, propertyName) {
     var transformGroup = layer.property("Transform");
@@ -98,7 +145,7 @@ function getLayerKeyframes(args) {
         for (var k = 1; k <= property.numKeys; k++) {
             var inType  = property.keyInInterpolationType(k);
             var outType = property.keyOutInterpolationType(k);
-            keyframes.push({
+            var kData = {
                 keyIndex: k,
                 time: property.keyTime(k),
                 value: property.keyValue(k),
@@ -106,7 +153,26 @@ function getLayerKeyframes(args) {
                 inInterpolationLabel: interpLabels[inType] || "unknown",
                 outInterpolationType: outType,
                 outInterpolationLabel: interpLabels[outType] || "unknown"
-            });
+            };
+            // Temporal ease (try/catch: not all properties support it)
+            try {
+                var inEaseArr = property.keyInTemporalEase(k);
+                var outEaseArr = property.keyOutTemporalEase(k);
+                var inEaseData = [], outEaseData = [];
+                for (var ei = 0; ei < inEaseArr.length; ei++) inEaseData.push({ speed: inEaseArr[ei].speed, influence: inEaseArr[ei].influence });
+                for (var eo = 0; eo < outEaseArr.length; eo++) outEaseData.push({ speed: outEaseArr[eo].speed, influence: outEaseArr[eo].influence });
+                kData.inTemporalEase = inEaseData;
+                kData.outTemporalEase = outEaseData;
+            } catch(easeErr) {}
+            // Spatial tangents (only on spatial properties)
+            try {
+                kData.inSpatialTangent  = property.keyInSpatialTangent(k);
+                kData.outSpatialTangent = property.keyOutSpatialTangent(k);
+                kData.spatialAutoBezier = property.keySpatialAutoBezier(k);
+                kData.spatialContinuous = property.keySpatialContinuous(k);
+                kData.roving            = property.keyRoving(k);
+            } catch(spatialErr) {}
+            keyframes.push(kData);
         }
 
         return JSON.stringify({
@@ -176,7 +242,10 @@ function setLayerKeyframe(args) {
     }
 }
 
-// C/U: setLayerExpression
+// C/U: setLayerExpression — set a raw expression string or a named preset.
+// When args.preset is set (e.g. 'INERTIAL_BOUNCE'), the preset template is used.
+// args.presetParams overrides individual preset default values.
+// Raw args.expressionString takes precedence when both are supplied.
 function setLayerExpression(args) {
     try {
         var resolved = _resolveCompAndLayer(args);
@@ -187,14 +256,25 @@ function setLayerExpression(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + property.name + "' does not support expressions.");
         }
 
-        var previousValue = property.expression || "";
-        property.expression = args.expressionString;
+        var expressionStr = args.expressionString;
+        var preset = null;
+        if (!expressionStr && args.preset) {
+            preset = (args.preset + "").toUpperCase();
+            expressionStr = _buildPresetExpression(preset, args.presetParams || {});
+        }
+        if (expressionStr === undefined || expressionStr === null) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Provide expressionString or preset.");
+        }
 
-        var action = args.expressionString === "" ? "removed" : "set";
+        var previousValue = property.expression || "";
+        property.expression = expressionStr;
+
+        var action = expressionStr === "" ? "removed" : "set";
         return JSON.stringify({
             status: "success",
-            message: "Expression " + action + " for '" + property.name + "' on layer '" + layer.name + "'.",
+            message: "Expression " + action + " for '" + property.name + "' on layer '" + layer.name + "'" + (preset ? " (preset: " + preset + ")" : "") + ".",
             property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            preset: preset,
             previousValue: previousValue
         }, null, 2);
     } catch (e) {
@@ -408,6 +488,114 @@ function setKeyframeSpatial(args) {
             previousSpatial: previousSpatial
         };
         if (warnings.length > 0) { resultObj.warnings = warnings; }
+        return JSON.stringify(resultObj, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// U: copyKeyframeEasing — copy temporal ease, interpolation type, and spatial tangents
+// from all keyframes on a source property to matching keyframes on a target property.
+// Only the easing shape is copied; keyframe values are untouched.
+// source/target: each { compName, layerIndex/layerName }; propertyPath/propertyName selects the property.
+// timeOffset (seconds, default 0): shift source keyframe times before matching against target.
+function copyKeyframeEasing(args) {
+    try {
+        var srcResolved = _resolveCompAndLayer({
+            compName: args.sourceCompName, layerIndex: args.sourceLayerIndex, layerName: args.sourceLayerName
+        });
+        var tgtResolved = _resolveCompAndLayer({
+            compName: args.targetCompName, layerIndex: args.targetLayerIndex, layerName: args.targetLayerName
+        });
+        var srcLayer = srcResolved.layer;
+        var tgtLayer = tgtResolved.layer;
+        var tgtComp  = tgtResolved.comp;
+
+        var propArgs = { propertyPath: args.propertyPath, propertyName: args.propertyName };
+        var srcProp = _resolveAnimProp(srcLayer, propArgs);
+        var tgtProp = _resolveAnimProp(tgtLayer, propArgs);
+
+        if (srcProp.numKeys === 0) throw _err(ERROR_CODES.INVALID_ARGS, "Source property has no keyframes.");
+        if (tgtProp.numKeys === 0) throw _err(ERROR_CODES.INVALID_ARGS, "Target property has no keyframes.");
+
+        var timeOffset = args.timeOffset || 0;
+        var tolerance  = tgtComp.frameDuration / 2;
+        var isSpatial  = false;
+        try { isSpatial = srcProp.isSpatial && tgtProp.isSpatial; } catch(e) {}
+
+        var previousEasings = [];
+        var pairsCopied = 0;
+        var warnings = [];
+
+        for (var sk = 1; sk <= srcProp.numKeys; sk++) {
+            var tgtTime = srcProp.keyTime(sk) + timeOffset;
+
+            // Find matching target keyframe within tolerance
+            var tk = -1;
+            for (var t = 1; t <= tgtProp.numKeys; t++) {
+                if (Math.abs(tgtProp.keyTime(t) - tgtTime) <= tolerance) { tk = t; break; }
+            }
+            if (tk === -1) {
+                warnings.push("No target keyframe near t=" + tgtTime.toFixed(3) + "s (source key " + sk + ").");
+                continue;
+            }
+
+            // Snapshot target keyframe's prior easing for revert
+            var prev = { keyIndex: tk, keyTime: tgtProp.keyTime(tk) };
+            try { prev.inInterp = tgtProp.keyInInterpolationType(tk); prev.outInterp = tgtProp.keyOutInterpolationType(tk); } catch(e) {}
+            try {
+                var pi = tgtProp.keyInTemporalEase(tk);
+                var po = tgtProp.keyOutTemporalEase(tk);
+                prev.inEase = []; prev.outEase = [];
+                for (var i = 0; i < pi.length; i++) prev.inEase.push({ speed: pi[i].speed, influence: pi[i].influence });
+                for (var o = 0; o < po.length; o++) prev.outEase.push({ speed: po[o].speed, influence: po[o].influence });
+            } catch(e) {}
+            try {
+                prev.inSpatialTangent  = tgtProp.keyInSpatialTangent(tk);
+                prev.outSpatialTangent = tgtProp.keyOutSpatialTangent(tk);
+                prev.autoBezier = tgtProp.keySpatialAutoBezier(tk);
+                prev.continuous = tgtProp.keySpatialContinuous(tk);
+                prev.roving     = tgtProp.keyRoving(tk);
+            } catch(e) {}
+            previousEasings.push(prev);
+
+            // Copy interpolation type
+            try {
+                tgtProp.setInterpolationTypeAtKey(tk, srcProp.keyInInterpolationType(sk), srcProp.keyOutInterpolationType(sk));
+            } catch(e) {}
+
+            // Copy temporal ease (rebuild KeyframeEase objects)
+            try {
+                var srcIn  = srcProp.keyInTemporalEase(sk);
+                var srcOut = srcProp.keyOutTemporalEase(sk);
+                var newIn = [], newOut = [];
+                for (var d = 0; d < srcIn.length; d++) newIn.push(new KeyframeEase(srcIn[d].speed, srcIn[d].influence));
+                for (var e2 = 0; e2 < srcOut.length; e2++) newOut.push(new KeyframeEase(srcOut[e2].speed, srcOut[e2].influence));
+                tgtProp.setTemporalEaseAtKey(tk, newIn, newOut);
+            } catch(e) {}
+
+            // Copy spatial tangents when both properties are spatial
+            if (isSpatial) {
+                try {
+                    tgtProp.setSpatialTangentsAtKey(tk, srcProp.keyInSpatialTangent(sk), srcProp.keyOutSpatialTangent(sk));
+                    tgtProp.setSpatialAutoBezierAtKey(tk, srcProp.keySpatialAutoBezier(sk));
+                    tgtProp.setSpatialContinuousAtKey(tk, srcProp.keySpatialContinuous(sk));
+                    if (tk > 1 && tk < tgtProp.numKeys) {
+                        tgtProp.setRovingAtKey(tk, srcProp.keyRoving(sk));
+                    }
+                } catch(e) {}
+            }
+
+            pairsCopied++;
+        }
+
+        var resultObj = {
+            status: "success",
+            message: "Copied easing for " + pairsCopied + " keyframe pair(s).",
+            pairsCopied: pairsCopied,
+            previousEasings: previousEasings
+        };
+        if (warnings.length > 0) resultObj.warnings = warnings;
         return JSON.stringify(resultObj, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);

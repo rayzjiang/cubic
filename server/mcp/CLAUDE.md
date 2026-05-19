@@ -53,19 +53,24 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 **Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
 ```
 compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
-                     setCompositionProperties, deleteComposition, getCurrentTime, setCurrentTime, saveFrameToPng
+                     setCompositionProperties, deleteComposition, duplicateComposition,
+                     getCurrentTime, setCurrentTime, saveFrameToPng
 layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
                      createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
                      batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setLayerParent, moveLayer,
-                     centerAnchorPoint, precompose, decomposeLayer, setTrackMatte, deleteLayer,
-                     getLayerProperty, setLayerProperty
-text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
-shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty
+                     setAnchorPoint, centerAnchorPoint (alias), alignLayers, sequenceLayers,
+                     precompose, decomposeLayer, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty
+text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector,
+                     explodeTextLayer
+shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty, convertToShape
 animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
-                     setLayerExpression, getLayerExpressions
+                     setLayerExpression (+ preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|
+                     LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing
 masks.jsx         ← getLayerMasks, setLayerMask, deleteLayerMask
-effects.jsx       ← getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty, deleteEffect
-footage.jsx       ← listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
+effects.jsx       ← getLayerEffects, applyEffect (matchName|effectName|presetPath), applyEffectTemplate,
+                     setEffectProperty, deleteEffect
+footage.jsx       ← listProjectItems, importFootage, addFootageToComp, importAssetToComp,
+                     deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
 project.jsx       ← getProjectPath, saveProject
 mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +

@@ -1,8 +1,9 @@
-// anchor.mjs — tests for centerAnchorPoint in layers.jsx
+// anchor.mjs — tests for setAnchorPoint + centerAnchorPoint in layers.jsx
 //
 // Covers:
-//   centerAnchorPoint  (U — center anchor on content bbox; adjust position to preserve visual placement;
-//                           previousValues capture: anchorPoint + position)
+//   setAnchorPoint     (U — move anchor to named position on layer bbox; position-compensated;
+//                           previousValues capture; position enum validation)
+//   centerAnchorPoint  (U — alias for setAnchorPoint CENTER; backward compat)
 //
 // Visual verification (after --write, open __MCP_TEST_anchor__ in After Effects):
 //   "Offset Shape" layer: anchor should sit at the visual center of the rectangle.
@@ -174,5 +175,69 @@ export async function run(ctx, opts) {
     });
     assertNoError(r);
     assertField(r, 'anchor');
+  });
+
+  // ── setAnchorPoint ────────────────────────────────────────────────────────
+
+  await test('setAnchorPoint CENTER — same result as centerAnchorPoint', async () => {
+    const r = await send('setAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'CENTER'
+    });
+    assertNoError(r);
+    assertField(r, 'anchor');
+    assertField(r, 'position');
+    assertField(r, 'anchorPosition');
+    if (r.anchorPosition !== 'CENTER') throw new Error(`Expected anchorPosition=CENTER, got ${r.anchorPosition}`);
+    assertField(r, 'previousValues', 'object');
+    return `anchor=[${r.anchor}], anchorPosition=${r.anchorPosition}`;
+  });
+
+  await test('setAnchorPoint TOP_LEFT — anchor moves to top-left of bbox', async () => {
+    const before = await send('getLayerProperty', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex,
+      propertyPath: ['Transform', 'Anchor Point']
+    });
+    assertNoError(before);
+    const r = await send('setAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'TOP_LEFT'
+    });
+    assertNoError(r);
+    assertField(r, 'anchor');
+    // Anchor should have moved
+    const changed = Math.abs(r.anchor[0] - before.property.value[0]) > 0.5 ||
+                    Math.abs(r.anchor[1] - before.property.value[1]) > 0.5;
+    if (!changed) throw new Error('Anchor did not move for TOP_LEFT');
+    assertField(r, 'previousValues', 'object');
+    return `anchor=[${r.anchor[0].toFixed(1)}, ${r.anchor[1].toFixed(1)}]`;
+  });
+
+  await test('setAnchorPoint BOTTOM_RIGHT — anchor moves to bottom-right of bbox', async () => {
+    const r = await send('setAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'BOTTOM_RIGHT'
+    });
+    assertNoError(r);
+    assertField(r, 'anchor');
+    return `anchor=[${r.anchor[0].toFixed(1)}, ${r.anchor[1].toFixed(1)}]`;
+  });
+
+  await test('setAnchorPoint — invalid position enum returns INVALID_ARGS', async () => {
+    const r = await send('setAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'BOGUS_POSITION'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+  });
+
+  await test('setAnchorPoint — previousValues captured for revert', async () => {
+    const r = await send('setAnchorPoint', {
+      compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'MIDDLE_LEFT'
+    });
+    assertNoError(r);
+    if (!r.previousValues || !('anchorPoint' in r.previousValues)) {
+      throw new Error('previousValues.anchorPoint missing');
+    }
+    if (!('position' in r.previousValues)) {
+      throw new Error('previousValues.position missing');
+    }
+    return `previousAnchor=[${r.previousValues.anchorPoint}]`;
   });
 }

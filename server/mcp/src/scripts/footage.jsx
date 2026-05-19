@@ -3,6 +3,7 @@
 // Note: solid LAYERS are created via createSolidLayer in layers.jsx — this file
 // manages the footage sources in the project panel, not the layers that reference them.
 // CRUD: C ✓  R ✓  U ✗  D ✓
+// importAssetToComp: one-shot import + place (composes importFootage + addFootageToComp)
 
 // R: listProjectItems — enumerate Project Panel contents (footage, comps, folders, solids)
 function listProjectItems(args) {
@@ -119,6 +120,40 @@ function addFootageToComp(args) {
                 outPoint: layer.outPoint,
                 position: layer.property("Position") ? layer.property("Position").value : null
             },
+            composition: { name: comp.name }
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: importAssetToComp — one-shot: import a file from disk and place it on the comp timeline.
+// Combines importFootage + addFootageToComp in a single call inside one undo group.
+function importAssetToComp(args) {
+    try {
+        if (!args.filePath) throw _err(ERROR_CODES.INVALID_ARGS, "filePath is required.");
+        var f = new File(args.filePath);
+        if (!f.exists) throw _err(ERROR_CODES.INVALID_ARGS, "File not found: " + args.filePath);
+
+        var importOptions = new ImportOptions(f);
+        if (args.sequence === true) importOptions.sequence = true;
+        var imported = app.project.importFile(importOptions);
+
+        var comp = _resolveComp(args);
+        var layer = comp.layers.add(imported);
+        if (args.position !== undefined && args.position !== null) layer.property("Position").setValue(args.position);
+        if (args.startTime !== undefined && args.startTime !== null) layer.startTime = args.startTime;
+        if (args.duration !== undefined && args.duration !== null && args.duration > 0) {
+            var st = (args.startTime !== undefined && args.startTime !== null) ? args.startTime : layer.startTime;
+            layer.outPoint = st + args.duration;
+        }
+        if (args.name) layer.name = args.name;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Asset imported and added to comp.",
+            item: { id: imported.id, name: imported.name, path: imported.file ? imported.file.fsName : null },
+            layer: { index: layer.index, name: layer.name, inPoint: layer.inPoint, outPoint: layer.outPoint },
             composition: { name: comp.name }
         }, null, 2);
     } catch (error) {

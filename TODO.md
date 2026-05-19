@@ -62,7 +62,8 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
     - B1-B7: all revert gaps fixed (moveLayer.previousIndex, setLayerParent.previousParent, updateMarker.previousValues, removeMarker.removedMarker snapshot, trimLayer.previousValues, centerAnchorPoint.previousValues, setSelectedLayers.previousSelection)
     - markers.jsx: label + protectedRegion round-tripped through all handlers
 - [x] **opus testing audit v4 - opusplan + fix those**
-- [ ] **implement test coverage for opus scripting audit v4**
+- [x] **implement test coverage for opus scripting audit v4**
+- [x] **impl tools + testing for 3rd party plugin features (gemini breakdown)**
 - [ ] ^^After above 3 are done, move onto Phase 2
 
 ## Phase 1

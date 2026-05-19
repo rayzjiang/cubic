@@ -1,6 +1,7 @@
 // text.jsx
 // Text layers + text animators.
 // CRUD: C ✓  R via getLayerInfo/getLayerProperty  U ✓  D via deleteLayer
+// explodeTextLayer: C ✓  (inverse: delete created layers + re-enable original)
 
 // C: createTextLayer
 function createTextLayer(args) {
@@ -180,6 +181,126 @@ function setTextAnimatorProperty(args) {
             animator: { index: animatorIndex, name: animator.name },
             property: { name: prop.name, value: prop.value },
             previousValue: previousValue
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: explodeTextLayer — split a text layer into N per-token layers that preserve original layout.
+// Strategy: each duplicate keeps the full text; two stacked text animators hide all tokens except the
+// target one (Animator1 Opacity=0 for all, Animator2 Opacity=100 for token i — later animator wins).
+// splitMethod: CHARACTERS | WORDS | LINES
+function explodeTextLayer(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var textProp = layer.property("Text");
+        if (!textProp) throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' is not a text layer.");
+
+        var splitMethod = (args.splitMethod || "CHARACTERS").toUpperCase();
+        var methodMap = { "CHARACTERS": true, "WORDS": true, "LINES": true };
+        if (!methodMap[splitMethod]) throw _err(ERROR_CODES.INVALID_ARGS, "splitMethod must be CHARACTERS, WORDS, or LINES.");
+
+        var textDocProp = textProp.property("ADBE Text Document");
+        var srcText = textDocProp.value.text;
+        if (!srcText || srcText.length === 0) throw _err(ERROR_CODES.INVALID_ARGS, "Source text layer is empty.");
+
+        // Tokenize — store string position for characters (for percentage calc), sequential index otherwise
+        var tokens = [];
+        if (splitMethod === "CHARACTERS") {
+            for (var c = 0; c < srcText.length; c++) {
+                tokens.push({ text: srcText.charAt(c), idx: c, total: srcText.length });
+            }
+        } else if (splitMethod === "WORDS") {
+            var wordParts = srcText.replace(/\r/g, " ").split(/\s+/);
+            var wCount = 0;
+            for (var w = 0; w < wordParts.length; w++) {
+                if (wordParts[w].length > 0) { tokens.push({ text: wordParts[w], idx: wCount, total: null }); wCount++; }
+            }
+            for (var tw = 0; tw < tokens.length; tw++) tokens[tw].total = wCount;
+        } else {
+            var lineParts = srcText.split("\r");
+            var lCount = 0;
+            for (var l = 0; l < lineParts.length; l++) {
+                if (lineParts[l].length > 0) { tokens.push({ text: lineParts[l], idx: lCount, total: null }); lCount++; }
+            }
+            for (var tl = 0; tl < tokens.length; tl++) tokens[tl].total = lCount;
+        }
+
+        if (tokens.length === 0) throw _err(ERROR_CODES.INVALID_ARGS, "No tokens found in the text.");
+
+        var basedOnValue = (splitMethod === "CHARACTERS") ? 1 : (splitMethod === "WORDS" ? 3 : 4);
+        // AE basedOn: 1=characters, 2=charactersExcludingSpaces, 3=words, 4=lines
+
+        function _configureSelector(selector, startPct, endPct, basedOn) {
+            try { selector.property("Start").setValue(startPct); } catch(e) {}
+            try { selector.property("End").setValue(endPct); } catch(e) {}
+            var adv = null;
+            try { adv = selector.property("ADBE Text Range Advanced"); } catch(e) {}
+            if (!adv) { try { adv = selector.property("Advanced"); } catch(e) {} }
+            if (adv) {
+                var boProp = null;
+                try { boProp = adv.property("ADBE Text Selector Based On"); } catch(e) {}
+                if (!boProp) { try { boProp = adv.property("ADBE Text Range Based On"); } catch(e) {} }
+                if (!boProp) {
+                    for (var bi = 1; bi <= adv.numProperties; bi++) {
+                        try { if (adv.property(bi).name === "Based On") { boProp = adv.property(bi); break; } } catch(e) {}
+                    }
+                }
+                if (boProp) { try { boProp.setValue(basedOn); } catch(e) {} }
+            }
+        }
+
+        var N = tokens.length;
+        var sourceLayerIndex = layer.index;
+        var prevEnabled = layer.enabled;
+        var createdLayers = [];
+
+        for (var i = 0; i < N; i++) {
+            var token = tokens[i];
+            var startPct = (token.idx / token.total) * 100;
+            var endPct   = ((token.idx + 1) / token.total) * 100;
+
+            var dup = layer.duplicate();
+            dup.name = layer.name + " [" + token.text + "]";
+
+            var dupAnimators = dup.property("Text").property("Animators");
+
+            // Animator 1: Opacity=0 covering ALL tokens (hides everything)
+            var hideAnim = dupAnimators.addProperty("ADBE Text Animator");
+            var hideAnimProps = hideAnim.property("ADBE Text Animator Properties");
+            var hideOpacity = hideAnimProps.addProperty("ADBE Text Opacity");
+            hideOpacity.setValue(0);
+            var hideSelectors = hideAnim.property("ADBE Text Selectors");
+            if (hideSelectors.numProperties === 0) hideSelectors.addProperty("ADBE Text Selector");
+            _configureSelector(hideSelectors.property(1), 0, 100, basedOnValue);
+
+            // Animator 2: Opacity=100 covering only token i (restores visibility for this token)
+            // Being added AFTER Animator 1 gives it higher priority in AE's stacking order.
+            var showAnim = dupAnimators.addProperty("ADBE Text Animator");
+            var showAnimProps = showAnim.property("ADBE Text Animator Properties");
+            var showOpacity = showAnimProps.addProperty("ADBE Text Opacity");
+            showOpacity.setValue(100);
+            var showSelectors = showAnim.property("ADBE Text Selectors");
+            if (showSelectors.numProperties === 0) showSelectors.addProperty("ADBE Text Selector");
+            _configureSelector(showSelectors.property(1), startPct, endPct, basedOnValue);
+
+            createdLayers.push({ index: dup.index, name: dup.name, token: token.text });
+        }
+
+        // Hide source layer
+        layer.enabled = false;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Text layer '" + layer.name + "' exploded into " + N + " layers by " + splitMethod + ".",
+            splitMethod: splitMethod,
+            tokenCount: N,
+            createdLayers: createdLayers,
+            hiddenSourceIndex: sourceLayerIndex,
+            previousValues: { sourceEnabled: prevEnabled }
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

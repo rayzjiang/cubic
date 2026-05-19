@@ -335,6 +335,81 @@ function saveFrameToPng(args) {
     }
 }
 
+// C: duplicateComposition — duplicate a comp, optionally recursing into all nested pre-comps.
+// deep:false (default) — shallow duplicate via CompItem.duplicate().
+// deep:true — DFS collects all transitively referenced ComItems; duplicates each leaf-first;
+//             remaps layer.source references inside all new comps to point to their new counterparts.
+function duplicateComposition(args) {
+    try {
+        var comp = _resolveComp(args);
+        var newName = args.newName;
+        var deep    = args.deep === true;
+
+        if (!deep) {
+            var dup = comp.duplicate();
+            if (newName) dup.name = newName;
+            return JSON.stringify({
+                status: "success",
+                message: "Composition duplicated.",
+                original:  { id: comp.id, name: comp.name },
+                duplicate: { id: dup.id,  name: dup.name  }
+            }, null, 2);
+        }
+
+        // Deep mode: collect all nested comps in post-order (leaves first)
+        var visited = {};
+        var orderedComps = [];
+
+        function collectComps(c) {
+            if (visited[c.id]) return;
+            visited[c.id] = true;
+            for (var li = 1; li <= c.numLayers; li++) {
+                var src = null;
+                try { src = c.layer(li).source; } catch(e) {}
+                if (src && src instanceof CompItem) collectComps(src);
+            }
+            orderedComps.push(c);
+        }
+        collectComps(comp);
+
+        // Duplicate each (leaf-first) and build original.id → new CompItem map
+        var idMap = {};
+        var duplicatedIds = [];
+        for (var j = 0; j < orderedComps.length; j++) {
+            var orig = orderedComps[j];
+            var d = orig.duplicate();
+            idMap[orig.id] = d;
+            duplicatedIds.push(d.id);
+        }
+
+        // Rename root duplicate
+        var rootDup = idMap[comp.id];
+        rootDup.name = newName || (comp.name + " copy");
+
+        // Remap nested comp layer sources in all duplicated comps
+        for (var k = 0; k < orderedComps.length; k++) {
+            var dupComp = idMap[orderedComps[k].id];
+            for (var li2 = 1; li2 <= dupComp.numLayers; li2++) {
+                var lsrc = null;
+                try { lsrc = dupComp.layer(li2).source; } catch(e) {}
+                if (lsrc && lsrc instanceof CompItem && idMap[lsrc.id]) {
+                    try { dupComp.layer(li2).replaceSource(idMap[lsrc.id], false); } catch(e) {}
+                }
+            }
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Deep composition duplicate created (" + orderedComps.length + " comp(s) duplicated).",
+            original:      { id: comp.id,    name: comp.name    },
+            rootDuplicate: { id: rootDup.id, name: rootDup.name },
+            duplicatedCompIds: duplicatedIds
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // D: deleteComposition
 function deleteComposition(args) {
     try {

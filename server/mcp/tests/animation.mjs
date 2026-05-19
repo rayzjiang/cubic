@@ -2,12 +2,16 @@
 //
 // Covers:
 //   getLayerExpressions    (R  — expressions)
-//   setLayerExpression     (C/U — expressions; set + remove via empty string; previousValue capture)
-//   getLayerKeyframes      (R  — keyframes; via propertyName and propertyPath)
+//   setLayerExpression     (C/U — expressions; set + remove via empty string; previousValue capture;
+//                                preset: WIGGLE/INERTIAL_BOUNCE/LOOP_OUT with presetParams)
+//   getLayerKeyframes      (R  — keyframes; via propertyName and propertyPath;
+//                                inTemporalEase/outTemporalEase additive fields)
 //   setLayerKeyframe       (C  — keyframes; previousKey capture; propertyPath for nested props)
 //   setKeyframeEasing      (U  — keyframes; previousEasings capture; propertyPath)
 //   setKeyframeSpatial     (U  — spatial tangents, autoBezier, continuous, roving; previousSpatial;
 //                                propertyPath form; endpoint-roving warning; error paths)
+//   copyKeyframeEasing     (U  — copies easing from source to target without changing values;
+//                                pairsCopied + previousEasings; cross-layer; timeOffset)
 //   removePropertyKeyframes (D — keyframes; propertyPath)
 //   getLayerProperty       (R  — path-based property read, at current time and at given time)
 //
@@ -457,5 +461,123 @@ export async function run(ctx, opts) {
       propertyPath: []
     });
     assertStructuredError(r);
+  });
+
+  // ── setLayerExpression with presets ───────────────────────────────────────
+
+  await test('setLayerExpression — preset WIGGLE injects expression string', async () => {
+    const r = await send('setLayerExpression', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Position',
+      preset: 'WIGGLE', presetParams: { freq: 5, amp: 15 }
+    });
+    assertNoError(r);
+    assertField(r, 'preset', 'string');
+    if (r.preset !== 'WIGGLE') throw new Error(`Expected preset=WIGGLE, got ${r.preset}`);
+    assertField(r, 'previousValue');
+    // Verify expression was actually applied
+    const check = await send('getLayerExpressions', { compName: COMP_NAME, layerIndex: li });
+    assertNoError(check);
+    const hasWiggle = check.expressions.some(e => e.expression && e.expression.toLowerCase().includes('wiggle'));
+    if (!hasWiggle) throw new Error('Expected wiggle() expression on Position');
+    return `preset WIGGLE applied`;
+  });
+
+  await test('setLayerExpression — preset LOOP_OUT on Opacity', async () => {
+    // Add an opacity keyframe first so loopOut has something to loop
+    await send('setLayerKeyframe', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Opacity', timeInSeconds: 0, value: 100
+    });
+    const r = await send('setLayerExpression', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Opacity',
+      preset: 'LOOP_OUT'
+    });
+    assertNoError(r);
+    if (r.preset !== 'LOOP_OUT') throw new Error(`Expected preset=LOOP_OUT, got ${r.preset}`);
+    return `LOOP_OUT expression applied to Opacity`;
+  });
+
+  await test('setLayerExpression — invalid preset name returns INVALID_ARGS', async () => {
+    const r = await send('setLayerExpression', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Opacity',
+      preset: 'DOES_NOT_EXIST'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+  });
+
+  // Clear expressions we added above
+  await send('setLayerExpression', { compName: COMP_NAME, layerIndex: li, propertyName: 'Position', expressionString: '' });
+  await send('setLayerExpression', { compName: COMP_NAME, layerIndex: li, propertyName: 'Opacity',   expressionString: '' });
+
+  // ── getLayerKeyframes — verify new easing fields ──────────────────────────
+
+  await test('getLayerKeyframes — inTemporalEase/outTemporalEase included in keyframe data', async () => {
+    // Position was keyframed earlier in this suite
+    const r = await send('getLayerKeyframes', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Position'
+    });
+    assertNoError(r);
+    assertArray(r, 'keyframes');
+    if (r.keyframes.length === 0) throw new Error('Expected at least 1 keyframe on Position');
+    const kf = r.keyframes[0];
+    if (!('inTemporalEase' in kf)) throw new Error('keyframe missing inTemporalEase');
+    if (!('outTemporalEase' in kf)) throw new Error('keyframe missing outTemporalEase');
+    if (!Array.isArray(kf.inTemporalEase) || kf.inTemporalEase.length === 0) {
+      throw new Error('inTemporalEase should be non-empty array');
+    }
+    if (!('speed' in kf.inTemporalEase[0]) || !('influence' in kf.inTemporalEase[0])) {
+      throw new Error('inTemporalEase[0] missing speed/influence fields');
+    }
+    return `keyframe[0].inTemporalEase[0]=${JSON.stringify(kf.inTemporalEase[0])}`;
+  });
+
+  // ── copyKeyframeEasing ────────────────────────────────────────────────────
+
+  await test('copyKeyframeEasing — copy easing from source layer to target layer', async () => {
+    // Create a second text layer to serve as the easing target
+    const tgt = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'Target',
+      fontSize: 80, position: [960, 700], color: [1, 0.5, 0]
+    });
+    assertNoError(tgt);
+    const tgtIdx = 1; // new layers go to index 1
+    li++; // tgt shifts the source text layer down one index
+
+    // Add two keyframes on target Position so there's something to copy easing TO
+    await send('setLayerKeyframe', { compName: COMP_NAME, layerIndex: tgtIdx, propertyName: 'Position', timeInSeconds: 0, value: [100, 700] });
+    await send('setLayerKeyframe', { compName: COMP_NAME, layerIndex: tgtIdx, propertyName: 'Position', timeInSeconds: 2, value: [1820, 700] });
+
+    // Source layer (li) already has position keyframes from earlier in the suite
+    const r = await send('copyKeyframeEasing', {
+      sourceCompName: COMP_NAME, sourceLayerIndex: li,
+      targetCompName: COMP_NAME, targetLayerIndex: tgtIdx,
+      propertyName: 'Position'
+    });
+    assertNoError(r);
+    assertField(r, 'pairsCopied', 'number');
+    assertField(r, 'previousEasings');
+    if (r.pairsCopied === 0) throw new Error('Expected at least 1 keyframe pair copied');
+    if (!Array.isArray(r.previousEasings) || r.previousEasings.length === 0) {
+      throw new Error('previousEasings should be non-empty array');
+    }
+    return `pairsCopied=${r.pairsCopied}`;
+  });
+
+  await test('copyKeyframeEasing — source with no keyframes returns INVALID_ARGS', async () => {
+    const fresh = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'Fresh', fontSize: 50, color: [1, 1, 1]
+    });
+    assertNoError(fresh);
+    const freshIdx = 1;
+    const r = await send('copyKeyframeEasing', {
+      sourceCompName: COMP_NAME, sourceLayerIndex: freshIdx,
+      targetCompName: COMP_NAME, targetLayerIndex: li + 1,
+      propertyName: 'Position'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
   });
 }

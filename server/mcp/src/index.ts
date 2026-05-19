@@ -227,7 +227,15 @@ server.registerTool(
       "saveFrameToPng",
       "decomposeLayer",
       "setTimeRemapEnabled",
-      "setKeyframeSpatial"
+      "setKeyframeSpatial",
+      "setAnchorPoint",
+      "alignLayers",
+      "sequenceLayers",
+      "copyKeyframeEasing",
+      "explodeTextLayer",
+      "duplicateComposition",
+      "convertToShape",
+      "importAssetToComp"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -270,21 +278,21 @@ server.registerTool(
 
 All commands are invoked via \`runScript({ script, parameters })\` or wrapped in \`batch\`. The typed \`createComposition\` tool is kept as a schema example; everything else routes through \`runScript\`.
 
-**Compositions:** getProjectInfo, listCompositions, getCompositionInfo, createComposition, setCompositionProperties, deleteComposition
+**Compositions:** getProjectInfo, listCompositions, getCompositionInfo, createComposition, setCompositionProperties, deleteComposition, duplicateComposition (deep:true recursively duplicates all nested pre-comps)
 **Playhead:** getCurrentTime, setCurrentTime
 **Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (use \`type\` field: text|shape|solid|adjustment|null|camera|light), duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Layer time ops:** splitLayer, mergeLayer (inverse of splitLayer), trimLayer (inPoint/outPoint/startTime/mode)
-**Anchor:** centerAnchorPoint (move anchor to content center, position-compensated)
+**Anchor & Alignment:** setAnchorPoint (position: TOP_LEFT|TOP_CENTER|TOP_RIGHT|MIDDLE_LEFT|CENTER|MIDDLE_RIGHT|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT; preserves layer position), centerAnchorPoint (alias for CENTER), alignLayers (alignment: LEFT|HORIZONTAL_CENTER|RIGHT|TOP|VERTICAL_CENTER|BOTTOM; reference: COMPOSITION|SELECTION), sequenceLayers (stagger inPoints; orderType: TOP_DOWN|BOTTOM_UP|RANDOM)
 **Nesting / Mattes:** precompose, decomposeLayer (inverse of precompose), setTrackMatte
-**Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners|gradientFill|gradientStroke), setShapeOperatorProperty
-**Text Animators:** addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector
+**Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners|gradientFill|gradientStroke), setShapeOperatorProperty, convertToShape (text→shapes or vector→shapes via menu command; may be CEP-gated)
+**Text:** createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector, explodeTextLayer (splitMethod: CHARACTERS|WORDS|LINES; animator-mask preserves kerning/layout)
 **Property Reads/Writes:** getLayerProperty, setLayerProperty (path-based — address any nested property, e.g. ['Contents','Group 1','Stroke 1','Color'])
-**Keyframes:** getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes
-**Expressions:** getLayerExpressions, setLayerExpression
+**Keyframes:** getLayerKeyframes (includes inTemporalEase/outTemporalEase/spatial tangents), setLayerKeyframe, setKeyframeEasing, setKeyframeSpatial, copyKeyframeEasing (copy easing curve between layers without changing values), removePropertyKeyframes
+**Expressions:** getLayerExpressions, setLayerExpression (expressionString or preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG with optional presetParams)
 **Masks:** getLayerMasks, setLayerMask (returns previousValues for revert), deleteLayerMask
-**Effects:** getLayerEffects, applyEffect, applyEffectTemplate, setEffectProperty (returns previousValue for revert), deleteEffect
+**Effects:** getLayerEffects, applyEffect (matchName, effectName, or presetPath for .ffx files), applyEffectTemplate, setEffectProperty (returns previousValue for revert), deleteEffect
 **Markers:** addMarker, listMarkers, updateMarker, removeMarker (comp or layer; omit layerIndex for comp marker)
-**Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, deleteProjectItem, deleteUnusedSolids
+**Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, importAssetToComp (one-shot import+place), deleteProjectItem, deleteUnusedSolids
 **Project:** getProjectPath, saveProject
 **Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations). Accepts an optional \`groupLabel\` (human-readable turn summary, e.g. "apply cinematic look to logo") that becomes the single Edit > Undo entry the user sees in AE — one ⌘Z reverts the entire turn.
 

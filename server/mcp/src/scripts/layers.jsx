@@ -1157,27 +1157,45 @@ function setTimeRemapEnabled(args) {
     }
 }
 
-// U: centerAnchorPoint — move anchor to content center; adjust position so layer stays put
-function centerAnchorPoint(args) {
+// U: setAnchorPoint — move anchor to a named bounding-box position; compensate Position so layer stays put.
+// position: TOP_LEFT|TOP_CENTER|TOP_RIGHT|MIDDLE_LEFT|CENTER|MIDDLE_RIGHT|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT
+function setAnchorPoint(args) {
     try {
         var resolved = _resolveCompAndLayer(args);
         var comp = resolved.comp;
         var layer = resolved.layer;
 
-        var preservePosition = (args.preservePosition !== false); // default true
+        var position = (args.position || "CENTER").toUpperCase();
+        var preservePosition = (args.preservePosition !== false);
         var overwriteKeyframes = args.overwriteKeyframes === true;
 
+        var fxMap = {
+            "TOP_LEFT": 0,    "TOP_CENTER": 0.5,    "TOP_RIGHT": 1,
+            "MIDDLE_LEFT": 0, "CENTER": 0.5,         "MIDDLE_RIGHT": 1,
+            "BOTTOM_LEFT": 0, "BOTTOM_CENTER": 0.5,  "BOTTOM_RIGHT": 1
+        };
+        var fyMap = {
+            "TOP_LEFT": 0,    "TOP_CENTER": 0,     "TOP_RIGHT": 0,
+            "MIDDLE_LEFT": 0.5, "CENTER": 0.5,     "MIDDLE_RIGHT": 0.5,
+            "BOTTOM_LEFT": 1, "BOTTOM_CENTER": 1,  "BOTTOM_RIGHT": 1
+        };
+
+        if (fxMap[position] === undefined) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Invalid position '" + position + "'. Use: TOP_LEFT, TOP_CENTER, TOP_RIGHT, MIDDLE_LEFT, CENTER, MIDDLE_RIGHT, BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT.");
+        }
+
         var rect = layer.sourceRectAtTime(comp.time, false);
-        var newAnchorX = rect.left + rect.width  / 2;
-        var newAnchorY = rect.top  + rect.height / 2;
+        var newAnchorX = rect.left + fxMap[position] * rect.width;
+        var newAnchorY = rect.top  + fyMap[position] * rect.height;
 
         var anchorProp = layer.property("Anchor Point");
         var posProp    = layer.property("Position");
-        var oldAnchor  = anchorProp.value; // captured before any changes
-        var oldPos     = posProp.value;    // captured before any changes
+        var oldAnchor  = anchorProp.value;
+        var oldPos     = posProp.value;
 
         if (preservePosition) {
-            var scale  = layer.property("Scale").value;
+            var scale = layer.property("Scale").value;
             var sx = scale[0] / 100;
             var sy = scale[1] / 100;
             var deltaX = (newAnchorX - oldAnchor[0]) * sx;
@@ -1199,8 +1217,9 @@ function centerAnchorPoint(args) {
 
         return JSON.stringify({
             status: "success",
-            message: "Anchor point centered on content.",
+            message: "Anchor point moved to " + position + ".",
             layer: { index: layer.index, name: layer.name },
+            anchorPosition: position,
             anchor: anchorProp.value,
             position: layer.property("Position").value,
             previousValues: { anchorPoint: oldAnchor, position: oldPos }
@@ -1208,6 +1227,14 @@ function centerAnchorPoint(args) {
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
+}
+
+// U: centerAnchorPoint — thin alias for setAnchorPoint({ position: 'CENTER' }); kept for backwards compatibility.
+function centerAnchorPoint(args) {
+    return setAnchorPoint({
+        compName: args.compName, layerIndex: args.layerIndex, layerName: args.layerName,
+        position: "CENTER", preservePosition: args.preservePosition, overwriteKeyframes: args.overwriteKeyframes
+    });
 }
 
 // U: mergeLayer — inverse of splitLayer; joins two contiguous same-source layers into one
@@ -1390,6 +1417,172 @@ function getLayerProperty(args) {
         return JSON.stringify({ status: "success", property: propInfo }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// U: alignLayers — align layers horizontally or vertically to the composition bounds or selection bbox.
+// alignment: LEFT|HORIZONTAL_CENTER|RIGHT|TOP|VERTICAL_CENTER|BOTTOM
+// reference: COMPOSITION|SELECTION
+function alignLayers(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        var alignment = (args.alignment || "HORIZONTAL_CENTER").toUpperCase();
+        var reference = (args.reference || "COMPOSITION").toUpperCase();
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+
+        var validAlignments = { "LEFT": true, "HORIZONTAL_CENTER": true, "RIGHT": true, "TOP": true, "VERTICAL_CENTER": true, "BOTTOM": true };
+        if (!validAlignments[alignment]) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "alignment must be LEFT, HORIZONTAL_CENTER, RIGHT, TOP, VERTICAL_CENTER, or BOTTOM.");
+        }
+
+        // Resolve layers
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            layers.push(comp.layer(idx));
+        }
+
+        // Compute comp-space bbox for each layer (axis-aligned, ignores rotation)
+        function getCompBbox(layer) {
+            var rect = layer.sourceRectAtTime(comp.time, false);
+            var anchor = layer.property("Anchor Point").value;
+            var pos = layer.property("Position").value;
+            var scale = layer.property("Scale").value;
+            var sx = scale[0] / 100;
+            var sy = scale[1] / 100;
+            var x1 = pos[0] + (rect.left - anchor[0]) * sx;
+            var x2 = pos[0] + (rect.left + rect.width - anchor[0]) * sx;
+            var y1 = pos[1] + (rect.top - anchor[1]) * sy;
+            var y2 = pos[1] + (rect.top + rect.height - anchor[1]) * sy;
+            return { left: Math.min(x1, x2), right: Math.max(x1, x2), top: Math.min(y1, y2), bottom: Math.max(y1, y2) };
+        }
+
+        // Determine reference bounds
+        var refLeft, refRight, refTop, refBottom;
+        if (reference === "COMPOSITION") {
+            refLeft = 0; refRight = comp.width; refTop = 0; refBottom = comp.height;
+        } else {
+            // SELECTION: union of all target layer bboxes
+            var allBboxes = [];
+            for (var bi = 0; bi < layers.length; bi++) { allBboxes.push(getCompBbox(layers[bi])); }
+            refLeft = allBboxes[0].left; refRight = allBboxes[0].right;
+            refTop = allBboxes[0].top; refBottom = allBboxes[0].bottom;
+            for (var ri = 1; ri < allBboxes.length; ri++) {
+                if (allBboxes[ri].left   < refLeft)   refLeft   = allBboxes[ri].left;
+                if (allBboxes[ri].right  > refRight)  refRight  = allBboxes[ri].right;
+                if (allBboxes[ri].top    < refTop)    refTop    = allBboxes[ri].top;
+                if (allBboxes[ri].bottom > refBottom) refBottom = allBboxes[ri].bottom;
+            }
+        }
+        var refCenterX = (refLeft + refRight) / 2;
+        var refCenterY = (refTop + refBottom) / 2;
+
+        var previousPositions = [];
+        var modifiedLayers = [];
+
+        for (var li = 0; li < layers.length; li++) {
+            var layer = layers[li];
+            var bbox = getCompBbox(layer);
+            var pos = layer.property("Position").value;
+            previousPositions.push({ index: layer.index, name: layer.name, position: pos });
+
+            var deltaX = 0, deltaY = 0;
+            if (alignment === "LEFT")              { deltaX = refLeft   - bbox.left;   }
+            else if (alignment === "HORIZONTAL_CENTER") { deltaX = refCenterX - (bbox.left + bbox.right) / 2; }
+            else if (alignment === "RIGHT")         { deltaX = refRight  - bbox.right;  }
+            else if (alignment === "TOP")           { deltaY = refTop    - bbox.top;    }
+            else if (alignment === "VERTICAL_CENTER")   { deltaY = refCenterY - (bbox.top + bbox.bottom) / 2; }
+            else if (alignment === "BOTTOM")        { deltaY = refBottom - bbox.bottom; }
+
+            var newPos;
+            if (layer.threeDLayer) {
+                newPos = [pos[0] + deltaX, pos[1] + deltaY, pos[2]];
+            } else {
+                newPos = [pos[0] + deltaX, pos[1] + deltaY];
+            }
+            layer.property("Position").setValue(newPos);
+            modifiedLayers.push({ index: layer.index, name: layer.name, newPosition: newPos });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Aligned " + layers.length + " layer(s) (" + alignment + ", reference: " + reference + ").",
+            alignment: alignment,
+            reference: reference,
+            modifiedLayers: modifiedLayers,
+            previousPositions: previousPositions
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: sequenceLayers — stagger the inPoint of layers in a staircase pattern.
+// orderType: TOP_DOWN (ascending layer index), BOTTOM_UP (descending), RANDOM (Fisher-Yates)
+function sequenceLayers(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        var offsetFrames = (args.offsetFrames !== undefined && args.offsetFrames !== null) ? args.offsetFrames : 1;
+        var orderType = (args.orderType || "TOP_DOWN").toUpperCase();
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        var validOrders = { "TOP_DOWN": true, "BOTTOM_UP": true, "RANDOM": true };
+        if (!validOrders[orderType]) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "orderType must be TOP_DOWN, BOTTOM_UP, or RANDOM.");
+        }
+
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            layers.push(comp.layer(idx));
+        }
+
+        if (orderType === "TOP_DOWN") {
+            layers.sort(function(a, b) { return a.index - b.index; });
+        } else if (orderType === "BOTTOM_UP") {
+            layers.sort(function(a, b) { return b.index - a.index; });
+        } else {
+            // Fisher-Yates shuffle
+            for (var j = layers.length - 1; j > 0; j--) {
+                var k = Math.floor(Math.random() * (j + 1));
+                var tmp = layers[j]; layers[j] = layers[k]; layers[k] = tmp;
+            }
+        }
+
+        var baseStartTime = (args.baseStartTime !== undefined && args.baseStartTime !== null)
+            ? args.baseStartTime
+            : layers[0].startTime;
+        var frameDuration = comp.frameDuration;
+
+        var previousStartTimes = [];
+        var modifiedLayers = [];
+        for (var n = 0; n < layers.length; n++) {
+            previousStartTimes.push({ index: layers[n].index, name: layers[n].name, startTime: layers[n].startTime });
+            var newStart = baseStartTime + n * offsetFrames * frameDuration;
+            layers[n].startTime = newStart;
+            modifiedLayers.push({ index: layers[n].index, name: layers[n].name, newStartTime: newStart });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Sequenced " + layers.length + " layers with " + offsetFrames + " frame(s) offset (" + orderType + ").",
+            orderType: orderType,
+            offsetFrames: offsetFrames,
+            baseStartTime: baseStartTime,
+            modifiedLayers: modifiedLayers,
+            previousStartTimes: previousStartTimes
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 

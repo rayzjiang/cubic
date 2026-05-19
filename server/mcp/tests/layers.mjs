@@ -8,6 +8,9 @@
 //                                light: intensity, lightType, lightColor, falloff, radius,
 //                                castsShadows, shadowDarkness, shadowDiffusion;
 //                                spot-only: coneAngle, coneFeather)
+//   alignLayers            (U  — LEFT/HORIZONTAL_CENTER/RIGHT/TOP/VERTICAL_CENTER/BOTTOM;
+//                                reference: COMPOSITION|SELECTION; previousPositions)
+//   sequenceLayers         (U  — TOP_DOWN/BOTTOM_UP/RANDOM; offsetFrames; previousStartTimes)
 //   createTextLayer        (C)
 //   createShapeLayer       (C)
 //   createSolidLayer       (C)
@@ -846,4 +849,158 @@ export async function run(ctx, opts) {
     }
     return `cleared; previousParent.name="${clearR.previousParent.name}"`;
   });
+
+  // ── alignLayers ───────────────────────────────────────────────────────────
+
+  if (opts.write) {
+    const ALIGN_COMP = '__MCP_TEST_align__';
+
+    const alignSetup = await test('alignLayers setup — comp with 3 solids at different positions', async () => {
+      const cr = await send('createComposition', {
+        name: ALIGN_COMP, width: 1920, height: 1080, frameRate: 30, duration: 5
+      });
+      assertField(cr, 'composition', 'object');
+      for (const pos of [[200, 300], [600, 700], [1400, 200]]) {
+        const lr = await send('createLayer', {
+          compName: ALIGN_COMP, type: 'solid', name: 'AlignBlock',
+          size: [100, 100], color: [0.5, 0.5, 0.5]
+        });
+        assertNoError(lr);
+        await send('setLayerProperties', { compName: ALIGN_COMP, layerIndex: 1, position: pos });
+      }
+      return '3 solids created';
+    });
+
+    if (requireSetup(alignSetup)) {
+      await test('alignLayers — LEFT align to COMPOSITION; previousPositions captured', async () => {
+        const r = await send('alignLayers', {
+          compName: ALIGN_COMP,
+          layerIndices: [1, 2, 3],
+          alignment: 'LEFT',
+          reference: 'COMPOSITION'
+        });
+        assertNoError(r);
+        assertField(r, 'alignment', 'string');
+        assertField(r, 'modifiedLayers');
+        assertField(r, 'previousPositions');
+        if (!Array.isArray(r.modifiedLayers) || r.modifiedLayers.length !== 3) {
+          throw new Error(`Expected 3 modifiedLayers, got ${r.modifiedLayers?.length}`);
+        }
+        if (!Array.isArray(r.previousPositions) || r.previousPositions.length !== 3) {
+          throw new Error('previousPositions should be array of 3');
+        }
+        return `aligned LEFT; first layer x=${r.modifiedLayers[0].newPosition[0].toFixed(1)}`;
+      });
+
+      await test('alignLayers — VERTICAL_CENTER to SELECTION reference', async () => {
+        const r = await send('alignLayers', {
+          compName: ALIGN_COMP,
+          layerIndices: [1, 2, 3],
+          alignment: 'VERTICAL_CENTER',
+          reference: 'SELECTION'
+        });
+        assertNoError(r);
+        assertField(r, 'modifiedLayers');
+        return `VERTICAL_CENTER to SELECTION done`;
+      });
+
+      await test('alignLayers — invalid alignment returns INVALID_ARGS', async () => {
+        const r = await send('alignLayers', {
+          compName: ALIGN_COMP, layerIndices: [1], alignment: 'DIAGONAL', reference: 'COMPOSITION'
+        });
+        assertStructuredError(r, 'INVALID_ARGS');
+      });
+
+      await test('alignLayers — out-of-bounds layerIndex returns error', async () => {
+        const r = await send('alignLayers', {
+          compName: ALIGN_COMP, layerIndices: [99], alignment: 'LEFT', reference: 'COMPOSITION'
+        });
+        assertStructuredError(r);
+      });
+
+      await send('deleteComposition', { compName: ALIGN_COMP });
+    }
+  }
+
+  // ── sequenceLayers ────────────────────────────────────────────────────────
+
+  if (opts.write) {
+    const SEQ_COMP = '__MCP_TEST_sequence__';
+
+    const seqSetup = await test('sequenceLayers setup — comp with 4 solid layers', async () => {
+      const cr = await send('createComposition', {
+        name: SEQ_COMP, width: 1920, height: 1080, frameRate: 30, duration: 10
+      });
+      assertField(cr, 'composition', 'object');
+      for (let i = 0; i < 4; i++) {
+        const lr = await send('createLayer', {
+          compName: SEQ_COMP, type: 'solid', name: 'SeqBlock' + i, color: [0.5, 0.5, 0.5]
+        });
+        assertNoError(lr);
+      }
+      return '4 solids created';
+    });
+
+    if (requireSetup(seqSetup)) {
+      await test('sequenceLayers — TOP_DOWN, 6 frames offset; previousStartTimes captured', async () => {
+        const r = await send('sequenceLayers', {
+          compName: SEQ_COMP,
+          layerIndices: [1, 2, 3, 4],
+          offsetFrames: 6,
+          orderType: 'TOP_DOWN',
+          baseStartTime: 0
+        });
+        assertNoError(r);
+        assertField(r, 'orderType', 'string');
+        assertField(r, 'offsetFrames', 'number');
+        assertField(r, 'modifiedLayers');
+        assertField(r, 'previousStartTimes');
+        if (!Array.isArray(r.modifiedLayers) || r.modifiedLayers.length !== 4) {
+          throw new Error(`Expected 4 modifiedLayers, got ${r.modifiedLayers?.length}`);
+        }
+        // Verify stagger: each layer starts 6 frames later than the previous
+        const frameDur = 1 / 30;
+        for (let i = 1; i < r.modifiedLayers.length; i++) {
+          const diff = r.modifiedLayers[i].newStartTime - r.modifiedLayers[i - 1].newStartTime;
+          if (Math.abs(diff - 6 * frameDur) > 0.001) {
+            throw new Error(`Expected 6-frame stagger between layers ${i-1} and ${i}, got diff=${diff.toFixed(4)}s`);
+          }
+        }
+        return `staggered: ${r.modifiedLayers.map(l => l.newStartTime.toFixed(3) + 's').join(', ')}`;
+      });
+
+      await test('sequenceLayers — BOTTOM_UP reorders correctly', async () => {
+        const r = await send('sequenceLayers', {
+          compName: SEQ_COMP,
+          layerIndices: [1, 2, 3, 4],
+          offsetFrames: 3,
+          orderType: 'BOTTOM_UP',
+          baseStartTime: 0
+        });
+        assertNoError(r);
+        if (r.orderType !== 'BOTTOM_UP') throw new Error(`Expected orderType=BOTTOM_UP, got ${r.orderType}`);
+        return 'BOTTOM_UP sequence applied';
+      });
+
+      await test('sequenceLayers — RANDOM does not error', async () => {
+        const r = await send('sequenceLayers', {
+          compName: SEQ_COMP,
+          layerIndices: [1, 2, 3, 4],
+          offsetFrames: 2,
+          orderType: 'RANDOM'
+        });
+        assertNoError(r);
+        return 'RANDOM sequence applied';
+      });
+
+      await test('sequenceLayers — invalid orderType returns INVALID_ARGS', async () => {
+        const r = await send('sequenceLayers', {
+          compName: SEQ_COMP, layerIndices: [1], offsetFrames: 5, orderType: 'SPIRAL'
+        });
+        assertStructuredError(r, 'INVALID_ARGS');
+      });
+
+      await send('deleteComposition', { compName: SEQ_COMP });
+    }
+  }
 }
