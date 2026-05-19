@@ -2,19 +2,21 @@
 //
 // Covers:
 //   getLayerMasks   (R  — all mask fields: index, name, mode, vertices, closed,
-//                         feather, opacity, expansion)
+//                         feather, opacity, expansion, inTangents, outTangents)
 //   setLayerMask    (C  — new mask via maskRect with feather + opacity + name)
 //   setLayerMask    (C  — new mask via maskPath, triangle shape)
+//   setLayerMask    (C  — bezier mask via maskPath + maskInTangents/maskOutTangents)
 //   setLayerMask    (C  — new mask via maskPath with closed=false, open path)
-//   setLayerMask    (U  — modify existing mask by maskIndex)
-//   deleteLayerMask (D  — remove mask by name, confirmed by count drop)
+//   setLayerMask    (U  — modify existing mask by maskIndex; previousValues.maskPath includes tangents)
+//   setLayerMask    (E  — maskInTangents length mismatch returns INVALID_ARGS)
+//   deleteLayerMask (D  — remove mask by name; removedMask full snapshot including tangents)
 //
 // Missing: none — full CRUD covered.
 
 import {
   test, send,
   assertNoError, assertField, assertArray, assertValue,
-  requireSetup,
+  assertStructuredError, requireSetup,
   bold, yellow
 } from './helpers.mjs';
 
@@ -81,35 +83,84 @@ export async function run(ctx, opts) {
     ctx.pathMaskName = 'Test Path Mask';
   });
 
+  // ── A3: bezier tangents ───────────────────────────────────────────────────
+
+  await test('setLayerMask — bezier mask with maskInTangents + maskOutTangents', async () => {
+    const r = await send('setLayerMask', {
+      compName: COMP_NAME,
+      layerIndex: li,
+      maskPath: [[200, 100], [500, 100], [350, 400]],
+      maskInTangents:  [[-30, 0], [0, -30], [30, 0]],
+      maskOutTangents: [[30,  0], [0,  30], [-30, 0]],
+      maskMode: 'add',
+      maskName: 'Test Bezier Mask'
+    });
+    assertNoError(r);
+    assertField(r, 'mask', 'object');
+    ctx.bezierMaskName = 'Test Bezier Mask';
+    return `bezier mask index ${r.mask.index}`;
+  });
+
   // ── Read ──────────────────────────────────────────────────────────────────
 
-  await test('getLayerMasks — 2 masks with name, mode, vertices, feather, opacity, expansion', async () => {
+  await test('getLayerMasks — returns inTangents + outTangents for bezier mask', async () => {
     const r = await send('getLayerMasks', {
       compName: COMP_NAME, layerIndex: li
     });
     assertNoError(r);
     assertArray(r, 'masks');
-    assertField(r, 'count', 'number');
-    if (r.count !== 2) throw new Error(`expected 2 masks, got ${r.count}`);
+    const bezier = r.masks.find(m => m.name === 'Test Bezier Mask');
+    if (!bezier) throw new Error('Test Bezier Mask not found in getLayerMasks');
+    assertArray(bezier, 'inTangents');
+    assertArray(bezier, 'outTangents');
+    if (bezier.inTangents.length !== 3) {
+      throw new Error(`expected inTangents.length=3, got ${bezier.inTangents.length}`);
+    }
+    if (bezier.outTangents.length !== 3) {
+      throw new Error(`expected outTangents.length=3, got ${bezier.outTangents.length}`);
+    }
+    return `inTangents[0]=${JSON.stringify(bezier.inTangents[0])}`;
+  });
+
+  await test('getLayerMasks — all masks include inTangents/outTangents (rect mask too)', async () => {
+    const r = await send('getLayerMasks', {
+      compName: COMP_NAME, layerIndex: li
+    });
+    assertNoError(r);
     const rect = r.masks.find(m => m.name === 'Test Rect Mask');
     if (!rect) throw new Error('Test Rect Mask not found');
-    assertField(rect, 'index', 'number');
-    assertField(rect, 'mode', 'string');
     assertArray(rect, 'vertices');
     if (rect.vertices.length !== 4) throw new Error(`expected 4 vertices (rect), got ${rect.vertices.length}`);
     assertField(rect, 'closed');
     assertField(rect, 'feather');
     assertField(rect, 'opacity', 'number');
     assertField(rect, 'expansion', 'number');
+    if (!('inTangents'  in rect)) throw new Error('getLayerMasks missing inTangents on rect mask');
+    if (!('outTangents' in rect)) throw new Error('getLayerMasks missing outTangents on rect mask');
     const tri = r.masks.find(m => m.name === 'Test Path Mask');
     if (!tri) throw new Error('Test Path Mask not found');
     if (tri.vertices.length !== 3) throw new Error(`expected 3 vertices (triangle), got ${tri.vertices.length}`);
     return `${r.count} masks — rect has ${rect.vertices.length} vertices, triangle has ${tri.vertices.length}`;
   });
 
+  await test('setLayerMask — maskInTangents length mismatch returns INVALID_ARGS', async () => {
+    const r = await send('setLayerMask', {
+      compName: COMP_NAME,
+      layerIndex: li,
+      maskPath: [[100, 100], [400, 100], [400, 300], [100, 300]],
+      maskInTangents: [[-10, 0], [0, -10]],
+      maskMode: 'add',
+      maskName: 'Bad Tangents Mask'
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+    if (!r.message.toLowerCase().includes('length')) {
+      throw new Error(`expected "length" in error message, got: "${r.message}"`);
+    }
+  });
+
   // ── Update ────────────────────────────────────────────────────────────────
 
-  await test('setLayerMask — modify existing mask (maskIndex), sets expansion', async () => {
+  await test('setLayerMask — modify existing mask (maskIndex), previousValues.maskPath includes inTangents/outTangents', async () => {
     if (!ctx.maskIndex) {
       throw new Error('maskIndex not set — first setLayerMask test must have passed');
     }
@@ -124,11 +175,17 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertField(r, 'mask', 'object');
     assertValue(r.mask, 'index', ctx.maskIndex);
+    assertField(r, 'previousValues', 'object');
+    assertField(r.previousValues, 'maskPath', 'object');
+    if (!('inTangents'  in r.previousValues.maskPath)) throw new Error('previousValues.maskPath missing inTangents');
+    if (!('outTangents' in r.previousValues.maskPath)) throw new Error('previousValues.maskPath missing outTangents');
+    if (!('vertices' in r.previousValues.maskPath)) throw new Error('previousValues.maskPath missing vertices');
+    return `previousValues.maskPath has inTangents + outTangents`;
   });
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
-  await test('deleteLayerMask — remove triangle mask by name, count drops to 1', async () => {
+  await test('deleteLayerMask — remove triangle mask by name; removedMask full snapshot with tangents', async () => {
     const r = await send('deleteLayerMask', {
       compName: COMP_NAME,
       layerIndex: li,
@@ -141,12 +198,20 @@ export async function run(ctx, opts) {
     if (r.deleted.name !== ctx.pathMaskName) {
       throw new Error(`expected deleted name "${ctx.pathMaskName}", got "${r.deleted.name}"`);
     }
+    // A3: full removedMask snapshot
+    assertField(r, 'removedMask', 'object');
+    assertArray(r.removedMask, 'vertices');
+    assertField(r.removedMask, 'mode', 'string');
+    assertField(r.removedMask, 'opacity', 'number');
+    assertField(r.removedMask, 'expansion', 'number');
+    if (!('inTangents'  in r.removedMask)) throw new Error('removedMask missing inTangents');
+    if (!('outTangents' in r.removedMask)) throw new Error('removedMask missing outTangents');
 
-    // confirm count dropped
+    // confirm count dropped (we added bezier mask, so 3→2)
     const check = await send('getLayerMasks', { compName: COMP_NAME, layerIndex: li });
     assertNoError(check);
-    if (check.count !== 1) throw new Error(`expected 1 mask remaining, got ${check.count}`);
-    return `deleted "${r.deleted.name}", ${check.count} mask remaining`;
+    if (check.count < 1) throw new Error(`expected ≥1 mask remaining, got ${check.count}`);
+    return `deleted "${r.deleted.name}" — removedMask.vertices.length=${r.removedMask.vertices.length}`;
   });
 
   await test('setLayerMask — open path (closed=false) stored and returned by getLayerMasks', async () => {

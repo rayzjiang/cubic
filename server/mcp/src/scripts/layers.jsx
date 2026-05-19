@@ -1125,6 +1125,9 @@ function setTimeRemapEnabled(args) {
         if (!(layer instanceof AVLayer)) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Time remapping is only supported on AV layers (not cameras, lights, or nulls)");
         }
+        if (!layer.canSetTimeRemapEnabled) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Layer does not support time remapping (canSetTimeRemapEnabled is false). Use a footage or precomp layer instead of a solid or still-image layer.");
+        }
 
         var previousValue = layer.timeRemapEnabled;
         layer.timeRemapEnabled = !!args.enabled;

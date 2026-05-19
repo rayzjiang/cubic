@@ -1,10 +1,11 @@
 // markers.mjs — tests for marker commands in markers.jsx
 //
 // Covers:
-//   addMarker    (C — comp marker + layer marker)
-//   listMarkers  (R — returns all markers for a target)
-//   updateMarker (U — change comment / duration via markerIndex)
-//   removeMarker (D — remove by time; remove all with all:true)
+//   addMarker    (C — comp marker + layer marker; label + protectedRegion round-trip)
+//   listMarkers  (R — returns all markers for a target; label + protectedRegion in response)
+//   updateMarker (U — change comment / duration via markerIndex; label + protectedRegion; previousValues)
+//   removeMarker (D — remove by time → removedMarker full snapshot;
+//                     remove all with all:true → removedMarkers array)
 //
 // Visual verification (after --write, open __MCP_TEST_markers__ in After Effects):
 //   Comp timeline ruler: one marker at 2s labelled "updated comment"
@@ -64,9 +65,10 @@ export async function run(ctx, opts) {
     ctx.compMarkerIndex = r.marker.index;
   });
 
-  await test('addMarker — add second comp marker at 2s with duration=1s', async () => {
+  await test('addMarker — add second comp marker at 2s with duration=1s, label + protectedRegion', async () => {
     const r = await send('addMarker', {
-      compName: COMP_NAME, time: 2, comment: 'section B', duration: 1
+      compName: COMP_NAME, time: 2, comment: 'section B', duration: 1,
+      label: 7, protectedRegion: true
     });
     assertNoError(r);
     assertValue(r, 'target', 'comp');
@@ -74,17 +76,27 @@ export async function run(ctx, opts) {
       throw new Error(`Expected duration ≈ 1, got ${r.marker.duration}`);
     }
     ctx.compMarkerIndex2 = r.marker.index;
+    // bonus: label + protectedRegion in response
+    if (!('label'           in r.marker)) throw new Error('addMarker response missing label');
+    if (!('protectedRegion' in r.marker)) throw new Error('addMarker response missing protectedRegion');
+    return `label=${r.marker.label}, protectedRegion=${r.marker.protectedRegion}`;
   });
 
-  await test('listMarkers — comp markers returns count=2', async () => {
+  await test('listMarkers — comp markers returns count=2; second marker has label + protectedRegion', async () => {
     const r = await send('listMarkers', { compName: COMP_NAME });
     assertNoError(r);
     assertValue(r, 'target', 'comp');
     assertArray(r, 'markers');
     if (r.count !== 2) throw new Error(`Expected 2 comp markers, got ${r.count}`);
+    // bonus: verify label + protectedRegion round-trip on the second marker
+    const m2 = r.markers.find(m => m.index === ctx.compMarkerIndex2);
+    if (!m2) throw new Error('Second marker not found in listMarkers');
+    if (!('label'           in m2)) throw new Error('listMarkers marker missing label field');
+    if (!('protectedRegion' in m2)) throw new Error('listMarkers marker missing protectedRegion field');
+    return `marker2: label=${m2.label}, protectedRegion=${m2.protectedRegion}`;
   });
 
-  await test('updateMarker — change "intro" comment to "updated comment"', async () => {
+  await test('updateMarker — change "intro" comment to "updated comment"; previousValues captured', async () => {
     const r = await send('updateMarker', {
       compName: COMP_NAME,
       markerIndex: ctx.compMarkerIndex,
@@ -94,6 +106,32 @@ export async function run(ctx, opts) {
     if (r.marker.comment !== 'updated comment') {
       throw new Error(`Expected "updated comment", got "${r.marker.comment}"`);
     }
+    // B6: previousValues
+    assertField(r, 'previousValues', 'object');
+    if (!('comment'         in r.previousValues)) throw new Error('updateMarker previousValues missing comment');
+    if (!('label'           in r.previousValues)) throw new Error('updateMarker previousValues missing label');
+    if (!('protectedRegion' in r.previousValues)) throw new Error('updateMarker previousValues missing protectedRegion');
+    if (r.previousValues.comment !== 'intro') {
+      throw new Error(`Expected previousValues.comment="intro", got "${r.previousValues.comment}"`);
+    }
+    return `previousValues.comment="${r.previousValues.comment}"`;
+  });
+
+  await test('updateMarker — change label and protectedRegion on second marker, previousValues captures prior values', async () => {
+    const r = await send('updateMarker', {
+      compName: COMP_NAME,
+      markerIndex: ctx.compMarkerIndex2,
+      label: 3, protectedRegion: false
+    });
+    assertNoError(r);
+    assertField(r, 'previousValues', 'object');
+    if (r.previousValues.label !== 7) {
+      throw new Error(`Expected previousValues.label=7 (set during addMarker), got ${r.previousValues.label}`);
+    }
+    if (r.previousValues.protectedRegion !== true) {
+      throw new Error(`Expected previousValues.protectedRegion=true, got ${r.previousValues.protectedRegion}`);
+    }
+    return `label 7→${r.marker.label}, protectedRegion true→${r.marker.protectedRegion}`;
   });
 
   await test('listMarkers — verify updated comment persisted', async () => {
@@ -104,11 +142,19 @@ export async function run(ctx, opts) {
     if (m.comment !== 'updated comment') throw new Error(`Expected updated comment, got "${m.comment}"`);
   });
 
-  await test('removeMarker — remove comp marker by time', async () => {
+  await test('removeMarker — remove comp marker by time; removedMarker full snapshot', async () => {
     const r = await send('removeMarker', { compName: COMP_NAME, time: ctx.compMarkerTime });
     assertNoError(r);
     assertValue(r, 'target', 'comp');
     if (!r.message || !r.message.includes('removed')) throw new Error('Expected success message');
+    // B7: removedMarker snapshot
+    assertField(r, 'removedMarker', 'object');
+    assertField(r.removedMarker, 'time', 'number');
+    assertField(r.removedMarker, 'comment', 'string');
+    if (!('label'           in r.removedMarker)) throw new Error('removedMarker missing label');
+    if (!('protectedRegion' in r.removedMarker)) throw new Error('removedMarker missing protectedRegion');
+    if (!('duration'        in r.removedMarker)) throw new Error('removedMarker missing duration');
+    return `removedMarker.comment="${r.removedMarker.comment}" at ${r.removedMarker.time}s`;
   });
 
   await test('listMarkers — comp markers count is now 1 after removal', async () => {
@@ -139,13 +185,23 @@ export async function run(ctx, opts) {
     if (r.count !== 1) throw new Error(`Expected 1 layer marker, got ${r.count}`);
   });
 
-  await test('removeMarker — remove all layer markers with all:true', async () => {
+  await test('removeMarker — remove all layer markers with all:true; removedMarkers array returned', async () => {
     const r = await send('removeMarker', {
       compName: COMP_NAME, layerIndex: ctx.markerLayerIndex, all: true
     });
     assertNoError(r);
     assertValue(r, 'target', 'layer');
     if (r.removedCount !== 1) throw new Error(`Expected removedCount=1, got ${r.removedCount}`);
+    // B7: removedMarkers array
+    assertField(r, 'removedMarkers');
+    if (!Array.isArray(r.removedMarkers)) throw new Error('removedMarkers should be an array');
+    if (r.removedMarkers.length !== 1) {
+      throw new Error(`Expected removedMarkers.length=1, got ${r.removedMarkers.length}`);
+    }
+    const rm = r.removedMarkers[0];
+    assertField(rm, 'time', 'number');
+    assertField(rm, 'comment', 'string');
+    return `removedMarkers[0].comment="${rm.comment}" at ${rm.time}s`;
   });
 
   await test('listMarkers — layer markers count=0 after removeAll', async () => {

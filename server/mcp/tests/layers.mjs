@@ -2,22 +2,34 @@
 //
 // Covers:
 //   getLayerInfo           (R  — all fields: name, index, type, scale, rotation,
-//                                opacity, effectsCount, masksCount, inPoint, outPoint)
+//                                opacity, effectsCount, masksCount, inPoint, outPoint;
+//                                camera: zoom, pointOfInterest, autoOrient (decoded string),
+//                                depthOfField, focusDistance, aperture, blurLevel;
+//                                light: intensity, lightType, lightColor, falloff, radius,
+//                                castsShadows, shadowDarkness, shadowDiffusion;
+//                                spot-only: coneAngle, coneFeather)
 //   createTextLayer        (C)
 //   createShapeLayer       (C)
 //   createSolidLayer       (C)
-//   createCamera           (C)
-//   createLightLayer       (C)
+//   createCamera           (C  — now accepts startTime, duration, depthOfField, focusDistance,
+//                                aperture, blurLevel)
+//   createLightLayer       (C  — now accepts coneAngle, coneFeather (spot-only, warned on non-spot),
+//                                falloff, radius, falloffDistance, castsShadows, shadowDarkness,
+//                                shadowDiffusion)
 //   createNullLayer        (C)
 //   createLayer            (C  — unified dispatcher: all 7 types including adjustment)
 //   duplicateLayer         (C)
 //   setLayerProperties     (U  — opacity, scale, text, font, selected, changedProperties array;
-//                                Tier 4: blendMode, threeDLayer, motionBlur, shy, solo,
-//                                quality, autoOrient, label, comment;
+//                                stretch field + previousValues; cameraOptions sub-object +
+//                                previousValues.cameraOptions; lightOptions sub-object +
+//                                previousValues.lightOptions; Tier 4: blendMode, threeDLayer,
+//                                motionBlur, shy, solo, quality, autoOrient, label, comment;
 //                                collapseTransformation → see nesting.mjs (precomp layers only))
-//   batchSetLayerProperties (U — multiple layers in one call)
-//   moveLayer              (U  — reorders layer stack by name)
-//   setLayerParent         (U  — parents text layer to null layer)
+//   batchSetLayerProperties (U — multiple layers in one call; stretch previousValues)
+//   moveLayer              (U  — reorders layer stack; previousIndex captured)
+//   setLayerParent         (U  — parents text layer to null layer; previousParent captured)
+//   setTimeRemapEnabled    (U  — enable/disable time remap on AVLayer; autoKeyframes on enable;
+//                                previousValue capture; error on non-AVLayer)
 //   deleteLayer            (D  — removes layer, returns name + index)
 //
 // Nesting/mattes (precompose, setTrackMatte, decomposeLayer) → see nesting.mjs
@@ -188,7 +200,7 @@ export async function run(ctx, opts) {
     ctx.textLayerIndex   = 6;
   });
 
-  await test('setLayerParent — parents text layer to null, confirmed in getLayerInfo', async () => {
+  await test('setLayerParent — parents text layer to null; previousParent=null (text had no parent)', async () => {
     const r = await send('setLayerParent', {
       compName: COMP_NAME,
       layerIndex: ctx.textLayerIndex,
@@ -198,6 +210,11 @@ export async function run(ctx, opts) {
     assertField(r, 'layer', 'object');
     assertField(r.layer, 'parent', 'object');
     assertField(r.layer.parent, 'name', 'string');
+    // B2: previousParent should be null (text had no parent before)
+    if (!('previousParent' in r)) throw new Error('setLayerParent response missing previousParent');
+    if (r.previousParent !== null) {
+      throw new Error(`expected previousParent=null (text had no parent), got ${JSON.stringify(r.previousParent)}`);
+    }
 
     // verify parent is visible in getLayerInfo
     const info = await send('getLayerInfo', { compName: COMP_NAME });
@@ -205,7 +222,7 @@ export async function run(ctx, opts) {
     const text = info.layers.find(l => l.index === ctx.textLayerIndex);
     if (!text) throw new Error('text layer not found in getLayerInfo');
     if (!text.parent) throw new Error('parent field is null — setLayerParent did not stick');
-    return `parent="${text.parent.name}"`;
+    return `parent="${text.parent.name}", previousParent=${r.previousParent}`;
   });
 
   // ── Read (write-mode: verify new getLayerInfo fields on known layers) ─────
@@ -231,19 +248,31 @@ export async function run(ctx, opts) {
     // cameras don't have Scale/Opacity — fields must exist but may be null
     if (!('scale'   in camera)) throw new Error('camera missing field "scale"');
     if (!('opacity' in camera)) throw new Error('camera missing field "opacity"');
-    // Camera-specific fields (Item 7b)
+    // Camera-specific fields
     assertField(camera, 'zoom', 'number');
     if (!('pointOfInterest' in camera)) throw new Error('camera missing field "pointOfInterest"');
+    // A6 new camera fields
+    assertField(camera, 'autoOrient', 'string');
+    if (!('depthOfField'  in camera)) throw new Error('camera missing depthOfField');
+    if (!('focusDistance' in camera)) throw new Error('camera missing focusDistance');
+    if (!('aperture'      in camera)) throw new Error('camera missing aperture');
+    if (!('blurLevel'     in camera)) throw new Error('camera missing blurLevel');
 
     const light = r.layers.find(l => l.index === ctx.lightLayerIndex);
     if (!light) throw new Error('light layer not found');
     assertValue(light, 'type', 'light');
-    // Light-specific fields (Item 7b)
+    // Light-specific fields
     assertField(light, 'intensity', 'number');
     assertField(light, 'lightType', 'string');
     if (!('lightColor' in light)) throw new Error('light missing field "lightColor"');
+    // A6 new light fields
+    if (!('falloff'         in light)) throw new Error('light missing falloff');
+    if (!('radius'          in light)) throw new Error('light missing radius');
+    if (!('castsShadows'    in light)) throw new Error('light missing castsShadows');
+    if (!('shadowDarkness'  in light)) throw new Error('light missing shadowDarkness');
+    if (!('shadowDiffusion' in light)) throw new Error('light missing shadowDiffusion');
 
-    return `text type=${text.type} scale=[${text.scale}] opacity=${text.opacity}, camera.zoom=${camera.zoom}, light.intensity=${light.intensity} (${light.lightType})`;
+    return `text type=${text.type} scale=[${text.scale}] opacity=${text.opacity}, camera.zoom=${camera.zoom} autoOrient=${camera.autoOrient}, light.intensity=${light.intensity} (${light.lightType})`;
   });
 
   // ── Update ────────────────────────────────────────────────────────────────
@@ -334,7 +363,8 @@ export async function run(ctx, opts) {
   });
 
   // moveLayer: move solid (index 4) after text (index 6) → null=1, light=2, camera=3, shape=4, text=5, solid=6
-  await test('moveLayer — moves solid below text, returns success', async () => {
+  await test('moveLayer — moves solid below text; previousIndex equals old position', async () => {
+    const oldSolidIndex = ctx.solidLayerIndex; // 4
     const r = await send('moveLayer', {
       compName: COMP_NAME,
       layerIndex: ctx.solidLayerIndex,  // 4
@@ -342,12 +372,18 @@ export async function run(ctx, opts) {
       position: 'after'
     });
     assertNoError(r);
+    // B1: previousIndex
+    assertField(r, 'previousIndex', 'number');
+    if (r.previousIndex !== oldSolidIndex) {
+      throw new Error(`expected previousIndex=${oldSolidIndex}, got ${r.previousIndex}`);
+    }
     ctx.nullLayerIndex   = 1;
     ctx.lightLayerIndex  = 2;
     ctx.cameraLayerIndex = 3;
     ctx.shapeLayerIndex  = 4;
     ctx.textLayerIndex   = 5;
     ctx.solidLayerIndex  = 6;
+    return `moved from ${r.previousIndex} to ${r.layer.index}`;
   });
 
   // ── Duplicate + Delete ────────────────────────────────────────────────────
@@ -554,4 +590,260 @@ export async function run(ctx, opts) {
 
   // mergeLayer, splitLayer, trimLayer → see layer-time.mjs
   // precompose, setTrackMatte, decomposeLayer → see nesting.mjs
+
+  // ── New feature coverage ──────────────────────────────────────────────────
+  // Layers created below always land at index 1 (AE inserts at top).
+  // Each test captures the returned index and uses it immediately — no
+  // assumptions are made about ctx indices after this point.
+
+  // ── A1: setTimeRemapEnabled ───────────────────────────────────────────────
+
+  let trPrecompIdx;
+
+  const trSetupOk = await test('setTimeRemapEnabled setup — create solid then precompose as nested comp', async () => {
+    const sl = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'TR Test Solid', color: [0.4, 0.4, 0.4]
+    });
+    assertNoError(sl);
+    const solidIdx = sl.layer.index; // = 1, freshly inserted
+    const pc = await send('precompose', {
+      compName: COMP_NAME, layerIndices: [solidIdx], newCompName: '__MCP_TEST_layers_TR_sub__'
+    });
+    assertNoError(pc);
+    if (!pc.replacingLayer) throw new Error('precompose did not return replacingLayer');
+    trPrecompIdx = pc.replacingLayer.index;
+    return `precomp layer at index ${trPrecompIdx}`;
+  });
+
+  if (trSetupOk) {
+    await test('setTimeRemapEnabled — enable on precomp layer; autoKeyframes created, previousValue=false', async () => {
+      const r = await send('setTimeRemapEnabled', {
+        compName: COMP_NAME, layerIndex: trPrecompIdx, enabled: true
+      });
+      assertNoError(r);
+      if (r.timeRemapEnabled !== true) throw new Error(`expected timeRemapEnabled=true, got ${r.timeRemapEnabled}`);
+      if (r.previousValue !== false) throw new Error(`expected previousValue=false, got ${r.previousValue}`);
+      assertField(r, 'autoKeyframes');
+      if (!Array.isArray(r.autoKeyframes) || r.autoKeyframes.length < 2) {
+        throw new Error(`expected ≥2 autoKeyframes from AE, got ${JSON.stringify(r.autoKeyframes)}`);
+      }
+      return `enabled; autoKeyframes=${r.autoKeyframes.length}`;
+    });
+
+    await test('setTimeRemapEnabled — disable round-trips previousValue=true', async () => {
+      const r = await send('setTimeRemapEnabled', {
+        compName: COMP_NAME, layerIndex: trPrecompIdx, enabled: false
+      });
+      assertNoError(r);
+      if (r.timeRemapEnabled !== false) throw new Error(`expected timeRemapEnabled=false, got ${r.timeRemapEnabled}`);
+      if (r.previousValue !== true) throw new Error(`expected previousValue=true (was enabled), got ${r.previousValue}`);
+      return 'disabled; previousValue=true captured';
+    });
+
+    await test('setTimeRemapEnabled — missing enabled arg returns INVALID_ARGS', async () => {
+      const r = await send('setTimeRemapEnabled', {
+        compName: COMP_NAME, layerIndex: trPrecompIdx
+      });
+      assertStructuredError(r, 'INVALID_ARGS');
+    });
+  }
+
+  // Solid layers are AVLayer but canSetTimeRemapEnabled===false — must return INVALID_ARGS.
+  await test('setTimeRemapEnabled — solid layer (canSetTimeRemapEnabled=false) returns INVALID_ARGS', async () => {
+    const sl = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'TR Solid No Remap', color: [0.3, 0.3, 0.3]
+    });
+    assertNoError(sl);
+    const r = await send('setTimeRemapEnabled', {
+      compName: COMP_NAME, layerIndex: sl.layer.index, enabled: true
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+  });
+
+  // Camera layer is NOT an AVLayer — time remap should error.
+  // Create dedicated camera; use returned index before any subsequent creates shift it.
+  await test('setTimeRemapEnabled — on camera layer returns INVALID_ARGS', async () => {
+    const cam = await send('createCamera', {
+      compName: COMP_NAME, name: 'TR Camera (time remap test)'
+    });
+    assertNoError(cam);
+    const r = await send('setTimeRemapEnabled', {
+      compName: COMP_NAME, layerIndex: cam.layer.index, enabled: true
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+    if (!r.message.toLowerCase().includes('av layer') && !r.message.toLowerCase().includes('avlayer')) {
+      throw new Error(`expected error mentioning AVLayer limitation, got: "${r.message}"`);
+    }
+  });
+
+  // ── A1: stretch in setLayerProperties / batchSetLayerProperties ───────────
+  // Use freshly created solid (idx may have shifted; create a dedicated one).
+
+  await test('setLayerProperties — stretch applied; previousValues.stretch captured', async () => {
+    const sl = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Stretch Test Solid', color: [0.5, 0.5, 0.5]
+    });
+    assertNoError(sl);
+    const stretchIdx = sl.layer.index;
+
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: stretchIdx, stretch: 50
+    });
+    assertNoError(r);
+    assertIncludes(r.layer, 'changedProperties', 'stretch');
+    assertField(r, 'previousValues', 'object');
+    assertField(r.previousValues, 'stretch', 'number');
+    assertField(r.layer, 'stretch', 'number');
+    if (Math.abs(r.layer.stretch - 50) > 0.5) {
+      throw new Error(`expected stretch≈50, got ${r.layer.stretch}`);
+    }
+    // Reset
+    await send('setLayerProperties', { compName: COMP_NAME, layerIndex: stretchIdx, stretch: 100 });
+    return `stretch=${r.layer.stretch}, previousValues.stretch=${r.previousValues.stretch}`;
+  });
+
+  // ── A6: createCamera with new fields ─────────────────────────────────────
+
+  await test('createCamera — accepts startTime, duration, depthOfField, focusDistance, aperture, blurLevel', async () => {
+    const r = await send('createCamera', {
+      compName: COMP_NAME, name: 'Camera Options Test',
+      startTime: 0.5, duration: 3,
+      depthOfField: true, focusDistance: 500, aperture: 50, blurLevel: 75
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'zoom', 'number');
+    if (Math.abs(r.layer.inPoint - 0.5) > 0.01) {
+      throw new Error(`expected inPoint≈0.5, got ${r.layer.inPoint}`);
+    }
+    if (!('depthOfField'  in r.layer)) throw new Error('response missing depthOfField');
+    if (!('focusDistance' in r.layer)) throw new Error('response missing focusDistance');
+    if (!('aperture'      in r.layer)) throw new Error('response missing aperture');
+    if (!('blurLevel'     in r.layer)) throw new Error('response missing blurLevel');
+    return `inPoint=${r.layer.inPoint}, focusDistance=${r.layer.focusDistance}`;
+  });
+
+  // ── A6: createLightLayer with new fields ──────────────────────────────────
+
+  await test('createLightLayer — spot type with coneAngle, coneFeather, falloff, radius, castsShadows', async () => {
+    const r = await send('createLightLayer', {
+      compName: COMP_NAME, name: 'Spot Test Light', lightType: 'spot', intensity: 80,
+      coneAngle: 45, coneFeather: 25, falloff: 'inverseSquare',
+      radius: 400, falloffDistance: 600, castsShadows: true, shadowDarkness: 80, shadowDiffusion: 10
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertValue(r.layer, 'lightType', 'spot');
+    if (!('coneAngle'       in r.layer)) throw new Error('spot light missing coneAngle');
+    if (!('coneFeather'     in r.layer)) throw new Error('spot light missing coneFeather');
+    if (!('falloff'         in r.layer)) throw new Error('spot light missing falloff');
+    if (!('radius'          in r.layer)) throw new Error('spot light missing radius');
+    if (!('castsShadows'    in r.layer)) throw new Error('spot light missing castsShadows');
+    if (!('shadowDarkness'  in r.layer)) throw new Error('spot light missing shadowDarkness');
+    if (!('shadowDiffusion' in r.layer)) throw new Error('spot light missing shadowDiffusion');
+    return `coneAngle=${r.layer.coneAngle}, falloff=${r.layer.falloff}`;
+  });
+
+  await test('createLightLayer — point type with coneAngle warns (spot-only), does not throw', async () => {
+    const r = await send('createLightLayer', {
+      compName: COMP_NAME, name: 'Point Cone Warning', lightType: 'point', coneAngle: 50
+    });
+    assertNoError(r);
+    assertField(r, 'layer', 'object');
+    assertField(r.layer, 'warnings');
+    if (!Array.isArray(r.layer.warnings) || r.layer.warnings.length === 0) {
+      throw new Error('expected a warning for coneAngle on non-spot light, got none');
+    }
+    if (!r.layer.warnings.some(w => w.toLowerCase().includes('spot'))) {
+      throw new Error(`expected spot-related warning, got: ${JSON.stringify(r.layer.warnings)}`);
+    }
+    return `warning: "${r.layer.warnings[0]}"`;
+  });
+
+  // ── A6: setLayerProperties — cameraOptions sub-object ────────────────────
+
+  await test('setLayerProperties — cameraOptions: { zoom, focusDistance }; previousValues.cameraOptions captured', async () => {
+    const cam = await send('createCamera', { compName: COMP_NAME, name: 'CamOpts Test' });
+    assertNoError(cam);
+    const camIdx = cam.layer.index; // = 1, use immediately
+
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: camIdx,
+      cameraOptions: { zoom: 2000, focusDistance: 400 }
+    });
+    assertNoError(r);
+    const changed = r.layer.changedProperties;
+    const camChanged = changed.filter(c => c.startsWith('cameraOptions'));
+    if (camChanged.length === 0) {
+      throw new Error(`expected cameraOptions.* in changedProperties, got: ${JSON.stringify(changed)}`);
+    }
+    assertField(r, 'previousValues', 'object');
+    if (!r.previousValues.cameraOptions) throw new Error('previousValues missing cameraOptions');
+    return `changedProperties: ${camChanged.join(', ')}`;
+  });
+
+  // ── A6: setLayerProperties — lightOptions sub-object ─────────────────────
+
+  await test('setLayerProperties — lightOptions: { intensity, radius, falloff }; previousValues.lightOptions captured', async () => {
+    const ll = await send('createLightLayer', {
+      compName: COMP_NAME, name: 'LightOpts Test', lightType: 'point', intensity: 100
+    });
+    assertNoError(ll);
+    const lightIdx = ll.layer.index; // = 1, use immediately
+
+    const r = await send('setLayerProperties', {
+      compName: COMP_NAME, layerIndex: lightIdx,
+      lightOptions: { intensity: 120, radius: 300, falloff: 'smooth' }
+    });
+    assertNoError(r);
+    const changed = r.layer.changedProperties;
+    const lightChanged = changed.filter(c => c.startsWith('lightOptions'));
+    if (lightChanged.length === 0) {
+      throw new Error(`expected lightOptions.* in changedProperties, got: ${JSON.stringify(changed)}`);
+    }
+    assertField(r, 'previousValues', 'object');
+    if (!r.previousValues.lightOptions) throw new Error('previousValues missing lightOptions');
+    return `changedProperties: ${lightChanged.join(', ')}`;
+  });
+
+  // ── B2: setLayerParent clear — previousParent captured ───────────────────
+
+  await test('setLayerParent — clear parent; previousParent reflects the layer that was set', async () => {
+    // Create a null then a solid, parent the solid to the null, then clear.
+    const nullLayer = await send('createNullLayer', { compName: COMP_NAME, name: 'B2 Null' });
+    assertNoError(nullLayer);
+    const nullIdx = nullLayer.layer.index; // = 1
+
+    const solidLayer = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'B2 Solid', color: [0.3, 0.3, 0.3]
+    });
+    assertNoError(solidLayer);
+    const solidIdx = solidLayer.layer.index; // = 1; nullIdx shifts to 2
+    const actualNullIdx = nullIdx + 1;       // null is now at 2
+
+    // Set parent
+    const setR = await send('setLayerParent', {
+      compName: COMP_NAME, layerIndex: solidIdx, parentIndex: actualNullIdx
+    });
+    assertNoError(setR);
+    if (!('previousParent' in setR)) throw new Error('setLayerParent (set) missing previousParent');
+    if (setR.previousParent !== null) {
+      throw new Error(`expected previousParent=null (solid had no parent), got ${JSON.stringify(setR.previousParent)}`);
+    }
+
+    // Clear parent (no parentIndex → clears)
+    const clearR = await send('setLayerParent', {
+      compName: COMP_NAME, layerIndex: solidIdx
+    });
+    assertNoError(clearR);
+    if (!('previousParent' in clearR)) throw new Error('setLayerParent (clear) missing previousParent');
+    if (!clearR.previousParent || typeof clearR.previousParent !== 'object') {
+      throw new Error(`expected previousParent to be B2 Null object, got ${JSON.stringify(clearR.previousParent)}`);
+    }
+    assertField(clearR.previousParent, 'name', 'string');
+    if (clearR.previousParent.name !== 'B2 Null') {
+      throw new Error(`expected previousParent.name="B2 Null", got "${clearR.previousParent.name}"`);
+    }
+    return `cleared; previousParent.name="${clearR.previousParent.name}"`;
+  });
 }

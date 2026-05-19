@@ -1,7 +1,8 @@
 // anchor.mjs — tests for centerAnchorPoint in layers.jsx
 //
 // Covers:
-//   centerAnchorPoint  (U — center anchor on content bbox; adjust position to preserve visual placement)
+//   centerAnchorPoint  (U — center anchor on content bbox; adjust position to preserve visual placement;
+//                           previousValues capture: anchorPoint + position)
 //
 // Visual verification (after --write, open __MCP_TEST_anchor__ in After Effects):
 //   "Offset Shape" layer: anchor should sit at the visual center of the rectangle.
@@ -50,7 +51,7 @@ export async function run(ctx, opts) {
 
   // ── centerAnchorPoint on shape layer ──────────────────────────────────────
 
-  await test('centerAnchorPoint — center anchor on shape layer (overwrites setup keyframe)', async () => {
+  await test('centerAnchorPoint — center anchor on shape layer; previousValues captured', async () => {
     const before = await send('getLayerProperty', {
       compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex,
       propertyPath: ['Transform', 'Anchor Point']
@@ -65,15 +66,24 @@ export async function run(ctx, opts) {
     assertNoError(r);
     assertField(r, 'anchor');
     assertField(r, 'position');
+    // B4: previousValues
+    assertField(r, 'previousValues', 'object');
+    if (!('anchorPoint' in r.previousValues)) throw new Error('previousValues missing anchorPoint');
+    if (!('position'    in r.previousValues)) throw new Error('previousValues missing position');
+    if (Array.isArray(r.previousValues.anchorPoint)) {
+      if (Math.abs(r.previousValues.anchorPoint[0] - 200) > 1) {
+        throw new Error(`expected previousValues.anchorPoint[0]≈200 (the offset set in setup), got ${r.previousValues.anchorPoint[0]}`);
+      }
+    }
 
-    // The new anchor should differ from [0,0] (our offset starting point)
+    // The new anchor should differ from the offset starting point
     const newAnchor = r.anchor;
     if (Array.isArray(oldAnchor) && Array.isArray(newAnchor)) {
       const changed = Math.abs(newAnchor[0] - oldAnchor[0]) > 0.5 || Math.abs(newAnchor[1] - oldAnchor[1]) > 0.5;
       if (!changed) throw new Error('Anchor did not change after centerAnchorPoint');
     }
     ctx.anchorAfterCenter = r.anchor;
-    return `anchor → [${r.anchor[0].toFixed(1)}, ${r.anchor[1].toFixed(1)}]`;
+    return `anchor → [${r.anchor[0].toFixed(1)}, ${r.anchor[1].toFixed(1)}], previousValues.anchorPoint=[${r.previousValues.anchorPoint}]`;
   });
 
   await test('centerAnchorPoint — calling again is idempotent (no keyframes now)', async () => {

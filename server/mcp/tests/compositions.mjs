@@ -3,9 +3,12 @@
 // Covers:
 //   getProjectInfo           (R)
 //   listCompositions         (R)
-//   getCompositionInfo       (R — single-comp full detail; mirror of listCompositions)
+//   getCompositionInfo       (R — single-comp full detail; includes workArea, display, shutter,
+//                                 resolutionFactor, motionBlur, draft3d)
 //   createComposition        (C)
-//   setCompositionProperties (U)
+//   setCompositionProperties (U — frameRate; workAreaStart + workAreaDuration atomic pair;
+//                                 displayStartTime, resolutionFactor; shutterAngle clamped 0–720;
+//                                 shutterPhase clamped ±360; motionBlur + draft3d; previousValues)
 //   deleteComposition        (D)
 //
 // Note: there is no programmatic undo. AE gates app.executeCommand(Undo) from
@@ -95,6 +98,94 @@ export async function run(ctx, opts) {
     assertIncludes(r, 'changedProperties', 'frameRate');
   });
 
+  // ── A4: new setCompositionProperties fields ───────────────────────────────
+
+  await test('setCompositionProperties — workArea pair round-trip + previousValues captured', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, workAreaStart: 1, workAreaDuration: 3
+    });
+    assertNoError(r);
+    assertIncludes(r, 'changedProperties', 'workAreaStart', 'workAreaDuration');
+    assertField(r, 'previousValues', 'object');
+    assertField(r.previousValues, 'workAreaStart', 'number');
+    assertField(r.previousValues, 'workAreaDuration', 'number');
+    if (Math.abs(r.composition.workAreaStart - 1) > 0.01) {
+      throw new Error(`expected workAreaStart≈1, got ${r.composition.workAreaStart}`);
+    }
+    return `workArea ${r.composition.workAreaStart}s–${r.composition.workAreaStart + r.composition.workAreaDuration}s`;
+  });
+
+  await test('setCompositionProperties — workAreaStart >= comp duration returns INVALID_ARGS', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, workAreaStart: 999
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+    if (!r.message.toLowerCase().includes('duration')) {
+      throw new Error(`expected error mentioning "duration", got: "${r.message}"`);
+    }
+  });
+
+  await test('setCompositionProperties — workArea sum exceeds comp duration returns INVALID_ARGS', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, workAreaStart: 8, workAreaDuration: 5
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+  });
+
+  await test('setCompositionProperties — displayStartTime + resolutionFactor, previousValues present', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, displayStartTime: 1, resolutionFactor: [1, 2]
+    });
+    assertNoError(r);
+    assertIncludes(r, 'changedProperties', 'displayStartTime', 'resolutionFactor');
+    assertField(r.previousValues, 'displayStartTime', 'number');
+    if (!('resolutionFactor' in r.previousValues)) throw new Error('previousValues missing resolutionFactor');
+    return `displayStartTime=${r.composition.displayStartTime}, resolutionFactor=${JSON.stringify(r.composition.resolutionFactor)}`;
+  });
+
+  await test('setCompositionProperties — shutterAngle:1000 clamps to 720', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, shutterAngle: 1000
+    });
+    assertNoError(r);
+    assertIncludes(r, 'changedProperties', 'shutterAngle');
+    if (r.composition.shutterAngle !== 720) {
+      throw new Error(`expected shutterAngle=720 after clamping, got ${r.composition.shutterAngle}`);
+    }
+    assertField(r.previousValues, 'shutterAngle', 'number');
+    return `shutterAngle clamped to ${r.composition.shutterAngle}`;
+  });
+
+  await test('setCompositionProperties — shutterPhase:-9999 clamps to -360', async () => {
+    const r = await send('setCompositionProperties', {
+      compName: COMP_NAME, shutterPhase: -9999
+    });
+    assertNoError(r);
+    assertIncludes(r, 'changedProperties', 'shutterPhase');
+    if (r.composition.shutterPhase !== -360) {
+      throw new Error(`expected shutterPhase=-360 after clamping, got ${r.composition.shutterPhase}`);
+    }
+    return `shutterPhase clamped to ${r.composition.shutterPhase}`;
+  });
+
+  await test('setCompositionProperties — motionBlur + draft3d toggle, previousValues for both', async () => {
+    const rOn = await send('setCompositionProperties', {
+      compName: COMP_NAME, motionBlur: true, draft3d: true
+    });
+    assertNoError(rOn);
+    assertIncludes(rOn, 'changedProperties', 'motionBlur', 'draft3d');
+    if (!('motionBlur' in rOn.previousValues)) throw new Error('previousValues missing motionBlur');
+    if (!('draft3d' in rOn.previousValues)) throw new Error('previousValues missing draft3d');
+    if (rOn.composition.motionBlur !== true) throw new Error('expected motionBlur=true');
+    if (typeof rOn.composition.draft3d !== 'boolean') throw new Error(`expected draft3d to be boolean, got ${typeof rOn.composition.draft3d}`);
+    // Reset
+    const rOff = await send('setCompositionProperties', {
+      compName: COMP_NAME, motionBlur: false, draft3d: false
+    });
+    assertNoError(rOff);
+    return 'motionBlur + draft3d toggled on then off';
+  });
+
   await test('getCompositionInfo — full single-comp detail with name, dimensions, work area, render flags', async () => {
     const r = await send('getCompositionInfo', { compName: COMP_NAME });
     assertNoError(r);
@@ -110,7 +201,13 @@ export async function run(ctx, opts) {
     assertField(c, 'workAreaStart', 'number');
     assertField(c, 'workAreaDuration', 'number');
     assertField(c, 'motionBlur', 'boolean');
-    return `${c.width}×${c.height} @ ${c.frameRate}fps`;
+    // A4 new fields
+    assertField(c, 'displayStartTime', 'number');
+    if (!('resolutionFactor' in c)) throw new Error('getCompositionInfo missing resolutionFactor');
+    assertField(c, 'shutterAngle', 'number');
+    assertField(c, 'shutterPhase', 'number');
+    if (!('draft3d' in c)) throw new Error('getCompositionInfo missing draft3d');
+    return `${c.width}×${c.height} @ ${c.frameRate}fps, shutterAngle=${c.shutterAngle}`;
   });
 
   await test('getCompositionInfo — unknown comp returns COMP_NOT_FOUND', async () => {

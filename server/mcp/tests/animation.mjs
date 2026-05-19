@@ -6,6 +6,8 @@
 //   getLayerKeyframes      (R  — keyframes; via propertyName and propertyPath)
 //   setLayerKeyframe       (C  — keyframes; previousKey capture; propertyPath for nested props)
 //   setKeyframeEasing      (U  — keyframes; previousEasings capture; propertyPath)
+//   setKeyframeSpatial     (U  — spatial tangents, autoBezier, continuous, roving; previousSpatial;
+//                                propertyPath form; endpoint-roving warning; error paths)
 //   removePropertyKeyframes (D — keyframes; propertyPath)
 //   getLayerProperty       (R  — path-based property read, at current time and at given time)
 //
@@ -214,6 +216,93 @@ export async function run(ctx, opts) {
     assertField(r, 'removed', 'number');
     if (r.removed < 2) throw new Error(`expected ≥2 keyframes removed, got ${r.removed}`);
     return `${r.removed} keyframe(s) removed`;
+  });
+
+  // ── setKeyframeSpatial — spatial tangents on Position keyframes ───────────
+
+  await test('setKeyframeSpatial — autoBezier:true on all Position keyframes, previousSpatial captured', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Position', autoBezier: true
+    });
+    assertNoError(r);
+    assertField(r, 'keysModified');
+    if (!Array.isArray(r.keysModified) || r.keysModified.length < 2) {
+      throw new Error(`expected ≥2 keysModified, got ${JSON.stringify(r.keysModified)}`);
+    }
+    assertField(r, 'previousSpatial');
+    if (!Array.isArray(r.previousSpatial) || r.previousSpatial.length === 0) {
+      throw new Error('previousSpatial should be a non-empty array');
+    }
+    const ps = r.previousSpatial[0];
+    assertField(ps, 'keyIndex', 'number');
+    assertField(ps, 'inTangent');
+    assertField(ps, 'outTangent');
+    if (!('autoBezier'  in ps)) throw new Error('previousSpatial[0] missing autoBezier');
+    if (!('continuous'  in ps)) throw new Error('previousSpatial[0] missing continuous');
+    if (!('roving'      in ps)) throw new Error('previousSpatial[0] missing roving');
+    return `${r.keysModified.length} keys modified, ${r.previousSpatial.length} prior states captured`;
+  });
+
+  await test('setKeyframeSpatial — explicit spatialIn/spatialOut on keyIndex:1, previousSpatial has 1 entry', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Position', keyIndex: 1,
+      spatialIn: [10, 0, 0], spatialOut: [10, 0, 0]
+    });
+    assertNoError(r);
+    if (!Array.isArray(r.previousSpatial) || r.previousSpatial.length !== 1) {
+      throw new Error(`expected previousSpatial.length=1, got ${r.previousSpatial && r.previousSpatial.length}`);
+    }
+    return `keyIndex=${r.keysModified[0]}, previousSpatial captured`;
+  });
+
+  await test('setKeyframeSpatial — continuous:true via propertyPath form', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyPath: ['Transform', 'Position'], continuous: true
+    });
+    assertNoError(r);
+    assertField(r, 'keysModified');
+    if (!Array.isArray(r.keysModified) || r.keysModified.length === 0) {
+      throw new Error('expected at least one key modified via propertyPath');
+    }
+    return `${r.keysModified.length} keys made continuous via propertyPath`;
+  });
+
+  await test('setKeyframeSpatial — roving on endpoint key (keyIndex:1) surfaces warning, does not throw', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Position', keyIndex: 1, roving: true
+    });
+    assertNoError(r);
+    assertField(r, 'warnings');
+    if (!Array.isArray(r.warnings) || r.warnings.length === 0) {
+      throw new Error('expected a warning about endpoint roving, got none');
+    }
+    if (!r.warnings[0].toLowerCase().includes('first or last')) {
+      throw new Error(`unexpected warning text: "${r.warnings[0]}"`);
+    }
+    return `warning: "${r.warnings[0]}"`;
+  });
+
+  await test('setKeyframeSpatial — non-spatial property (Opacity) returns INVALID_ARGS', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Opacity', autoBezier: true
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
+    if (!r.message.toLowerCase().includes('spatial')) {
+      throw new Error(`expected "spatial" in error message, got: "${r.message}"`);
+    }
+  });
+
+  await test('setKeyframeSpatial — property with no keyframes (Rotation, cleared above) returns INVALID_ARGS', async () => {
+    const r = await send('setKeyframeSpatial', {
+      compName: COMP_NAME, layerIndex: li,
+      propertyName: 'Rotation', autoBezier: true
+    });
+    assertStructuredError(r, 'INVALID_ARGS');
   });
 
   // ── propertyPath — nested keyframing on shape Trim Paths (Issue A) ────────

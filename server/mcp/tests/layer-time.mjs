@@ -2,7 +2,7 @@
 //
 // Covers:
 //   splitLayer  (U — split layer at time into two halves; duplicate + inPoint/outPoint)
-//   trimLayer   (U — set inPoint, outPoint, startTime, or mode)
+//   trimLayer   (U — set inPoint, outPoint, startTime, or mode; previousValues capture)
 //   mergeLayer  (U — rejoin two contiguous same-source halves from splitLayer)
 //
 // Visual verification (after --write, open __MCP_TEST_layer_time__ in After Effects):
@@ -96,7 +96,7 @@ export async function run(ctx, opts) {
     ctx.ltTrimIndex = 1; // new layer lands at index 1
   });
 
-  await test('trimLayer — set inPoint=1s and outPoint=4s', async () => {
+  await test('trimLayer — set inPoint=1s and outPoint=4s, previousValues captured', async () => {
     const r = await send('trimLayer', {
       compName: COMP_NAME, layerIndex: ctx.ltTrimIndex,
       inPoint: 1, outPoint: 4
@@ -109,9 +109,15 @@ export async function run(ctx, opts) {
     if (Math.abs(r.layer.outPoint - 4) > 0.01) {
       throw new Error(`Expected outPoint ≈ 4, got ${r.layer.outPoint}`);
     }
+    // B3: previousValues
+    assertField(r, 'previousValues', 'object');
+    assertField(r.previousValues, 'startTime', 'number');
+    assertField(r.previousValues, 'inPoint', 'number');
+    assertField(r.previousValues, 'outPoint', 'number');
+    return `previousValues: in=${r.previousValues.inPoint} out=${r.previousValues.outPoint}`;
   });
 
-  await test('trimLayer — set startTime=0.5s (shifts layer in timeline)', async () => {
+  await test('trimLayer — set startTime=0.5s; previousValues.startTime is the prior startTime', async () => {
     const r = await send('trimLayer', {
       compName: COMP_NAME, layerIndex: ctx.ltTrimIndex,
       startTime: 0.5
@@ -120,6 +126,9 @@ export async function run(ctx, opts) {
     if (Math.abs(r.layer.startTime - 0.5) > 0.01) {
       throw new Error(`Expected startTime ≈ 0.5, got ${r.layer.startTime}`);
     }
+    assertField(r, 'previousValues', 'object');
+    assertField(r.previousValues, 'startTime', 'number');
+    return `previousValues.startTime=${r.previousValues.startTime}`;
   });
 
   await test('trimLayer — inPoint >= outPoint returns error', async () => {

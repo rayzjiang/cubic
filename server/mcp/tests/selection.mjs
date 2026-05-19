@@ -1,7 +1,8 @@
 // selection.mjs — tests for setSelectedLayers in layers.jsx
 //
 // Covers:
-//   setSelectedLayers  (U — select by index, by name, clear all, clearOthers:false)
+//   setSelectedLayers  (U — select by index, by name, clear all, clearOthers:false;
+//                          previousSelection captured on every call)
 //   getSelectedLayers  (R — verify round-trip after setSelectedLayers)
 //
 // Visual verification (after --write, open __MCP_TEST_selection__ in After Effects):
@@ -46,7 +47,7 @@ export async function run(ctx, opts) {
 
   // ── Select by index ───────────────────────────────────────────────────────
 
-  await test('setSelectedLayers — select layer index 1 and 3', async () => {
+  await test('setSelectedLayers — select layer index 1 and 3; previousSelection is empty (nothing was selected)', async () => {
     const r = await send('setSelectedLayers', {
       compName: COMP_NAME, layerIndices: [1, 3]
     });
@@ -56,6 +57,9 @@ export async function run(ctx, opts) {
     const indices = r.selectedLayers.map(l => l.index);
     if (!indices.includes(1)) throw new Error('Layer 1 not in selectedLayers');
     if (!indices.includes(3)) throw new Error('Layer 3 not in selectedLayers');
+    // B5: previousSelection
+    assertArray(r, 'previousSelection');
+    return `selected [1,3], previousSelection.length=${r.previousSelection.length}`;
   });
 
   await test('getSelectedLayers — round-trip confirms indices 1 and 3', async () => {
@@ -71,7 +75,7 @@ export async function run(ctx, opts) {
 
   // ── Select by name ────────────────────────────────────────────────────────
 
-  await test('setSelectedLayers — select "Layer B" by name', async () => {
+  await test('setSelectedLayers — select "Layer B" by name; previousSelection has 2 entries', async () => {
     const r = await send('setSelectedLayers', {
       compName: COMP_NAME, layerNames: ['Layer B']
     });
@@ -80,6 +84,16 @@ export async function run(ctx, opts) {
     if (r.selectedLayers[0].name !== 'Layer B') {
       throw new Error(`Expected "Layer B", got "${r.selectedLayers[0].name}"`);
     }
+    // B5: previousSelection should reflect [1,3] from prior call
+    assertArray(r, 'previousSelection');
+    if (r.previousSelection.length !== 2) {
+      throw new Error(`Expected previousSelection.length=2 (had [1,3] selected), got ${r.previousSelection.length}`);
+    }
+    const prevIdx = r.previousSelection.map(l => l.index);
+    if (!prevIdx.includes(1) || !prevIdx.includes(3)) {
+      throw new Error(`Expected previousSelection to contain [1,3], got ${JSON.stringify(prevIdx)}`);
+    }
+    return `previousSelection=[${prevIdx.join(',')}]`;
   });
 
   // ── clearOthers:false ─────────────────────────────────────────────────────
@@ -96,12 +110,17 @@ export async function run(ctx, opts) {
 
   // ── Clear all ─────────────────────────────────────────────────────────────
 
-  await test('setSelectedLayers — empty arrays clears selection', async () => {
+  await test('setSelectedLayers — empty arrays clears selection; previousSelection has 2 entries (A + B from clearOthers:false)', async () => {
     const r = await send('setSelectedLayers', {
       compName: COMP_NAME, layerIndices: []
     });
     assertNoError(r);
     if (r.count !== 0) throw new Error(`Expected count=0 after clear, got ${r.count}`);
+    assertArray(r, 'previousSelection');
+    if (r.previousSelection.length !== 2) {
+      throw new Error(`Expected previousSelection.length=2 (Layer A + Layer B selected after clearOthers:false), got ${r.previousSelection.length}`);
+    }
+    return `cleared; previousSelection=[${r.previousSelection.map(l => l.name).join(',')}]`;
   });
 
   // ── Error paths ───────────────────────────────────────────────────────────
