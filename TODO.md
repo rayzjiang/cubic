@@ -6,10 +6,6 @@ Phase 3 (self-healing/correcting/bug checking loop)
 Phase 4 (After effects panel UI)
 Phase 5 (Post MVP stuff?)
 
-Do a comprehensive analysis of my @server/mcp/src/scripts/ modules, are all the commands organized into their proper domain files, and named robustly enough to cover that domains entire scope (eg. id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.). Also Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests. Finally Verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + ability to revert changes for the ai (like by calling the opposite command/resetting value + reading value beforehand if users dont do ctrl z)
-
-Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to make sure all the information matches and all mcp functionality is properly tested/working. Btw rn my tests are all passing and working as intended, but im more focused that the commands are in the right spots + organized properly + robustly designed
-
 ---
 1. Obfuscation (meaningful protection, not foolproof)
     - Run javascript-obfuscator on the bundled JSX + compiled MCP server before distribution
@@ -26,6 +22,11 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
 - [ ] ***Eg. Preset Library?? <-- might be done in phase 2 (give the system prompt a good understanding)
 
 ## Phase 1.5
+Audit analysis prompts
+Do a comprehensive analysis of my @server/mcp/src/scripts/ modules, to ensure we have all the features i would need to create great motion graphics/design named robustly enough to cover that domains entire scope. Also Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests. Finally Verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + ability to revert changes for the ai (like by calling the opposite command/resetting value + reading value beforehand if users dont do ctrl z and ask ai to revert). Lmk if there r issues worth fixing before i move onto phase 2. this is like a final check (ive been working hard to refactor scripts + tests + have enough mcp functionality to create amazing smooth, creative, satisfying launch videos) or if there are none
+
+Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to make sure all the information matches and all mcp functionality is properly tested/working. Btw rn my tests are all passing and working as intended, but im more focused that the commands are in the right spots + organized properly + robustly designed + test all mcp features
+
 - [x] Critical: migrate mcp architecture to CEP extension instead of nonstop 2 second polling + file reading
 - [x] Wrap each command in an undo group
     - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
@@ -52,7 +53,8 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
 - [x] **do a claude audit w opus - Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests**
 - [x] **do a claude audit w opus - verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + revertibility ability (if users dont do ctrl z)**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
-- [ ] **do a claude audit w opus - verify tests are comprehensive enough**
+- [ ] **opus scripting audit v3 - opusplan + fix those**
+- [ ] **opus testing audit v3 - opusplan + fix those**
 - [ ] ^^After above 2 are done, move onto Phase 2
 
 ## Phase 1
