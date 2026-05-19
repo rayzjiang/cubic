@@ -31,7 +31,7 @@ export async function run(ctx, opts) {
     const c = await send('createComposition', { name: COMP_NAME, width: 320, height: 240, frameRate: 30, duration: 2, pixelAspect: 1 });
     assertNoError(c);
     assertField(c, 'composition', 'object');
-    const s = await send('createSolidLayer', { compName: COMP_NAME, name: 'bg', color: [1, 0, 0] });
+    const s = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'bg', color: [1, 0, 0] });
     assertNoError(s);
   });
   if (!requireSetup(setupOk)) return;

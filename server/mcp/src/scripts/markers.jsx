@@ -56,7 +56,9 @@ function _markerToObj(markerProp, keyIndex) {
         chapter: mv.chapter,
         url: mv.url,
         frameTarget: mv.frameTarget,
-        cuePointName: mv.cuePointName
+        cuePointName: mv.cuePointName,
+        label: mv.label,
+        protectedRegion: mv.protectedRegion
     };
 }
 
@@ -77,7 +79,9 @@ function addMarker(args) {
         if (args.chapter      !== undefined && args.chapter      !== null) { mv.chapter      = args.chapter + ""; }
         if (args.url          !== undefined && args.url          !== null) { mv.url          = args.url + ""; }
         if (args.frameTarget  !== undefined && args.frameTarget  !== null) { mv.frameTarget  = args.frameTarget + ""; }
-        if (args.cuePointName !== undefined && args.cuePointName !== null) { mv.cuePointName = args.cuePointName + ""; }
+        if (args.cuePointName    !== undefined && args.cuePointName    !== null) { mv.cuePointName    = args.cuePointName + ""; }
+        if (args.label           !== undefined && args.label           !== null) { mv.label           = parseInt(args.label); }
+        if (args.protectedRegion !== undefined && args.protectedRegion !== null) { mv.protectedRegion = !!args.protectedRegion; }
 
         markerProp.setValueAtTime(t, mv);
 
@@ -132,13 +136,22 @@ function updateMarker(args) {
         var keyIndex = _findMarkerKey(markerProp, args);
         var mv = markerProp.keyValue(keyIndex);
 
+        // Capture prior state for revert
+        var previousValues = {
+            comment: mv.comment, duration: mv.duration, chapter: mv.chapter,
+            url: mv.url, frameTarget: mv.frameTarget, cuePointName: mv.cuePointName,
+            label: mv.label, protectedRegion: mv.protectedRegion
+        };
+
         var changed = [];
-        if (args.comment      !== undefined && args.comment      !== null) { mv.comment      = args.comment + "";           changed.push("comment"); }
-        if (args.duration     !== undefined && args.duration     !== null) { mv.duration     = parseFloat(args.duration);   changed.push("duration"); }
-        if (args.chapter      !== undefined && args.chapter      !== null) { mv.chapter      = args.chapter + "";           changed.push("chapter"); }
-        if (args.url          !== undefined && args.url          !== null) { mv.url          = args.url + "";               changed.push("url"); }
-        if (args.frameTarget  !== undefined && args.frameTarget  !== null) { mv.frameTarget  = args.frameTarget + "";       changed.push("frameTarget"); }
-        if (args.cuePointName !== undefined && args.cuePointName !== null) { mv.cuePointName = args.cuePointName + "";      changed.push("cuePointName"); }
+        if (args.comment         !== undefined && args.comment         !== null) { mv.comment         = args.comment + "";            changed.push("comment"); }
+        if (args.duration        !== undefined && args.duration        !== null) { mv.duration        = parseFloat(args.duration);    changed.push("duration"); }
+        if (args.chapter         !== undefined && args.chapter         !== null) { mv.chapter         = args.chapter + "";            changed.push("chapter"); }
+        if (args.url             !== undefined && args.url             !== null) { mv.url             = args.url + "";                changed.push("url"); }
+        if (args.frameTarget     !== undefined && args.frameTarget     !== null) { mv.frameTarget     = args.frameTarget + "";        changed.push("frameTarget"); }
+        if (args.cuePointName    !== undefined && args.cuePointName    !== null) { mv.cuePointName    = args.cuePointName + "";       changed.push("cuePointName"); }
+        if (args.label           !== undefined && args.label           !== null) { mv.label           = parseInt(args.label);         changed.push("label"); }
+        if (args.protectedRegion !== undefined && args.protectedRegion !== null) { mv.protectedRegion = !!args.protectedRegion;       changed.push("protectedRegion"); }
 
         markerProp.setValueAtKey(keyIndex, mv);
 
@@ -146,7 +159,8 @@ function updateMarker(args) {
             status: "success",
             message: "Marker updated: " + (changed.length ? changed.join(", ") : "no fields changed") + ".",
             target: resolved.target,
-            marker: _markerToObj(markerProp, keyIndex)
+            marker: _markerToObj(markerProp, keyIndex),
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -160,25 +174,31 @@ function removeMarker(args) {
         var markerProp = resolved.markerProp;
 
         if (args.all === true) {
+            var removedMarkers = [];
+            for (var ak = 1; ak <= markerProp.numKeys; ak++) {
+                removedMarkers.push(_markerToObj(markerProp, ak));
+            }
             var count = markerProp.numKeys;
             while (markerProp.numKeys > 0) { markerProp.removeKey(1); }
             return JSON.stringify({
                 status: "success",
                 message: "All " + count + " marker(s) removed.",
                 target: resolved.target,
-                removedCount: count
+                removedCount: count,
+                removedMarkers: removedMarkers
             }, null, 2);
         }
 
         var keyIndex    = _findMarkerKey(markerProp, args);
-        var markerTime  = markerProp.keyTime(keyIndex);
+        var removedMarker = _markerToObj(markerProp, keyIndex);
         markerProp.removeKey(keyIndex);
 
         return JSON.stringify({
             status: "success",
-            message: "Marker at " + markerTime + "s removed.",
+            message: "Marker at " + removedMarker.time + "s removed.",
             target: resolved.target,
-            removedAt: markerTime
+            removedAt: removedMarker.time,
+            removedMarker: removedMarker
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

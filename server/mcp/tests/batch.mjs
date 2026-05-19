@@ -95,8 +95,8 @@ export async function run(ctx, opts) {
     assertField(cr, 'composition', 'object');
     ci = cr.composition.itemIndex;
 
-    const lr = await send('createTextLayer', {
-      compName: COMP_NAME, text: 'Batch Test', fontSize: 120,
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'Batch Test', fontSize: 120,
       position: [960, 540], color: [1, 1, 1]
     });
     assertNoError(lr);

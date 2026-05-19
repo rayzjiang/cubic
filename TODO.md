@@ -53,9 +53,17 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
 - [x] **do a claude audit w opus - Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests**
 - [x] **do a claude audit w opus - verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + revertibility ability (if users dont do ctrl z)**
     - **id have a tool for creating a layer, and within that specifying what type of layer, not necessarily a new command/tool for each type of layer. I want that robustness in my codebase.
-- [ ] **opus scripting audit v3 - opusplan + fix those**
-- [ ] **opus testing audit v3 - opusplan + fix those**
-- [ ] ^^After above 2 are done, move onto Phase 2
+- [x] **opus scripting audit v4 - opusplan + fix those**
+    - A1: time remap (setTimeRemapEnabled + stretch in setLayerProperties/batchSetLayerProperties)
+    - A2: spatial keyframe control (setKeyframeSpatial — tangents, autoBezier, continuous, roving)
+    - A3: bezier mask paths (inTangents/outTangents in setLayerMask/getLayerMasks/deleteLayerMask)
+    - A4: setCompositionProperties parity (workArea*, displayStartTime, resolutionFactor, shutterAngle/Phase, motionBlur, draft3d)
+    - A6: full camera/light surface (createCamera: startTime/duration/DOF/focusDistance/aperture/blurLevel; createLightLayer: cone/falloff/shadow opts; getLayerInfo/setLayerProperties extended)
+    - B1-B7: all revert gaps fixed (moveLayer.previousIndex, setLayerParent.previousParent, updateMarker.previousValues, removeMarker.removedMarker snapshot, trimLayer.previousValues, centerAnchorPoint.previousValues, setSelectedLayers.previousSelection)
+    - markers.jsx: label + protectedRegion round-tripped through all handlers
+- [ ] **opus testing audit v4 - opusplan + fix those**
+- [ ] **implement test coverage for opus scripting audit v4**
+- [ ] ^^After above 3 are done, move onto Phase 2
 
 ## Phase 1
 - [x] Evaluate + organize what functionalities we have + the CRUD of each

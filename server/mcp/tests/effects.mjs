@@ -45,8 +45,8 @@ export async function run(ctx, opts) {
     });
     assertField(cr, 'composition', 'object');
 
-    const lr = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Effects Test Solid', color: [1, 1, 1]
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Effects Test Solid', color: [1, 1, 1]
     });
     assertNoError(lr);
     li = 1;

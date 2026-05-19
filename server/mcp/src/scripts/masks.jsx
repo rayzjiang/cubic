@@ -37,6 +37,8 @@ function getLayerMasks(args) {
                 mode: modeLabels[mask.maskMode] || mask.maskMode,
                 vertices: path.vertices,
                 closed: path.closed,
+                inTangents: path.inTangents,
+                outTangents: path.outTangents,
                 feather: mask.property("Mask Feather").value,
                 opacity: mask.property("Mask Opacity").value,
                 expansion: mask.property("Mask Expansion").value
@@ -71,6 +73,10 @@ function setLayerMask(args) {
         var maskExpansion = args.maskExpansion;
         var maskName      = args.maskName;
         var closed        = (args.closed === false) ? false : true;
+        var maskInTangents  = args.maskInTangents;
+        var maskOutTangents = args.maskOutTangents;
+        if (typeof maskInTangents  === "string") { try { maskInTangents  = eval("(" + maskInTangents  + ")"); } catch(e) { maskInTangents  = null; } }
+        if (typeof maskOutTangents === "string") { try { maskOutTangents = eval("(" + maskOutTangents + ")"); } catch(e) { maskOutTangents = null; } }
 
         var shapePoints = [];
         if (maskRect) {
@@ -85,11 +91,24 @@ function setLayerMask(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Must provide either maskRect or maskPath with at least 3 points");
         }
 
+        if (maskInTangents !== null && maskInTangents !== undefined &&
+            maskInTangents.length !== shapePoints.length) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "maskInTangents length (" + maskInTangents.length + ") must match vertex count (" + shapePoints.length + ")");
+        }
+        if (maskOutTangents !== null && maskOutTangents !== undefined &&
+            maskOutTangents.length !== shapePoints.length) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "maskOutTangents length (" + maskOutTangents.length + ") must match vertex count (" + shapePoints.length + ")");
+        }
+
         var myShape = new Shape();
         var vertices = [];
         for (var p = 0; p < shapePoints.length; p++) { vertices.push(shapePoints[p]); }
         myShape.vertices = vertices;
         myShape.closed = closed;
+        if (maskInTangents  !== null && maskInTangents  !== undefined) { myShape.inTangents  = maskInTangents; }
+        if (maskOutTangents !== null && maskOutTangents !== undefined) { myShape.outTangents = maskOutTangents; }
 
         var changed = [];
         var mask;
@@ -103,7 +122,7 @@ function setLayerMask(args) {
             }
             // Capture prior state before mutation
             var prevPath = mask.property("Mask Path").value;
-            previousValues.maskPath     = { vertices: prevPath.vertices, closed: prevPath.closed };
+            previousValues.maskPath     = { vertices: prevPath.vertices, closed: prevPath.closed, inTangents: prevPath.inTangents, outTangents: prevPath.outTangents };
             previousValues.maskMode     = getMaskModeLabels()[mask.maskMode] || mask.maskMode;
             previousValues.maskFeather  = mask.property("Mask Feather").value;
             previousValues.maskOpacity  = mask.property("Mask Opacity").value;
@@ -163,15 +182,29 @@ function deleteLayerMask(args) {
         }
         if (!mask) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Mask not found: " + (args.maskName || "index " + args.maskIndex)); }
 
-        var deletedName  = mask.name;
-        var deletedIndex = mask.propertyIndex;
+        // Capture full mask state for revert before remove
+        var delPath = mask.property("Mask Path").value;
+        var modeLabels2 = getMaskModeLabels();
+        var removedMask = {
+            name:        mask.name,
+            index:       mask.propertyIndex,
+            mode:        modeLabels2[mask.maskMode] || mask.maskMode,
+            vertices:    delPath.vertices,
+            closed:      delPath.closed,
+            inTangents:  delPath.inTangents,
+            outTangents: delPath.outTangents,
+            feather:     mask.property("Mask Feather").value,
+            opacity:     mask.property("Mask Opacity").value,
+            expansion:   mask.property("Mask Expansion").value
+        };
         mask.remove();
 
         return JSON.stringify({
             status: "success",
             message: "Mask deleted successfully",
             layer: { name: layer.name, index: layer.index },
-            deleted: { name: deletedName, index: deletedIndex }
+            deleted: { name: removedMask.name, index: removedMask.index },
+            removedMask: removedMask
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

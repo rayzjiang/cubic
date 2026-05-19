@@ -16,6 +16,12 @@ function _guardKeyframeOverwrite(prop, propLabel, overwriteKeyframes) {
     return true;
 }
 
+var AUTO_ORIENT_LABELS = {};
+AUTO_ORIENT_LABELS[AutoOrientType.NO_AUTO_ORIENT]              = "off";
+AUTO_ORIENT_LABELS[AutoOrientType.ALONG_PATH]                  = "alongPath";
+AUTO_ORIENT_LABELS[AutoOrientType.CAMERA_OR_POINT_OF_INTEREST] = "cameraOrPOI";
+AUTO_ORIENT_LABELS[AutoOrientType.CHARACTERS_TOWARDS_CAMERA]   = "charactersTowardsCamera";
+
 var BLEND_MODES = {
     "normal": BlendingMode.NORMAL, "add": BlendingMode.ADD, "multiply": BlendingMode.MULTIPLY,
     "screen": BlendingMode.SCREEN, "overlay": BlendingMode.OVERLAY, "softLight": BlendingMode.SOFT_LIGHT,
@@ -75,23 +81,41 @@ function getLayerInfo(args) {
                 masksCount: layer.property("Masks") ? layer.property("Masks").numProperties : 0
             };
 
-            // Type-specific fields (Item 7b)
+            // Type-specific fields
             if (layer instanceof CameraLayer) {
                 var camOpts = layer.property("Camera Options");
-                layerInfo.zoom = camOpts ? camOpts.property("Zoom").value : null;
-                var poi = layer.property("Point of Interest");
+                layerInfo.zoom        = camOpts ? camOpts.property("Zoom").value : null;
+                var poi               = layer.property("Point of Interest");
                 layerInfo.pointOfInterest = poi ? poi.value : null;
-                layerInfo.autoOrient = layer.autoOrient;
+                layerInfo.autoOrient  = AUTO_ORIENT_LABELS[layer.autoOrient] || layer.autoOrient;
+                if (camOpts) {
+                    try { layerInfo.depthOfField  = camOpts.property("Depth of Field").value;  } catch(e2) {}
+                    try { layerInfo.focusDistance = camOpts.property("Focus Distance").value;  } catch(e2) {}
+                    try { layerInfo.aperture      = camOpts.property("Aperture").value;        } catch(e2) {}
+                    try { layerInfo.blurLevel     = camOpts.property("Blur Level").value;      } catch(e2) {}
+                }
             } else if (layer instanceof LightLayer) {
-                var lightOpts = layer.property("Light Options");
-                layerInfo.intensity = lightOpts ? lightOpts.property("Intensity").value : null;
-                layerInfo.lightColor = lightOpts ? lightOpts.property("Color").value : null;
                 var lightTypeLabels = {};
                 lightTypeLabels[LightType.PARALLEL] = "parallel";
                 lightTypeLabels[LightType.SPOT]     = "spot";
                 lightTypeLabels[LightType.POINT]    = "point";
                 lightTypeLabels[LightType.AMBIENT]  = "ambient";
                 layerInfo.lightType = lightTypeLabels[layer.lightType] || "unknown";
+                var lightOpts = layer.property("Light Options");
+                if (lightOpts) {
+                    try { layerInfo.intensity       = lightOpts.property("Intensity").value;        } catch(e2) {}
+                    try { layerInfo.lightColor      = lightOpts.property("Color").value;            } catch(e2) {}
+                    if (layer.lightType === LightType.SPOT) {
+                        try { layerInfo.coneAngle   = lightOpts.property("Cone Angle").value;   } catch(e2) {}
+                        try { layerInfo.coneFeather = lightOpts.property("Cone Feather").value; } catch(e2) {}
+                    }
+                    try { layerInfo.falloff         = lightOpts.property("Falloff").value;          } catch(e2) {}
+                    try { layerInfo.radius          = lightOpts.property("Radius").value;           } catch(e2) {}
+                    try { layerInfo.falloffDistance = lightOpts.property("Falloff Distance").value; } catch(e2) {}
+                    try { layerInfo.castsShadows    = lightOpts.property("Casts Shadows").value;    } catch(e2) {}
+                    try { layerInfo.shadowDarkness  = lightOpts.property("Shadow Darkness").value;  } catch(e2) {}
+                    try { layerInfo.shadowDiffusion = lightOpts.property("Shadow Diffusion").value; } catch(e2) {}
+                }
             }
 
             result.layers.push(layerInfo);
@@ -140,44 +164,53 @@ function createSolidLayer(args) {
 function createCamera(args) {
     try {
         var comp = _resolveComp(args);
-        var name = args.name || "Camera";
-        var zoom = args.zoom || 1777.78; // Default ~50mm equivalent
-        var position = args.position; // Optional [x, y, z]
-        var pointOfInterest = args.pointOfInterest; // Optional [x, y, z]
-        var oneNode = args.oneNode || false; // If true, create a one-node camera (no point of interest)
+        var name            = args.name || "Camera";
+        var zoom            = args.zoom || 1777.78; // Default ~50mm equivalent
+        var position        = args.position;
+        var pointOfInterest = args.pointOfInterest;
+        var oneNode         = args.oneNode || false;
+        var startTime       = args.startTime !== undefined ? parseFloat(args.startTime) : 0;
+        var duration        = args.duration  !== undefined ? parseFloat(args.duration)  : 5;
+        var depthOfField    = args.depthOfField;
+        var focusDistance   = args.focusDistance;
+        var aperture        = args.aperture;
+        var blurLevel       = args.blurLevel;
 
         var centerPoint = [comp.width / 2, comp.height / 2];
         var cameraLayer = comp.layers.addCamera(name, centerPoint);
-        cameraLayer.property("Camera Options").property("Zoom").setValue(zoom);
+        var camOpts = cameraLayer.property("Camera Options");
+        camOpts.property("Zoom").setValue(zoom);
 
-        if (oneNode) {
-            cameraLayer.autoOrient = AutoOrientType.NO_AUTO_ORIENT;
-        }
-
-        if (position !== undefined && position !== null) {
-            cameraLayer.property("Position").setValue(position);
-        }
-
+        if (oneNode) { cameraLayer.autoOrient = AutoOrientType.NO_AUTO_ORIENT; }
+        if (position !== undefined && position !== null) { cameraLayer.property("Position").setValue(position); }
         if (pointOfInterest !== undefined && pointOfInterest !== null && !oneNode) {
             cameraLayer.property("Point of Interest").setValue(pointOfInterest);
         }
 
+        cameraLayer.startTime = startTime;
+        if (duration > 0) { cameraLayer.outPoint = startTime + duration; }
+
+        if (depthOfField !== undefined && depthOfField !== null) { try { camOpts.property("Depth of Field").setValue(depthOfField ? 1 : 0); } catch(e2) {} }
+        if (focusDistance !== undefined && focusDistance !== null) { try { camOpts.property("Focus Distance").setValue(parseFloat(focusDistance)); } catch(e2) {} }
+        if (aperture !== undefined && aperture !== null) { try { camOpts.property("Aperture").setValue(parseFloat(aperture)); } catch(e2) {} }
+        if (blurLevel !== undefined && blurLevel !== null) { try { camOpts.property("Blur Level").setValue(parseFloat(blurLevel)); } catch(e2) {} }
+
         var result = {
             name: cameraLayer.name,
             index: cameraLayer.index,
-            zoom: cameraLayer.property("Camera Options").property("Zoom").value,
+            inPoint: cameraLayer.inPoint,
+            outPoint: cameraLayer.outPoint,
+            zoom: camOpts.property("Zoom").value,
             position: cameraLayer.property("Position").value,
             oneNode: oneNode
         };
-        if (!oneNode) {
-            result.pointOfInterest = cameraLayer.property("Point of Interest").value;
-        }
+        if (!oneNode) { result.pointOfInterest = cameraLayer.property("Point of Interest").value; }
+        try { result.depthOfField  = camOpts.property("Depth of Field").value;  } catch(e2) {}
+        try { result.focusDistance = camOpts.property("Focus Distance").value;  } catch(e2) {}
+        try { result.aperture      = camOpts.property("Aperture").value;        } catch(e2) {}
+        try { result.blurLevel     = camOpts.property("Blur Level").value;      } catch(e2) {}
 
-        return JSON.stringify({
-            status: "success",
-            message: "Camera created successfully",
-            layer: result
-        }, null, 2);
+        return JSON.stringify({ status: "success", message: "Camera created successfully", layer: result }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
@@ -187,27 +220,66 @@ function createCamera(args) {
 function createLightLayer(args) {
     try {
         var comp = _resolveComp(args);
-        var name = args.name || "Light";
-        var lightType = args.lightType || "point";
-        var intensity = args.intensity !== undefined ? args.intensity : 100;
-        var color = args.color || [1, 1, 1];
-        var position = args.position;
-        var startTime = args.startTime || 0;
-        var duration = args.duration || 5;
+        var name            = args.name || "Light";
+        var lightType       = args.lightType || "point";
+        var intensity       = args.intensity  !== undefined ? args.intensity  : 100;
+        var color           = args.color      || [1, 1, 1];
+        var position        = args.position;
+        var startTime       = args.startTime  !== undefined ? parseFloat(args.startTime) : 0;
+        var duration        = args.duration   !== undefined ? parseFloat(args.duration)  : 5;
+        var coneAngle       = args.coneAngle;
+        var coneFeather     = args.coneFeather;
+        var falloff         = args.falloff;
+        var radius          = args.radius;
+        var falloffDistance = args.falloffDistance;
+        var castsShadows    = args.castsShadows;
+        var shadowDarkness  = args.shadowDarkness;
+        var shadowDiffusion = args.shadowDiffusion;
 
         var centerPoint = [comp.width / 2, comp.height / 2];
         var lightLayer = comp.layers.addLight(name, centerPoint);
         var lightTypes = { "parallel": LightType.PARALLEL, "spot": LightType.SPOT, "point": LightType.POINT, "ambient": LightType.AMBIENT };
         if (lightTypes[lightType] !== undefined) { lightLayer.lightType = lightTypes[lightType]; }
-        lightLayer.property("Light Options").property("Intensity").setValue(intensity);
-        lightLayer.property("Light Options").property("Color").setValue(color);
+        var lightOpts = lightLayer.property("Light Options");
+        lightOpts.property("Intensity").setValue(intensity);
+        lightOpts.property("Color").setValue(color);
         if (position !== undefined && position !== null) { lightLayer.property("Position").setValue(position); }
         lightLayer.startTime = startTime;
         if (duration > 0) { lightLayer.outPoint = startTime + duration; }
-        return JSON.stringify({
-            status: "success", message: "Light layer created successfully",
-            layer: { name: lightLayer.name, index: lightLayer.index, type: "light", lightType: lightType, inPoint: lightLayer.inPoint, outPoint: lightLayer.outPoint, position: lightLayer.property("Position").value }
-        }, null, 2);
+
+        var isSpot = lightTypes[lightType] === LightType.SPOT;
+        var warnings = [];
+        if (coneAngle   !== undefined && coneAngle   !== null) { if (isSpot) { try { lightOpts.property("Cone Angle").setValue(parseFloat(coneAngle));   } catch(e2) {} } else { warnings.push("coneAngle requires spot light type"); } }
+        if (coneFeather !== undefined && coneFeather !== null) { if (isSpot) { try { lightOpts.property("Cone Feather").setValue(parseFloat(coneFeather)); } catch(e2) {} } else { warnings.push("coneFeather requires spot light type"); } }
+        if (falloff !== undefined && falloff !== null) {
+            var LFMAP = { "none": 0, "smooth": 1, "inverseSquare": 2 };
+            var lfVal = (LFMAP[falloff] !== undefined) ? LFMAP[falloff] : parseInt(falloff);
+            try { lightOpts.property("Falloff").setValue(lfVal); } catch(e2) {}
+        }
+        if (radius          !== undefined && radius          !== null) { try { lightOpts.property("Radius").setValue(parseFloat(radius));                   } catch(e2) {} }
+        if (falloffDistance !== undefined && falloffDistance !== null) { try { lightOpts.property("Falloff Distance").setValue(parseFloat(falloffDistance)); } catch(e2) {} }
+        if (castsShadows    !== undefined && castsShadows    !== null) { try { lightOpts.property("Casts Shadows").setValue(castsShadows ? 1 : 0);          } catch(e2) {} }
+        if (shadowDarkness  !== undefined && shadowDarkness  !== null) { try { lightOpts.property("Shadow Darkness").setValue(parseFloat(shadowDarkness));  } catch(e2) {} }
+        if (shadowDiffusion !== undefined && shadowDiffusion !== null) { try { lightOpts.property("Shadow Diffusion").setValue(parseFloat(shadowDiffusion));} catch(e2) {} }
+
+        var layerResult = {
+            name: lightLayer.name, index: lightLayer.index, type: "light", lightType: lightType,
+            inPoint: lightLayer.inPoint, outPoint: lightLayer.outPoint, position: lightLayer.property("Position").value,
+            intensity: lightOpts.property("Intensity").value, color: lightOpts.property("Color").value
+        };
+        if (isSpot) {
+            try { layerResult.coneAngle   = lightOpts.property("Cone Angle").value;   } catch(e2) {}
+            try { layerResult.coneFeather = lightOpts.property("Cone Feather").value; } catch(e2) {}
+        }
+        try { layerResult.falloff         = lightOpts.property("Falloff").value;          } catch(e2) {}
+        try { layerResult.radius          = lightOpts.property("Radius").value;           } catch(e2) {}
+        try { layerResult.falloffDistance = lightOpts.property("Falloff Distance").value; } catch(e2) {}
+        try { layerResult.castsShadows    = lightOpts.property("Casts Shadows").value;    } catch(e2) {}
+        try { layerResult.shadowDarkness  = lightOpts.property("Shadow Darkness").value;  } catch(e2) {}
+        try { layerResult.shadowDiffusion = lightOpts.property("Shadow Diffusion").value; } catch(e2) {}
+        if (warnings.length > 0) { layerResult.warnings = warnings; }
+
+        return JSON.stringify({ status: "success", message: "Light layer created successfully", layer: layerResult }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
@@ -308,6 +380,7 @@ function setLayerProperties(args) {
         if (args.anchorPoint !== undefined && args.anchorPoint !== null) { previousValues.anchorPoint = layer.property("Anchor Point").value; }
         if (args.startTime !== undefined && args.startTime !== null) { previousValues.startTime = layer.startTime; }
         if (args.duration !== undefined && args.duration !== null) { previousValues.duration = layer.outPoint - layer.inPoint; }
+        if (args.stretch !== undefined && args.stretch !== null) { previousValues.stretch = layer.stretch; }
         if (layer instanceof TextLayer) {
             var srcSnap = layer.property("Source Text");
             if (srcSnap && srcSnap.value) {
@@ -437,6 +510,57 @@ function setLayerProperties(args) {
             layer.outPoint = actualStartTime + args.duration;
             changedProperties.push("duration");
         }
+        if (args.stretch !== undefined && args.stretch !== null) { layer.stretch = parseFloat(args.stretch); changedProperties.push("stretch"); }
+
+        // --- Camera Options ---
+        if (args.cameraOptions !== undefined && args.cameraOptions !== null && layer instanceof CameraLayer) {
+            var co = args.cameraOptions;
+            if (typeof co === "string") { try { co = eval("(" + co + ")"); } catch(e) {} }
+            if (co.zoom         !== undefined) { previousValues.cameraOptions = previousValues.cameraOptions || {}; try { previousValues.cameraOptions.zoom         = layer.property("Camera Options").property("Zoom").value;         } catch(e2) {} }
+            if (co.depthOfField !== undefined) { previousValues.cameraOptions = previousValues.cameraOptions || {}; try { previousValues.cameraOptions.depthOfField = layer.property("Camera Options").property("Depth of Field").value; } catch(e2) {} }
+            if (co.focusDistance!== undefined) { previousValues.cameraOptions = previousValues.cameraOptions || {}; try { previousValues.cameraOptions.focusDistance= layer.property("Camera Options").property("Focus Distance").value; } catch(e2) {} }
+            if (co.aperture     !== undefined) { previousValues.cameraOptions = previousValues.cameraOptions || {}; try { previousValues.cameraOptions.aperture     = layer.property("Camera Options").property("Aperture").value;     } catch(e2) {} }
+            if (co.blurLevel    !== undefined) { previousValues.cameraOptions = previousValues.cameraOptions || {}; try { previousValues.cameraOptions.blurLevel    = layer.property("Camera Options").property("Blur Level").value;    } catch(e2) {} }
+            var camOO = layer.property("Camera Options");
+            if (camOO) {
+                if (co.zoom          !== undefined && co.zoom          !== null) { try { var cp = camOO.property("Zoom");          _guardKeyframeOverwrite(cp, "Camera Zoom",          overwriteKeyframes); cp.setValue(parseFloat(co.zoom));          changedProperties.push("cameraOptions.zoom"); }          catch(e2) {} }
+                if (co.depthOfField  !== undefined && co.depthOfField  !== null) { try { var cp = camOO.property("Depth of Field"); _guardKeyframeOverwrite(cp, "Camera Depth of Field", overwriteKeyframes); cp.setValue(co.depthOfField ? 1 : 0);    changedProperties.push("cameraOptions.depthOfField"); }  catch(e2) {} }
+                if (co.focusDistance !== undefined && co.focusDistance !== null) { try { var cp = camOO.property("Focus Distance"); _guardKeyframeOverwrite(cp, "Camera Focus Distance", overwriteKeyframes); cp.setValue(parseFloat(co.focusDistance)); changedProperties.push("cameraOptions.focusDistance"); } catch(e2) {} }
+                if (co.aperture      !== undefined && co.aperture      !== null) { try { var cp = camOO.property("Aperture");       _guardKeyframeOverwrite(cp, "Camera Aperture",       overwriteKeyframes); cp.setValue(parseFloat(co.aperture));       changedProperties.push("cameraOptions.aperture"); }       catch(e2) {} }
+                if (co.blurLevel     !== undefined && co.blurLevel     !== null) { try { var cp = camOO.property("Blur Level");     _guardKeyframeOverwrite(cp, "Camera Blur Level",     overwriteKeyframes); cp.setValue(parseFloat(co.blurLevel));      changedProperties.push("cameraOptions.blurLevel"); }      catch(e2) {} }
+            }
+        }
+
+        // --- Light Options ---
+        if (args.lightOptions !== undefined && args.lightOptions !== null && layer instanceof LightLayer) {
+            var lo = args.lightOptions;
+            if (typeof lo === "string") { try { lo = eval("(" + lo + ")"); } catch(e) {} }
+            var lightOO = layer.property("Light Options");
+            if (lightOO) {
+                var LOfields = ["Intensity", "Color", "Cone Angle", "Cone Feather", "Falloff", "Radius", "Falloff Distance", "Casts Shadows", "Shadow Darkness", "Shadow Diffusion"];
+                var LOkeys   = ["intensity", "color", "coneAngle", "coneFeather", "falloff", "radius", "falloffDistance", "castsShadows", "shadowDarkness", "shadowDiffusion"];
+                for (var loi = 0; loi < LOkeys.length; loi++) {
+                    var loKey = LOkeys[loi];
+                    var loField = LOfields[loi];
+                    if (lo[loKey] !== undefined && lo[loKey] !== null) {
+                        previousValues.lightOptions = previousValues.lightOptions || {};
+                        try { previousValues.lightOptions[loKey] = lightOO.property(loField).value; } catch(e2) {}
+                        try {
+                            var lp = lightOO.property(loField);
+                            _guardKeyframeOverwrite(lp, "Light " + loField, overwriteKeyframes);
+                            var loVal = lo[loKey];
+                            if (loKey === "castsShadows") { loVal = loVal ? 1 : 0; }
+                            else if (loKey === "falloff") {
+                                var LFMAP = { "none": 0, "smooth": 1, "inverseSquare": 2 };
+                                loVal = (LFMAP[loVal] !== undefined) ? LFMAP[loVal] : parseInt(loVal);
+                            } else if (loKey !== "color") { loVal = parseFloat(loVal); }
+                            lp.setValue(loVal);
+                            changedProperties.push("lightOptions." + loKey);
+                        } catch(e2) {}
+                    }
+                }
+            }
+        }
 
         var returnLayerInfo = {
             name: layer.name,
@@ -449,6 +573,7 @@ function setLayerProperties(args) {
             anchorPoint: layer.property("Anchor Point").value,
             inPoint: layer.inPoint,
             outPoint: layer.outPoint,
+            stretch: layer.stretch,
             changedProperties: changedProperties
         };
         if (layer instanceof TextLayer && textDocument) {
@@ -521,6 +646,7 @@ function batchSetLayerProperties(args) {
                 }
                 if (op.startTime !== undefined && op.startTime !== null) { prevVals.startTime = layer.startTime; }
                 if (op.motionBlur !== undefined && op.motionBlur !== null) { prevVals.motionBlur = layer.motionBlur; }
+                if (op.stretch !== undefined && op.stretch !== null) { prevVals.stretch = layer.stretch; }
 
                 var changed = [];
 
@@ -580,6 +706,7 @@ function batchSetLayerProperties(args) {
                     changed.push("duration");
                 }
                 if (op.outPoint !== undefined && op.outPoint !== null) { layer.outPoint = op.outPoint; changed.push("outPoint"); }
+                if (op.stretch !== undefined && op.stretch !== null) { layer.stretch = parseFloat(op.stretch); changed.push("stretch"); }
                 if (op.motionBlur !== undefined && op.motionBlur !== null) { layer.motionBlur = !!op.motionBlur; changed.push("motionBlur"); }
                 if (op.collapseTransformation !== undefined && op.collapseTransformation !== null) { layer.collapseTransformation = !!op.collapseTransformation; changed.push("collapseTransformation"); }
                 if (op.shy !== undefined && op.shy !== null) { layer.shy = !!op.shy; changed.push("shy"); }
@@ -642,12 +769,14 @@ function moveLayer(args) {
         }
         if (!target) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Target layer not found: " + (args.targetName || "index " + args.targetIndex)); }
 
+        var previousIndex = layer.index;
+
         if (args.position === "before") {
             layer.moveBefore(target);
         } else {
             layer.moveAfter(target);
         }
-        return JSON.stringify({ status: "success", message: "Layer moved successfully." }, null, 2);
+        return JSON.stringify({ status: "success", message: "Layer moved successfully.", layer: { name: layer.name, index: layer.index }, previousIndex: previousIndex }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
@@ -662,9 +791,11 @@ function setLayerParent(args) {
         var parentIndex = args.parentIndex;
         var parentName = args.parentName || "";
 
+        var previousParent = layer.parent ? { name: layer.parent.name, index: layer.parent.index } : null;
+
         if ((parentIndex === undefined || parentIndex === null) && !parentName) {
             layer.parent = null;
-            return JSON.stringify({ status: "success", message: "Parent cleared", layer: { name: layer.name, index: layer.index, parent: null } }, null, 2);
+            return JSON.stringify({ status: "success", message: "Parent cleared", layer: { name: layer.name, index: layer.index, parent: null }, previousParent: previousParent }, null, 2);
         }
         var parentLayer = null;
         if (parentIndex !== undefined && parentIndex !== null) {
@@ -680,7 +811,8 @@ function setLayerParent(args) {
         layer.parent = parentLayer;
         return JSON.stringify({
             status: "success", message: "Layer parent set successfully",
-            layer: { name: layer.name, index: layer.index, parent: { name: parentLayer.name, index: parentLayer.index } }
+            layer: { name: layer.name, index: layer.index, parent: { name: parentLayer.name, index: parentLayer.index } },
+            previousParent: previousParent
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -748,6 +880,13 @@ function setSelectedLayers(args) {
         if (!(comp instanceof CompItem)) { throw _err(ERROR_CODES.COMP_NOT_FOUND, "No active composition. Pass compName or open a comp."); }
 
         var clearOthers = (args.clearOthers !== false); // default true
+
+        // Capture prior selection before modifying
+        var previousSelection = [];
+        for (var ps = 1; ps <= comp.numLayers; ps++) {
+            if (comp.layer(ps).selected) { previousSelection.push({ index: comp.layer(ps).index, name: comp.layer(ps).name }); }
+        }
+
         if (clearOthers) {
             for (var ci2 = 1; ci2 <= comp.numLayers; ci2++) { comp.layer(ci2).selected = false; }
         }
@@ -785,7 +924,8 @@ function setSelectedLayers(args) {
             status: "success",
             activeComp: { name: comp.name, id: comp.id, numLayers: comp.numLayers },
             selectedLayers: selectedLayers,
-            count: selectedLayers.length
+            count: selectedLayers.length,
+            previousSelection: previousSelection
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -956,6 +1096,8 @@ function trimLayer(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "inPoint (" + newIn + ") must be less than outPoint (" + newOut + ")");
         }
 
+        var previousValues = { startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint };
+
         if (args.startTime !== undefined && args.startTime !== null) { layer.startTime = parseFloat(args.startTime); }
         if (inPoint  !== undefined && inPoint  !== null) { layer.inPoint  = parseFloat(inPoint);  }
         if (outPoint !== undefined && outPoint !== null) { layer.outPoint = parseFloat(outPoint); }
@@ -963,8 +1105,50 @@ function trimLayer(args) {
         return JSON.stringify({
             status: "success",
             message: "Layer trimmed.",
-            layer: { index: layer.index, name: layer.name, startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint }
+            layer: { index: layer.index, name: layer.name, startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint },
+            previousValues: previousValues
         }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: setTimeRemapEnabled — enable/disable time remapping on a layer (AVLayer only)
+function setTimeRemapEnabled(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        if (args.enabled === undefined || args.enabled === null) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "enabled (boolean) is required");
+        }
+        if (!(layer instanceof AVLayer)) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Time remapping is only supported on AV layers (not cameras, lights, or nulls)");
+        }
+
+        var previousValue = layer.timeRemapEnabled;
+        layer.timeRemapEnabled = !!args.enabled;
+
+        var result = {
+            status: "success",
+            message: "Time remap " + (layer.timeRemapEnabled ? "enabled" : "disabled") + " on layer '" + layer.name + "'.",
+            layer: { name: layer.name, index: layer.index },
+            timeRemapEnabled: layer.timeRemapEnabled,
+            previousValue: previousValue
+        };
+
+        if (layer.timeRemapEnabled) {
+            var timeRemapProp = layer.property("Time Remap");
+            if (timeRemapProp) {
+                var autoKeys = [];
+                for (var k = 1; k <= timeRemapProp.numKeys; k++) {
+                    autoKeys.push({ keyIndex: k, time: timeRemapProp.keyTime(k), value: timeRemapProp.keyValue(k) });
+                }
+                result.autoKeyframes = autoKeys;
+            }
+        }
+
+        return JSON.stringify(result, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
@@ -985,12 +1169,12 @@ function centerAnchorPoint(args) {
         var newAnchorY = rect.top  + rect.height / 2;
 
         var anchorProp = layer.property("Anchor Point");
-        var oldAnchor  = anchorProp.value; // read at comp.time before any changes
+        var posProp    = layer.property("Position");
+        var oldAnchor  = anchorProp.value; // captured before any changes
+        var oldPos     = posProp.value;    // captured before any changes
 
         if (preservePosition) {
-            var posProp = layer.property("Position");
-            var oldPos  = posProp.value;   // read at comp.time before any changes
-            var scale   = layer.property("Scale").value;
+            var scale  = layer.property("Scale").value;
             var sx = scale[0] / 100;
             var sy = scale[1] / 100;
             var deltaX = (newAnchorX - oldAnchor[0]) * sx;
@@ -1015,7 +1199,8 @@ function centerAnchorPoint(args) {
             message: "Anchor point centered on content.",
             layer: { index: layer.index, name: layer.name },
             anchor: anchorProp.value,
-            position: layer.property("Position").value
+            position: layer.property("Position").value,
+            previousValues: { anchorPoint: oldAnchor, position: oldPos }
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

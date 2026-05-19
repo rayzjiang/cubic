@@ -43,8 +43,8 @@ export async function run(ctx, opts) {
     });
     assertField(cr, 'composition', 'object');
 
-    const lr = await send('createTextLayer', {
-      compName: COMP_NAME, text: 'MCP Test', fontSize: 120,
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'text', text: 'MCP Test', fontSize: 120,
       position: [960, 540], color: [1, 1, 1]
     });
     assertNoError(lr);
@@ -222,8 +222,8 @@ export async function run(ctx, opts) {
   let trimPathsOpName = 'Trim Paths 1';
 
   const shapeSetupOk = await test('propertyPath setup — shape layer + Trim Paths operator', async () => {
-    const sl = await send('createShapeLayer', {
-      compName: COMP_NAME, name: 'Trim Paths Test', shapeType: 'rectangle',
+    const sl = await send('createLayer', {
+      compName: COMP_NAME, type: 'shape', name: 'Trim Paths Test', shapeType: 'rectangle',
       size: [400, 400], fillColor: [0.2, 0.6, 1], duration: 10
     });
     assertNoError(sl);

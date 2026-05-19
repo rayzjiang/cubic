@@ -151,8 +151,8 @@ export async function run(ctx, opts) {
   // ── mergeLayer ────────────────────────────────────────────────────────────
 
   await test('mergeLayer — split a solid then rejoin; merged outPoint equals original', async () => {
-    const sc = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Test Solid', color: [0.5, 0.5, 0.5], duration: 10
+    const sc = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Merge Test Solid', color: [0.5, 0.5, 0.5], duration: 10
     });
     assertNoError(sc);
     const solidIdx = sc.layer.index;
@@ -182,11 +182,11 @@ export async function run(ctx, opts) {
   });
 
   await test('mergeLayer — mismatched sources returns INVALID_ARGS', async () => {
-    const a = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Err A', color: [1, 0, 0]
+    const a = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Merge Err A', color: [1, 0, 0]
     });
-    const b = await send('createSolidLayer', {
-      compName: COMP_NAME, name: 'Merge Err B', color: [0, 0, 1]
+    const b = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Merge Err B', color: [0, 0, 1]
     });
     assertNoError(a); assertNoError(b);
     const r = await send('mergeLayer', {

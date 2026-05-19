@@ -211,8 +211,8 @@ export async function run(ctx, opts) {
     });
     assertField(cr2, 'composition', 'object');
 
-    const sl = await send('createSolidLayer', {
-      compName: '__MCP_TEST_footage_orphan__', name: 'Orphan Solid', color: [1, 0, 0]
+    const sl = await send('createLayer', {
+      compName: '__MCP_TEST_footage_orphan__', type: 'solid', name: 'Orphan Solid', color: [1, 0, 0]
     });
     assertNoError(sl);
     const solidLayerIndex = sl.layer.index;

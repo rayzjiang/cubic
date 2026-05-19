@@ -308,6 +308,112 @@ function setKeyframeEasing(args) {
     }
 }
 
+// U: setKeyframeSpatial — set spatial tangents, auto-bezier, continuous bezier, or roving on position keyframes
+function setKeyframeSpatial(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var property = _resolveAnimProp(layer, args);
+        if (property.numKeys === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "No keyframes on property '" + property.name + "'.");
+        }
+        var isSpat = false;
+        try { isSpat = property.isSpatial; } catch(e2) {}
+        if (!isSpat) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Property '" + property.name + "' is not a spatial property. Spatial tangents only apply to position-type properties (isSpatial=false).");
+        }
+
+        // Resolve which keyframe(s) to target — same logic as setKeyframeEasing
+        var indices = [];
+        if (args.keyIndices) {
+            indices = args.keyIndices;
+        } else if (args.keyIndex !== undefined) {
+            indices = [args.keyIndex];
+        } else if (args.keyTime !== undefined) {
+            for (var k = 1; k <= property.numKeys; k++) {
+                if (Math.abs(property.keyTime(k) - args.keyTime) < 0.002) { indices = [k]; break; }
+            }
+        } else {
+            for (var k = 1; k <= property.numKeys; k++) { indices.push(k); }
+        }
+        if (indices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "No matching keyframe found.");
+        }
+
+        // Capture prior spatial state for revert
+        var previousSpatial = [];
+        for (var pe = 0; pe < indices.length; pe++) {
+            var pki = indices[pe];
+            if (pki < 1 || pki > property.numKeys) continue;
+            previousSpatial.push({
+                keyIndex:   pki,
+                inTangent:  property.keyInSpatialTangent(pki),
+                outTangent: property.keyOutSpatialTangent(pki),
+                autoBezier: property.keySpatialAutoBezier(pki),
+                continuous: property.keySpatialContinuous(pki),
+                roving:     property.keyRoving(pki)
+            });
+        }
+
+        var hasSpatialIn  = (args.spatialIn  !== undefined && args.spatialIn  !== null);
+        var hasSpatialOut = (args.spatialOut  !== undefined && args.spatialOut !== null);
+        var hasAutoBezier = (args.autoBezier  !== undefined && args.autoBezier !== null);
+        var hasContinuous = (args.continuous  !== undefined && args.continuous !== null);
+        var hasRoving     = (args.roving      !== undefined && args.roving     !== null);
+
+        var inTangentArg  = hasSpatialIn  ? (typeof args.spatialIn  === "string" ? eval("(" + args.spatialIn  + ")") : args.spatialIn)  : null;
+        var outTangentArg = hasSpatialOut ? (typeof args.spatialOut === "string" ? eval("(" + args.spatialOut + ")") : args.spatialOut) : null;
+
+        var changed = [];
+        var warnings = [];
+        for (var i = 0; i < indices.length; i++) {
+            var ki = indices[i];
+            if (ki < 1 || ki > property.numKeys) continue;
+
+            if (hasSpatialIn || hasSpatialOut) {
+                var currentIn  = property.keyInSpatialTangent(ki);
+                var currentOut = property.keyOutSpatialTangent(ki);
+                var dim = currentIn.length;
+                var newIn  = hasSpatialIn  ? inTangentArg  : currentIn;
+                var newOut = hasSpatialOut ? outTangentArg : currentOut;
+                var finalIn = [], finalOut = [];
+                for (var d = 0; d < dim; d++) {
+                    finalIn[d]  = (newIn  && newIn[d]  !== undefined) ? +newIn[d]  : +currentIn[d];
+                    finalOut[d] = (newOut && newOut[d] !== undefined) ? +newOut[d] : +currentOut[d];
+                }
+                property.setSpatialTangentsAtKey(ki, finalIn, finalOut);
+            }
+
+            if (hasAutoBezier) { property.setSpatialAutoBezierAtKey(ki, !!args.autoBezier); }
+            if (hasContinuous) { property.setSpatialContinuousAtKey(ki, !!args.continuous); }
+
+            if (hasRoving) {
+                if (ki === 1 || ki === property.numKeys) {
+                    warnings.push("keyIndex " + ki + ": roving cannot be set on the first or last keyframe — skipped.");
+                } else {
+                    property.setRovingAtKey(ki, !!args.roving);
+                }
+            }
+
+            changed.push(ki);
+        }
+
+        var resultObj = {
+            status: "success",
+            message: "Spatial properties set on " + changed.length + " keyframe(s) for '" + property.name + "'.",
+            property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            keysModified: changed,
+            previousSpatial: previousSpatial
+        };
+        if (warnings.length > 0) { resultObj.warnings = warnings; }
+        return JSON.stringify(resultObj, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {

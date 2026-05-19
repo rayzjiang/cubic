@@ -139,6 +139,19 @@ function setCompositionProperties(args) {
                 "Pass both width and height together — AE applies dimension changes as a pair.");
         }
 
+        // Pre-validate workArea pair atomically before any mutation
+        var hasWorkAreaStart    = (args.workAreaStart    !== undefined && args.workAreaStart    !== null);
+        var hasWorkAreaDuration = (args.workAreaDuration !== undefined && args.workAreaDuration !== null);
+        if (hasWorkAreaStart || hasWorkAreaDuration) {
+            var waStart   = hasWorkAreaStart    ? parseFloat(args.workAreaStart)    : comp.workAreaStart;
+            var waDur     = hasWorkAreaDuration ? parseFloat(args.workAreaDuration) : comp.workAreaDuration;
+            var compDur   = (args.duration !== undefined && args.duration !== null) ? parseFloat(args.duration) : comp.duration;
+            if (waStart < 0) { throw _err(ERROR_CODES.INVALID_ARGS, "workAreaStart must be >= 0"); }
+            if (waStart >= compDur) { throw _err(ERROR_CODES.INVALID_ARGS, "workAreaStart must be < composition duration (" + compDur + "s)"); }
+            if (waDur <= 0)  { throw _err(ERROR_CODES.INVALID_ARGS, "workAreaDuration must be > 0"); }
+            if (waStart + waDur > compDur) { throw _err(ERROR_CODES.INVALID_ARGS, "workAreaStart + workAreaDuration (" + (waStart + waDur) + "s) exceeds composition duration (" + compDur + "s)"); }
+        }
+
         // Capture prior state for revert (only for fields the args touch)
         var previousValues = {};
         if (args.name !== undefined && args.name !== null) { previousValues.name = comp.name; }
@@ -146,19 +159,54 @@ function setCompositionProperties(args) {
         if (args.frameRate !== undefined && args.frameRate !== null) { previousValues.frameRate = comp.frameRate; }
         if (hasW && hasH) { previousValues.width = comp.width; previousValues.height = comp.height; }
         if (args.backgroundColor !== undefined && args.backgroundColor !== null) { previousValues.backgroundColor = comp.bgColor; }
+        if (hasWorkAreaStart)    { previousValues.workAreaStart    = comp.workAreaStart; }
+        if (hasWorkAreaDuration) { previousValues.workAreaDuration = comp.workAreaDuration; }
+        if (args.displayStartTime !== undefined && args.displayStartTime !== null) { previousValues.displayStartTime = comp.displayStartTime; }
+        if (args.resolutionFactor !== undefined && args.resolutionFactor !== null) { previousValues.resolutionFactor = comp.resolutionFactor; }
+        if (args.shutterAngle     !== undefined && args.shutterAngle     !== null) { previousValues.shutterAngle     = comp.shutterAngle; }
+        if (args.shutterPhase     !== undefined && args.shutterPhase     !== null) { previousValues.shutterPhase     = comp.shutterPhase; }
+        if (args.motionBlur       !== undefined && args.motionBlur       !== null) { previousValues.motionBlur       = comp.motionBlur; }
+        if (args.draft3d          !== undefined && args.draft3d          !== null) { previousValues.draft3d          = comp.draft3d; }
 
         var changed = [];
         if (args.name !== undefined && args.name !== null) { comp.name = args.name; changed.push("name"); }
-        if (args.duration !== undefined && args.duration !== null) { comp.duration = args.duration; changed.push("duration"); }
-        if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = args.frameRate; changed.push("frameRate"); }
-        if (hasW && hasH) { comp.width = args.width; comp.height = args.height; changed.push("dimensions"); }
+        if (args.duration !== undefined && args.duration !== null) { comp.duration = parseFloat(args.duration); changed.push("duration"); }
+        if (args.frameRate !== undefined && args.frameRate !== null) { comp.frameRate = parseFloat(args.frameRate); changed.push("frameRate"); }
+        if (hasW && hasH) { comp.width = parseInt(args.width); comp.height = parseInt(args.height); changed.push("dimensions"); }
         if (args.backgroundColor !== undefined && args.backgroundColor !== null) {
             comp.bgColor = [args.backgroundColor.r / 255, args.backgroundColor.g / 255, args.backgroundColor.b / 255];
             changed.push("backgroundColor");
         }
+        if (hasWorkAreaStart)    { comp.workAreaStart    = parseFloat(args.workAreaStart);    changed.push("workAreaStart"); }
+        if (hasWorkAreaDuration) { comp.workAreaDuration = parseFloat(args.workAreaDuration); changed.push("workAreaDuration"); }
+        if (args.displayStartTime !== undefined && args.displayStartTime !== null) { comp.displayStartTime = parseFloat(args.displayStartTime); changed.push("displayStartTime"); }
+        if (args.resolutionFactor !== undefined && args.resolutionFactor !== null) {
+            var rf = args.resolutionFactor;
+            if (typeof rf === "string") { try { rf = eval("(" + rf + ")"); } catch(e) {} }
+            comp.resolutionFactor = rf;
+            changed.push("resolutionFactor");
+        }
+        if (args.shutterAngle !== undefined && args.shutterAngle !== null) {
+            comp.shutterAngle = Math.max(0, Math.min(720, parseInt(args.shutterAngle)));
+            changed.push("shutterAngle");
+        }
+        if (args.shutterPhase !== undefined && args.shutterPhase !== null) {
+            comp.shutterPhase = Math.max(-360, Math.min(360, parseInt(args.shutterPhase)));
+            changed.push("shutterPhase");
+        }
+        if (args.motionBlur !== undefined && args.motionBlur !== null) { comp.motionBlur = !!args.motionBlur; changed.push("motionBlur"); }
+        if (args.draft3d    !== undefined && args.draft3d    !== null) { comp.draft3d    = !!args.draft3d;    changed.push("draft3d"); }
+
         return JSON.stringify({
             status: "success",
-            composition: { name: comp.name, duration: comp.duration, frameRate: comp.frameRate, width: comp.width, height: comp.height, bgColor: comp.bgColor },
+            composition: {
+                name: comp.name, duration: comp.duration, frameRate: comp.frameRate,
+                width: comp.width, height: comp.height, bgColor: comp.bgColor,
+                workAreaStart: comp.workAreaStart, workAreaDuration: comp.workAreaDuration,
+                displayStartTime: comp.displayStartTime, resolutionFactor: comp.resolutionFactor,
+                shutterAngle: comp.shutterAngle, shutterPhase: comp.shutterPhase,
+                motionBlur: comp.motionBlur, draft3d: comp.draft3d
+            },
             changedProperties: changed,
             previousValues: previousValues
         }, null, 2);

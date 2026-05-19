@@ -222,6 +222,7 @@ function _dispatchSwitch(command, args) {
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "centerAnchorPoint":        return centerAnchorPoint(args);
+        case "setTimeRemapEnabled":      return setTimeRemapEnabled(args);
         case "deleteLayer":              return deleteLayer(args);
         case "precompose":               return precompose(args);
         case "decomposeLayer":           return decomposeLayer(args);
@@ -250,6 +251,7 @@ function _dispatchSwitch(command, args) {
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);
         case "setKeyframeEasing":        return setKeyframeEasing(args);
+        case "setKeyframeSpatial":       return setKeyframeSpatial(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);

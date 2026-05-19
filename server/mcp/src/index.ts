@@ -225,7 +225,9 @@ server.registerTool(
       "getProjectPath",
       "saveProject",
       "saveFrameToPng",
-      "decomposeLayer"
+      "decomposeLayer",
+      "setTimeRemapEnabled",
+      "setKeyframeSpatial"
     ];
 
     if (!allowedScripts.includes(script)) {
