@@ -123,6 +123,22 @@ Per-type parameter surface:
 | `centerAnchorPoint({...})` | Alias for `CENTER`. |
 | `alignLayers({compName, layerIndices, alignment, reference})` | `alignment`: `LEFT \| HORIZONTAL_CENTER \| RIGHT \| TOP \| VERTICAL_CENTER \| BOTTOM`. `reference`: `COMPOSITION \| SELECTION`. |
 | `sequenceLayers({compName, layerIndices, gapTime?, orderType?})` | Stagger inPoints. `orderType`: `TOP_DOWN \| BOTTOM_UP \| RANDOM`. |
+| `distributeLayers3D({compName, layerIndices, shape, ...})` | Position ≥2 layers in a 3D shape — backend computes all XYZ coords. `shape`: `cylinder` \| `grid`. |
+
+#### distributeLayers3D — detail
+
+The backend (ExtendScript) does the geometry so the LLM doesn't have to. Automatically enables `layer.threeDLayer = true` on every targeted layer (before writing Position, per the required AE ordering).
+
+| Shape | Description | Key params |
+|---|---|---|
+| `cylinder` | Layers around a Z-axis cylinder, optionally stacked in depth-rings (tunnel). | `radius` (default 400), `rings` (default 1), `depthSpacing` (default 500), `axis` (z\|y\|x) |
+| `grid` | Rows × cols planar grid with optional Z-step per plane. | `rows`, `cols`, `spacing:[x,y,z]` (default [200,200,0]) |
+
+Shared params: `center:[x,y,z]` (default comp center, z=0), `enable3D` (default true), `faceCamera` (sets autoOrient=cameraOrPOI), `overwriteKeyframes`
+
+Returns: `{ shape, layersPositioned, positionedLayers: [{ layerIndex, position:[x,y,z], previousPosition, previousThreeDLayer }] }` — `previousPosition`/`previousThreeDLayer` enable inverse-CRUD rollback.
+
+> For a tunnel scene pair with `createCamera({ oneNode: true, position: [cx, cy, -1000] })`. v2 deferred shapes: sphere, helix, ring, line.
 
 ### Nesting & Mattes
 | Command | Description |
@@ -189,6 +205,32 @@ Per-type parameter surface:
 | `LOOP_OUT` / `LOOP_IN` / `LOOP_PINGPONG` | Loop keyframes beyond their range. |
 
 All presets accept `presetParams` overrides.
+
+### Recipes (macro)
+
+| Command | Description |
+|---|---|
+| `applyMotionRecipe({compName, layerIndices, recipe, ...})` | Apply a named motion recipe to N layers in one call. Computes all keyframes + easing + expressions internally. |
+
+**Recipe table:**
+
+| Recipe | Effect |
+|---|---|
+| `popIn` | Scale 0→100% + Opacity 0→100. `bounce:true` adds INERTIAL_BOUNCE on Scale. |
+| `popOut` | Inverse of popIn. |
+| `fadeIn` | Opacity 0→100. |
+| `fadeOut` | Opacity 100→0. |
+| `slideIn` | Position offset→current. Default `from=[-200,0,0]`, overridable. |
+| `slideOut` | Position current→offset. |
+| `scaleIn` | Scale 0→100% only. Honors `bounce`. |
+| `bounceIn` | Alias for popIn with `bounce:true`. |
+| `wiggle` | Applies WIGGLE expression to Position. `intensity` scales amp. |
+
+Params: `layerIndices` (array, required), `startTime` (default 0), `duration` (default 0.5), `stagger` (per-layer cascade delay), `ease`, `bounce`, `intensity` (0–1), `from` ([x,y,z] slide offset override), `overwriteKeyframes`
+
+Returns: `{ recipe, layersAffected, results: [{ layerIndex, startTime, keyframesAdded, expressionsApplied, previousValues }] }`
+
+> **Token savings:** 20 cards with popIn+bounce = 1 call vs ~200 individual setLayerKeyframe/setKeyframeEasing/setLayerExpression calls. All mutations stay inside the single outer undo group — one ⌘Z reverts everything.
 
 ---
 
@@ -344,62 +386,5 @@ Ordered roughly by leverage. None are blockers for Phase 2 — these are the thi
 
 ### Future expressions / motion library
 17. **Expanded preset library** — beyond the 8 current presets: `SPRING`, `SETTLE`, `ROTATION_DECAY`, `SCALE_BREATHE`, `RANDOM_OFFSET`. Likely lives as system prompt content rather than handler code (per TODO Phase 2 note).
-18. **`applyMotionRecipe`** — ✅ **Implemented.** See §16 below.
-19. **`distributeLayers3D`** — ✅ **Implemented.** See §16 below.
-
----
-
-## 16. Macro Commands (high-level wrappers)
-
-### applyMotionRecipe
-Applies a named motion recipe to an array of layers in one call. All keyframes, easing, and expressions are computed internally — no separate `setLayerKeyframe` / `setKeyframeEasing` / `setLayerExpression` calls needed. Runs inside the single undo group opened by `dispatchCommand` — one ⌘Z reverts everything.
-
-| Recipe | Effect |
-|---|---|
-| `popIn` | Scale 0→100% + Opacity 0→100. `bounce:true` adds INERTIAL_BOUNCE on Scale. |
-| `popOut` | Inverse of popIn. |
-| `fadeIn` | Opacity 0→100. |
-| `fadeOut` | Opacity 100→0. |
-| `slideIn` | Position offset→current. Default `from=[-200,0,0]`, overridable. |
-| `slideOut` | Position current→offset. |
-| `scaleIn` | Scale 0→100% only. Honors `bounce`. |
-| `bounceIn` | Alias for popIn with `bounce:true`. |
-| `wiggle` | Applies WIGGLE expression to Position. `intensity` scales amp. |
-
-**Key parameters:** `layerIndices` (array, required), `startTime` (default 0), `duration` (default 0.5), `stagger` (per-layer cascade delay, default 0), `ease` (easyEase|easeIn|easeOut|linear), `bounce`, `intensity` (0–1), `from` ([x,y,z] offset override for slide), `overwriteKeyframes`
-
-**Returns:** `{ recipe, layersAffected, results: [{ layerIndex, startTime, keyframesAdded, expressionsApplied, previousValues }] }`
-
-**Token savings:** 20 cards with popIn+bounce = 1 call vs ~200 individual commands.
-
----
-
-### distributeLayers3D
-Positions an array of layers in a 3D shape. The backend (ExtendScript) computes all XYZ coordinates — the LLM specifies shape + parameters, not individual positions. Automatically enables `threeDLayer = true` on each layer (before writing Position, per the required ordering).
-
-**v1 supported shapes:**
-
-| Shape | Description | Key params |
-|---|---|---|
-| `cylinder` | Layers around a Z-axis cylinder, stacked into depth-rings (tunnel). | `radius` (default 400), `rings` (default 1), `depthSpacing` (default 500), `axis` (z|y|x) |
-| `grid` | Rows × cols planar grid with optional Z-step per plane. | `rows`, `cols`, `spacing:[x,y,z]` (default [200,200,0]) |
-
-**Shared params:** `layerIndices` (array, ≥2), `center:[x,y,z]` (default comp center, z=0), `enable3D` (default true), `faceCamera` (sets autoOrient=cameraOrPOI), `overwriteKeyframes`
-
-**Returns:** `{ shape, layersPositioned, positionedLayers: [{ layerIndex, position:[x,y,z], previousPosition, previousThreeDLayer }] }`
-
-**Notes:**
-- `previousPosition` + `previousThreeDLayer` in each result enable inverse-CRUD rollback.
-- For a tunnel scene, pair with `createCamera({ oneNode: true, position: [cx, cy, -1000] })`.
-- Deferred to v2: sphere, helix, ring, line.
-
----
-
-## 16. Macro Commands (high-level wrappers)
-
-### applyMotionRecipe
-Applies a named motion recipe to an array of layers in one call. The ExtendScript handler computes all keyframes, easing, and expressions internally — no separate `setLayerKeyframe` / `setKeyframeEasing` / `setLayerExpression` calls needed.
-
-**Recipe** | **Effect**
----|---
-`popIn` | Scale 0→100
+18. **`applyMotionRecipe`** — ✅ Implemented. See §8 "Recipes (macro)".
+19. **`distributeLayers3D`** — ✅ Implemented. See §4 "Spatial".
