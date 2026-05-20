@@ -7,7 +7,9 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external",
     "build:watch": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external --watch",
-    "start": "node build/index.js"
+    "start": "node build/index.js",
+    "test": "node test-integration.mjs",
+    "test:live": "node test-integration.mjs --live"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0"
