@@ -1,26 +1,3 @@
-## General Roadmap
-✅ Phase 1 — MCP validation
-➡️ Phase 1.5 - **Fixing the MCP + Finishing/adding all functionality that I need + Organizing it for CRUD for each operation + Comprehensive testing suite
-Phase 2 — Build the LLM brain + agent architecture (system prompt + Claude API backend)
-Phase 3 (self-healing/correcting/bug checking loop)
-Phase 4 (After effects panel UI)
-Phase 5 (Post MVP stuff?)
-
----
-1. Obfuscation (meaningful protection, not foolproof)
-    - Run javascript-obfuscator on the bundled JSX + compiled MCP server before distribution
-    - Makes casual reading/copying painful; deters 95% of people
-    - Determined reverse engineers can still work through it
-
-2. Package the MCP server as a binary
-    - Tools like pkg or nexe bundle Node.js + your JS into a single executable
-    - Much harder to reverse engineer than plain JS
-    - This is actually realistic for your MCP server specifically
-
-## Phase 2
-- [ ] x
-- [ ] ***Eg. Preset Library?? <-- might be done in phase 2 (give the system prompt a good understanding)
-
 ## Phase 1.5
 Audit analysis prompts
 Do a comprehensive analysis of my @server/mcp/src/scripts/ modules, to ensure we have all the features i would need to create great motion graphics/design named robustly enough to cover that domains entire scope. Also Ensure all scripts/stuff are coded optimally + no hardcoded stuff reducing efficiency/shortcuts just to pass tests. Finally Verify that MCP tools/commands are robust + broad enough + have Create/read/update/delete functionality for all functions/commands + ability to revert changes for the ai (like by calling the opposite command/resetting value + reading value beforehand if users dont do ctrl z and ask ai to revert). Lmk if there r issues worth fixing before i move onto phase 2. this is like a final check (ive been working hard to refactor scripts + tests + have enough mcp functionality to create amazing smooth, creative, satisfying launch videos) or if there are none
@@ -68,12 +45,4 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
     - applyMotionRecipe: popIn/popOut/fadeIn/fadeOut/slideIn/slideOut/scaleIn/bounceIn/wiggle; layerIndices[] + stagger
     - distributeLayers3D: cylinder (tunnel) + grid; backend computes XYZ so LLM doesn't do geometry
     - Tests added to animation.mjs + layers.mjs
-- [ ] ^^After above 3 are done, move onto Phase 2
-
-## Phase 1
-- [x] Evaluate + organize what functionalities we have + the CRUD of each
-- [x] Update mcp-bridge-auto.jsx to be more modularized into different file (new separate file for each CRUD thing: like for layers, expressions, compositions, etc. instead of all in this file)
-- [x] Setup to be able to test mcp server functionality in after effects without needing to have claude run everything
-    - [x] Fix it so that its changes + tests are viewable/self verifiable by the user
-- [x] Make sure error states are consistent across scripts + tests
-- [x] Make sure test files have consistent header documents + test all script CRUD functions + properly domain scoped
+- [x] ^^After above 3 are done, move onto Phase 2
