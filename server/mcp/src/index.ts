@@ -235,7 +235,9 @@ server.registerTool(
       "explodeTextLayer",
       "duplicateComposition",
       "convertToShape",
-      "importAssetToComp"
+      "importAssetToComp",
+      "applyMotionRecipe",
+      "distributeLayers3D"
     ];
 
     if (!allowedScripts.includes(script)) {
@@ -284,6 +286,8 @@ All commands are invoked via \`runScript({ script, parameters })\` or wrapped in
 **Markers:** addMarker, listMarkers, updateMarker, removeMarker (comp or layer; omit layerIndex for comp marker)
 **Footage / Project Panel:** listProjectItems, importFootage, addFootageToComp, importAssetToComp (one-shot import+place), deleteProjectItem, deleteUnusedSolids
 **Project:** getProjectPath, saveProject
+**Motion Recipes:** applyMotionRecipe — animate one or more layers with a single high-level call (recipe: popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle; layerIndices array + optional stagger for cascading delays; bounce:true adds INERTIAL_BOUNCE expression on Scale)
+**3D Distribution:** distributeLayers3D — arrange layers in a 3D shape computed by the backend (shape: cylinder|grid; cylinder params: radius, rings, depthSpacing, axis; grid params: rows, cols, spacing; faceCamera:true sets autoOrient to cameraOrPOI)
 **Batch:** batch — run multiple commands in one call (strongly preferred for multiple operations). Accepts an optional \`groupLabel\` (human-readable turn summary, e.g. "apply cinematic look to logo") that becomes the single Edit > Undo entry the user sees in AE — one ⌘Z reverts the entire turn.
 
 ## Context tip

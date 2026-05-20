@@ -580,4 +580,182 @@ export async function run(ctx, opts) {
     });
     assertStructuredError(r, 'INVALID_ARGS');
   });
+
+  // ── applyMotionRecipe ─────────────────────────────────────────────────────
+
+  // Create a dedicated set of solid layers for recipe tests (avoid polluting the text layer)
+  let recipeLayerIdx;
+  const recipeSetupOk = await test('applyMotionRecipe setup — create solid layer for recipe tests', async () => {
+    const lr = await send('createLayer', {
+      compName: COMP_NAME, type: 'solid', name: 'Recipe Test Solid',
+      color: [0.2, 0.6, 1.0], size: [200, 200]
+    });
+    assertNoError(lr);
+    recipeLayerIdx = 1; // newest layer lands at index 1
+    return `solid at index ${recipeLayerIdx}`;
+  });
+
+  if (recipeSetupOk) {
+    await test('applyMotionRecipe — popIn on single layer: keyframesAdded≥4, Scale+Opacity animated', async () => {
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [recipeLayerIdx],
+        recipe: 'popIn', startTime: 0, duration: 0.5, overwriteKeyframes: true
+      });
+      assertNoError(r);
+      assertValue(r, 'recipe', 'popIn');
+      assertValue(r, 'layersAffected', 1);
+      assertArray(r, 'results');
+      if (r.results.length !== 1) throw new Error(`expected results.length=1, got ${r.results.length}`);
+      const res = r.results[0];
+      if (res.keyframesAdded < 4) throw new Error(`expected keyframesAdded≥4, got ${res.keyframesAdded}`);
+
+      // Read back Scale keyframes
+      const sc = await send('getLayerKeyframes', {
+        compName: COMP_NAME, layerIndex: recipeLayerIdx, propertyName: 'Scale'
+      });
+      assertNoError(sc);
+      if (sc.count < 2) throw new Error(`expected ≥2 Scale keyframes, got ${sc.count}`);
+      if (Math.abs(sc.keyframes[0].time - 0) > 0.01) {
+        throw new Error(`first Scale keyframe should be at t=0, got ${sc.keyframes[0].time}`);
+      }
+      if (Math.abs(sc.keyframes[sc.count - 1].time - 0.5) > 0.01) {
+        throw new Error(`last Scale keyframe should be at t=0.5, got ${sc.keyframes[sc.count - 1].time}`);
+      }
+
+      // Read back Opacity keyframes
+      const op = await send('getLayerKeyframes', {
+        compName: COMP_NAME, layerIndex: recipeLayerIdx, propertyName: 'Opacity'
+      });
+      assertNoError(op);
+      if (op.count < 2) throw new Error(`expected ≥2 Opacity keyframes, got ${op.count}`);
+      return `keyframesAdded=${res.keyframesAdded}, Scale keys=${sc.count}, Opacity keys=${op.count}`;
+    });
+
+    await test('applyMotionRecipe — popIn with bounce:true adds INERTIAL_BOUNCE expression on Scale', async () => {
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [recipeLayerIdx],
+        recipe: 'popIn', startTime: 0, duration: 0.5, bounce: true, overwriteKeyframes: true
+      });
+      assertNoError(r);
+      const res = r.results[0];
+      if (!Array.isArray(res.expressionsApplied) || res.expressionsApplied.length === 0) {
+        throw new Error('expected expressionsApplied to be non-empty when bounce:true');
+      }
+
+      // Read back expression and verify it contains bounce signature
+      const exprs = await send('getLayerExpressions', {
+        compName: COMP_NAME, layerIndex: recipeLayerIdx
+      });
+      assertNoError(exprs);
+      const scaleExpr = exprs.expressions.find(e => e.property && e.property.toLowerCase().includes('scale'));
+      if (!scaleExpr) throw new Error('no Scale expression found after bounce:true');
+      if (!scaleExpr.expression.includes('amp') || !scaleExpr.expression.includes('freq')) {
+        throw new Error(`Scale expression missing bounce signature: ${scaleExpr.expression.slice(0, 60)}`);
+      }
+      return `expressionsApplied: ${JSON.stringify(res.expressionsApplied)}`;
+    });
+
+    await test('applyMotionRecipe — 5 layers + stagger: layersAffected=5, 5th layer startTime=4*stagger', async () => {
+      // Create 4 more solids so we have 5 total (recipeLayerIdx is already 1)
+      for (let i = 0; i < 4; i++) {
+        const lr = await send('createLayer', {
+          compName: COMP_NAME, type: 'solid', name: 'Stagger Solid ' + i,
+          color: [0.5, 0.5, 0.5], size: [100, 100]
+        });
+        assertNoError(lr);
+      }
+      // After 4 creates, recipeLayerIdx has shifted down by 4
+      const idxBase = recipeLayerIdx + 4;
+      const indices = [1, 2, 3, 4, idxBase];
+
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: indices,
+        recipe: 'fadeIn', startTime: 0, duration: 0.3, stagger: 0.1, overwriteKeyframes: true
+      });
+      assertNoError(r);
+      assertValue(r, 'layersAffected', 5);
+      if (r.results.length !== 5) throw new Error(`expected 5 results, got ${r.results.length}`);
+
+      // 5th layer (index 4 in results array) should start at 4 * 0.1 = 0.4s
+      const fifth = r.results[4];
+      if (Math.abs(fifth.startTime - 0.4) > 0.001) {
+        throw new Error(`expected 5th layer startTime≈0.4s, got ${fifth.startTime}`);
+      }
+      return `5 layers staggered; 5th.startTime=${fifth.startTime}`;
+    });
+
+    await test('applyMotionRecipe — slideIn with from override: start position offset applied', async () => {
+      const slideLayer = await send('createLayer', {
+        compName: COMP_NAME, type: 'solid', name: 'Slide Test', color: [1, 0.5, 0], size: [150, 150]
+      });
+      assertNoError(slideLayer);
+      const sli = 1;
+
+      // Read current position before recipe
+      const before = await send('getLayerProperty', {
+        compName: COMP_NAME, layerIndex: sli, propertyPath: ['Transform', 'Position']
+      });
+      assertNoError(before);
+      const baseX = Array.isArray(before.value) ? +before.value[0] : +before.value;
+
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [sli],
+        recipe: 'slideIn', startTime: 0, duration: 0.5,
+        from: [-500, 0, 0], overwriteKeyframes: true
+      });
+      assertNoError(r);
+
+      // Read back the first Position keyframe (the "from" position) — should be baseX - 500
+      const kf = await send('getLayerKeyframes', {
+        compName: COMP_NAME, layerIndex: sli, propertyName: 'Position'
+      });
+      assertNoError(kf);
+      if (kf.count < 2) throw new Error(`expected ≥2 Position keyframes, got ${kf.count}`);
+      const startKfX = Array.isArray(kf.keyframes[0].value) ? +kf.keyframes[0].value[0] : +kf.keyframes[0].value;
+      const expectedStartX = baseX - 500;
+      if (Math.abs(startKfX - expectedStartX) > 1) {
+        throw new Error(`expected start keyframe X≈${expectedStartX}, got ${startKfX}`);
+      }
+      return `start X=${startKfX.toFixed(1)}, expected ${expectedStartX.toFixed(1)}`;
+    });
+
+    await test('applyMotionRecipe — fadeOut: Opacity goes 100→0', async () => {
+      const foLayer = await send('createLayer', {
+        compName: COMP_NAME, type: 'solid', name: 'FadeOut Test', color: [0.8, 0.2, 0.2], size: [100, 100]
+      });
+      assertNoError(foLayer);
+      const foi = 1;
+
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [foi],
+        recipe: 'fadeOut', startTime: 0, duration: 0.5, overwriteKeyframes: true
+      });
+      assertNoError(r);
+
+      const kf = await send('getLayerKeyframes', {
+        compName: COMP_NAME, layerIndex: foi, propertyName: 'Opacity'
+      });
+      assertNoError(kf);
+      if (kf.count < 2) throw new Error(`expected ≥2 Opacity keyframes, got ${kf.count}`);
+      const startVal = +kf.keyframes[0].value;
+      const endVal   = +kf.keyframes[kf.count - 1].value;
+      if (Math.abs(startVal - 100) > 0.5) throw new Error(`expected first Opacity≈100, got ${startVal}`);
+      if (Math.abs(endVal)         > 0.5) throw new Error(`expected last Opacity≈0, got ${endVal}`);
+      return `Opacity: ${startVal}→${endVal}`;
+    });
+
+    await test('applyMotionRecipe — unknown recipe returns INVALID_ARGS', async () => {
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [recipeLayerIdx], recipe: 'doesNotExist'
+      });
+      assertStructuredError(r, 'INVALID_ARGS');
+    });
+
+    await test('applyMotionRecipe — empty layerIndices returns INVALID_ARGS', async () => {
+      const r = await send('applyMotionRecipe', {
+        compName: COMP_NAME, layerIndices: [], recipe: 'fadeIn'
+      });
+      assertStructuredError(r, 'INVALID_ARGS');
+    });
+  }
 }

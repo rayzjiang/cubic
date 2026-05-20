@@ -70,6 +70,7 @@ function getLayerInfo(args) {
                 enabled: layer.enabled,
                 locked: layer.locked,
                 threeDLayer: layer.threeDLayer,
+                autoOrient: AUTO_ORIENT_LABELS[layer.autoOrient] || layer.autoOrient,
                 position: layer.property("Position") ? layer.property("Position").value : null,
                 scale: scaleProp   ? scaleProp.value   : null,
                 rotation: rotProp  ? rotProp.value      : null,
@@ -87,7 +88,6 @@ function getLayerInfo(args) {
                 layerInfo.zoom        = camOpts ? camOpts.property("Zoom").value : null;
                 var poi               = layer.property("Point of Interest");
                 layerInfo.pointOfInterest = poi ? poi.value : null;
-                layerInfo.autoOrient  = AUTO_ORIENT_LABELS[layer.autoOrient] || layer.autoOrient;
                 if (camOpts) {
                     try { layerInfo.depthOfField  = camOpts.property("Depth of Field").value;  } catch(e2) {}
                     try { layerInfo.focusDistance = camOpts.property("Focus Distance").value;  } catch(e2) {}
@@ -1583,6 +1583,166 @@ function sequenceLayers(args) {
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// ── 3D Distribution Helpers ────────────────────────────────────────────────────
+
+// Internal: compute XYZ positions for cylinder/tunnel distribution.
+// Layers are spread across `rings` Z-stacked circles of perRing slots each.
+function _computeCylinderPositions(count, cx, cy, cz, radius, depthSpacing, rings, axis) {
+    var perRing = Math.ceil(count / rings);
+    var positions = [];
+    for (var i = 0; i < count; i++) {
+        var ring  = Math.floor(i / perRing);
+        var slot  = i % perRing;
+        var angle = (2 * Math.PI * slot) / perRing;
+        var posX, posY, posZ;
+        if (axis === "y") {
+            posX = cx + radius * Math.cos(angle);
+            posY = cy + ring * depthSpacing;
+            posZ = cz + radius * Math.sin(angle);
+        } else if (axis === "x") {
+            posX = cx + ring * depthSpacing;
+            posY = cy + radius * Math.cos(angle);
+            posZ = cz + radius * Math.sin(angle);
+        } else {
+            // axis === "z" (default — tunnel going into/out of screen)
+            posX = cx + radius * Math.cos(angle);
+            posY = cy + radius * Math.sin(angle);
+            posZ = cz + ring * depthSpacing;
+        }
+        positions.push([posX, posY, posZ]);
+    }
+    return positions;
+}
+
+// Internal: compute XYZ positions for grid distribution.
+// Layers placed in rows×cols cells on successive planes spaced by spacing[2].
+function _computeGridPositions(count, cx, cy, cz, rows, cols, spacing) {
+    var sx = +spacing[0];
+    var sy = +spacing[1];
+    var sz = +spacing[2];
+    var totalW = (cols - 1) * sx;
+    var totalH = (rows - 1) * sy;
+    var positions = [];
+    for (var i = 0; i < count; i++) {
+        var plane = Math.floor(i / (rows * cols));
+        var local = i % (rows * cols);
+        var row   = Math.floor(local / cols);
+        var col   = local % cols;
+        positions.push([
+            cx - totalW / 2 + col * sx,
+            cy - totalH / 2 + row * sy,
+            cz + plane * sz
+        ]);
+    }
+    return positions;
+}
+
+// C/U: distributeLayers3D — position an array of layers in a 3D shape.
+// The backend computes all XYZ coordinates; the LLM just specifies shape + params.
+// Supported shapes (v1): cylinder (tunnel), grid (planar with optional Z-step).
+function distributeLayers3D(args) {
+    try {
+        var comp = _resolveComp(args);
+
+        var shape = args.shape;
+        if (shape !== "cylinder" && shape !== "grid") {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Invalid shape: '" + shape + "'. Supported in v1: cylinder, grid. (sphere, helix, ring, line deferred to v2)");
+        }
+
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length < 2) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must contain at least 2 layers.");
+        }
+
+        // Validate all indices up-front before mutating anything
+        for (var vi = 0; vi < layerIndices.length; vi++) {
+            var vidx = layerIndices[vi];
+            if (vidx < 1 || vidx > comp.numLayers) {
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + vidx);
+            }
+        }
+
+        var count = layerIndices.length;
+
+        // Center defaults to comp center (XY) at Z=0
+        var rawCenter = args.center;
+        if (rawCenter && typeof rawCenter === "string") { try { rawCenter = eval("(" + rawCenter + ")"); } catch (e2) {} }
+        var cx = (rawCenter && rawCenter[0] !== undefined) ? +rawCenter[0] : comp.width  / 2;
+        var cy = (rawCenter && rawCenter[1] !== undefined) ? +rawCenter[1] : comp.height / 2;
+        var cz = (rawCenter && rawCenter[2] !== undefined) ? +rawCenter[2] : 0;
+
+        var enable3D   = args.enable3D !== false; // default true
+        var faceCamera = args.faceCamera === true;
+        var overwrite  = args.overwriteKeyframes === true;
+
+        // Compute target positions
+        var positions;
+        if (shape === "cylinder") {
+            var radius       = (args.radius       !== undefined) ? +args.radius       : 400;
+            var depthSpacing = (args.depthSpacing  !== undefined) ? +args.depthSpacing  : 500;
+            var rings        = (args.rings         !== undefined) ? Math.max(1, Math.round(+args.rings)) : 1;
+            var axis         = args.axis || "z";
+            if (radius <= 0)      { throw _err(ERROR_CODES.INVALID_ARGS, "radius must be > 0."); }
+            if (depthSpacing < 0) { throw _err(ERROR_CODES.INVALID_ARGS, "depthSpacing must be >= 0."); }
+            positions = _computeCylinderPositions(count, cx, cy, cz, radius, depthSpacing, rings, axis);
+        } else {
+            var rawSpacing = args.spacing;
+            if (rawSpacing && typeof rawSpacing === "string") { try { rawSpacing = eval("(" + rawSpacing + ")"); } catch (e2) {} }
+            var spacing = rawSpacing || [200, 200, 0];
+            var rows = args.rows ? Math.max(1, Math.round(+args.rows)) : Math.ceil(Math.sqrt(count));
+            var cols = args.cols ? Math.max(1, Math.round(+args.cols)) : Math.ceil(count / rows);
+            positions = _computeGridPositions(count, cx, cy, cz, rows, cols, spacing);
+        }
+
+        var positionedLayers = [];
+        for (var i = 0; i < count; i++) {
+            var idx   = layerIndices[i];
+            var layer = comp.layer(idx);
+            var pos   = positions[i];
+
+            var prevThreeD = layer.threeDLayer;
+
+            // Enable 3D BEFORE reading/writing Position — ordering matters (layers.jsx:456→:475 pattern)
+            if (enable3D && !layer.threeDLayer) {
+                layer.threeDLayer = true;
+            }
+
+            // Re-fetch after 3D toggle: property dimensionality changes 2D→3D
+            var posProp = layer.property("Transform").property("Position");
+
+            // Snapshot previous position after 3D enable so dim matches new state
+            var prevPos = null;
+            try { prevPos = posProp.value; } catch (e) {}
+
+            _guardKeyframeOverwrite(posProp, "Position[L" + idx + "]", overwrite);
+
+            posProp.setValue([+pos[0], +pos[1], +pos[2]]);
+
+            if (faceCamera) {
+                layer.autoOrient = AutoOrientType.CAMERA_OR_POINT_OF_INTEREST;
+            }
+
+            positionedLayers.push({
+                layerIndex:          layer.index,
+                layerName:           layer.name,
+                position:            [+pos[0], +pos[1], +pos[2]],
+                previousPosition:    prevPos,
+                previousThreeDLayer: prevThreeD
+            });
+        }
+
+        return JSON.stringify({
+            status:          "success",
+            shape:           shape,
+            layersPositioned: count,
+            positionedLayers: positionedLayers
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }
 }
 

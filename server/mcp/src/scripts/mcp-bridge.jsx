@@ -234,6 +234,7 @@ function _dispatchSwitch(command, args) {
         case "setTrackMatte":            return setTrackMatte(args);
         case "getLayerProperty":         return getLayerProperty(args);
         case "setLayerProperty":         return setLayerProperty(args);
+        case "distributeLayers3D":       return distributeLayers3D(args);
         // text.jsx
         case "createTextLayer":          return createTextLayer(args);
         case "addTextAnimator":          return addTextAnimator(args);
@@ -262,6 +263,7 @@ function _dispatchSwitch(command, args) {
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
         case "copyKeyframeEasing":       return copyKeyframeEasing(args);
+        case "applyMotionRecipe":        return applyMotionRecipe(args);
         // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);

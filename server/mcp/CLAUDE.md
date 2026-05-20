@@ -1,5 +1,5 @@
 # CLAUDE.md
-Be sure to keep Claude.md file less than 150 lines
+Be sure to keep Claude.md file less than 150 lines (or less if possible), always try to keep things concise but meaningful
 
 > **End goal:** Motion Copilot — an AI agent that lives in After Effects and writes animations natively, like GitHub Copilot but for video. See [`docs/PRD.md`](../../docs/PRD.md) for the full vision.
 
@@ -59,13 +59,15 @@ layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, create
                      createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
                      batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setLayerParent, moveLayer,
                      setAnchorPoint, centerAnchorPoint (alias), alignLayers, sequenceLayers,
-                     precompose, decomposeLayer, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty
+                     precompose, decomposeLayer, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty,
+                     distributeLayers3D (shape: cylinder|grid; backend computes XYZ coords)
 text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector,
                      explodeTextLayer
 shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty, convertToShape
 animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
                      setLayerExpression (+ preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|
-                     LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing
+                     LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing,
+                     applyMotionRecipe (recipe: popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle; layerIndices[] + stagger)
 masks.jsx         ← getLayerMasks, setLayerMask, deleteLayerMask
 effects.jsx       ← getLayerEffects, applyEffect (matchName|effectName|presetPath), applyEffectTemplate,
                      setEffectProperty, deleteEffect
@@ -104,21 +106,14 @@ All handler `catch` blocks now return `{ status:"error", errorCode, message, lin
 `comp.saveFrameToPng(time, file)` — renders a single frame. Default output: `~/.cubic/frames/frame_<ts>.png` (persistent; Phase 3 can diff across turns). Returns text JSON + inline base64 PNG. Timeout 30s (rendering is slow). AE setting required: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**.
 
 ## Critical ExtendScript quirks
-**Array values arrive as strings:** `[0, 0]` arrives as `"[0, 0]"` — use `eval("(" + value + ")")` to parse.
-
-**Use `eval` not `JSON.parse`:** AE 2026's `JSON.parse` returns non-native arrays rejected by the AE C++ API. The dispatch footer always uses `eval("(" + JSON.stringify(args) + ")")`.
-
-**Scale is 3-element `[x, y, z]`:** Passing `[x, y]` leaves `z` as `NaN`. Reconstruct using `property.value` as a template.
-
-**`setTemporalEaseAtKey` needs one `KeyframeEase` per dimension:** Pass `[ease, ease, ease]` for 3D properties.
-
-**Easy Ease:** `KeyframeInterpolationType.EASY_EASE` doesn't exist — use `BEZIER` + `KeyframeEase(0, 33.33)`.
-
-**`Date.toISOString()` missing in ES3:** Build ISO strings manually with `getFullYear()` etc.
-
-**`"EvalScript error."` = bundle-level syntax failure**, not a handler error (those are caught by the footer's try/catch and returned as structured JSON).
-
-**Layer indices are 1-based.** Lower index = renders on top.
+- **Array values arrive as strings:** `[0, 0]` arrives as `"[0, 0]"` — use `eval("(" + value + ")")` to parse.
+- **Use `eval` not `JSON.parse`:** AE 2026's `JSON.parse` returns non-native arrays rejected by the AE C++ API. The dispatch footer always uses `eval("(" + JSON.stringify(args) + ")")`.
+- **Scale is 3-element `[x, y, z]`:** Passing `[x, y]` leaves `z` as `NaN`. Reconstruct using `property.value` as a template.
+- **`setTemporalEaseAtKey` needs one `KeyframeEase` per dimension:** Pass `[ease, ease, ease]` for 3D properties.
+- **Easy Ease:** `KeyframeInterpolationType.EASY_EASE` doesn't exist — use `BEZIER` + `KeyframeEase(0, 33.33)`.
+- **`Date.toISOString()` missing in ES3:** Build ISO strings manually with `getFullYear()` etc.
+- **`"EvalScript error."` = bundle-level syntax failure**, not a handler error (those are caught by the footer's try/catch and returned as structured JSON).
+- **Layer indices are 1-based.** Lower index = renders on top.
 
 ## MCP usage rule
 **Always use `batch` for more than one command** — collapses N operations into 1 tool call.

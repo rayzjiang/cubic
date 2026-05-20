@@ -1003,4 +1003,171 @@ export async function run(ctx, opts) {
       await send('deleteComposition', { compName: SEQ_COMP });
     }
   }
+
+  // ── distributeLayers3D ────────────────────────────────────────────────────
+
+  if (opts.write) {
+    const DIST_COMP = '__MCP_TEST_dist3d__';
+
+    const distSetupOk = await test('distributeLayers3D setup — comp with 8 solid layers', async () => {
+      const cr = await send('createComposition', {
+        name: DIST_COMP, width: 1920, height: 1080, frameRate: 30, duration: 10
+      });
+      assertField(cr, 'composition', 'object');
+      for (let i = 0; i < 8; i++) {
+        const lr = await send('createLayer', {
+          compName: DIST_COMP, type: 'solid', name: 'Screen ' + i,
+          size: [200, 150], color: [0.2, 0.4, 0.8]
+        });
+        assertNoError(lr);
+      }
+      return '8 solid layers created';
+    });
+
+    if (requireSetup(distSetupOk)) {
+      await test('distributeLayers3D — cylinder, 8 layers, 2 rings: positionedLayers.length=8', async () => {
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP,
+          layerIndices: [1, 2, 3, 4, 5, 6, 7, 8],
+          shape: 'cylinder',
+          radius: 400,
+          rings: 2,
+          depthSpacing: 500
+        });
+        assertNoError(r);
+        assertValue(r, 'shape', 'cylinder');
+        assertField(r, 'positionedLayers');
+        if (!Array.isArray(r.positionedLayers) || r.positionedLayers.length !== 8) {
+          throw new Error(`expected positionedLayers.length=8, got ${r.positionedLayers?.length}`);
+        }
+
+        // Verify radial distance of layer 1 from comp center ≈ radius (400px)
+        const p = r.positionedLayers[0].position; // [x, y, z]
+        const compCX = 1920 / 2;
+        const compCY = 1080 / 2;
+        const radialDist = Math.sqrt(Math.pow(p[0] - compCX, 2) + Math.pow(p[1] - compCY, 2));
+        if (Math.abs(radialDist - 400) > 1) {
+          throw new Error(`expected radial distance≈400px from comp center, got ${radialDist.toFixed(2)}`);
+        }
+
+        return `positionedLayers=${r.positionedLayers.length}, layer[0] radialDist=${radialDist.toFixed(1)}px`;
+      });
+
+      await test('distributeLayers3D — cylinder: layers are 3D-enabled after call', async () => {
+        // Use getLayerInfo to verify threeDLayer flag on layer 1
+        const r = await send('getLayerInfo', { compName: DIST_COMP });
+        assertNoError(r);
+        assertArray(r, 'layers');
+        const layer1 = r.layers.find(l => l.index === 1);
+        if (!layer1) throw new Error('layer at index 1 not found in getLayerInfo response');
+        if (!layer1.threeDLayer) {
+          throw new Error(`expected layer 1 threeDLayer=true after distributeLayers3D, got ${layer1.threeDLayer}`);
+        }
+        return `layer 1 threeDLayer=${layer1.threeDLayer}`;
+      });
+
+      await test('distributeLayers3D — cylinder: Z position of ring-2 layers ≈ depthSpacing', async () => {
+        // Ring 0 has 4 layers, ring 1 has 4 layers. Ring-1 layers should have z ≈ 500.
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP,
+          layerIndices: [1, 2, 3, 4, 5, 6, 7, 8],
+          shape: 'cylinder',
+          radius: 400,
+          rings: 2,
+          depthSpacing: 500,
+          overwriteKeyframes: true
+        });
+        assertNoError(r);
+        // Layers 5-8 are in ring 1 (0-indexed), so their Z should be 500
+        const ring1Layer = r.positionedLayers[4]; // 5th layer = first in ring 1
+        if (Math.abs(ring1Layer.position[2] - 500) > 1) {
+          throw new Error(`expected ring-1 Z≈500, got ${ring1Layer.position[2]}`);
+        }
+        return `ring-1 Z=${ring1Layer.position[2]}`;
+      });
+
+      // Add 1 more layer for the grid test (need 9 for 3×3)
+      await test('distributeLayers3D — grid 3×3 with Z-step: corner layer at expected position', async () => {
+        // Create 1 extra layer so we have 9
+        const extra = await send('createLayer', {
+          compName: DIST_COMP, type: 'solid', name: 'Grid Extra', size: [100, 100], color: [0.8, 0.4, 0.2]
+        });
+        assertNoError(extra);
+
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP,
+          layerIndices: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+          shape: 'grid',
+          rows: 3,
+          cols: 3,
+          spacing: [200, 200, 0],
+          overwriteKeyframes: true
+        });
+        assertNoError(r);
+        assertValue(r, 'shape', 'grid');
+        if (r.positionedLayers.length !== 9) {
+          throw new Error(`expected 9 positioned layers, got ${r.positionedLayers.length}`);
+        }
+
+        // Grid is centered: for rows=3, cols=3, spacing=[200,200,0]
+        // totalW=(2)*200=400, totalH=(2)*200=400
+        // Top-left (layer 0): [cx-200, cy-200, 0]
+        // Bottom-right (layer 8): [cx+200, cy+200, 0]
+        const compCX = 1920 / 2;
+        const compCY = 1080 / 2;
+        const last = r.positionedLayers[8].position;
+        if (Math.abs(last[0] - (compCX + 200)) > 1 || Math.abs(last[1] - (compCY + 200)) > 1) {
+          throw new Error(`expected bottom-right=[${compCX+200},${compCY+200},0], got [${last[0].toFixed(1)},${last[1].toFixed(1)},${last[2].toFixed(1)}]`);
+        }
+        return `grid bottom-right=[${last[0].toFixed(0)},${last[1].toFixed(0)},${last[2].toFixed(0)}]`;
+      });
+
+      await test('distributeLayers3D — faceCamera: autoOrient=cameraOrPOI on all layers', async () => {
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP,
+          layerIndices: [1, 2],
+          shape: 'cylinder',
+          radius: 300,
+          faceCamera: true,
+          overwriteKeyframes: true
+        });
+        assertNoError(r);
+        // Verify via getLayerInfo that autoOrient was set
+        const info = await send('getLayerInfo', { compName: DIST_COMP });
+        assertNoError(info);
+        const l1 = info.layers.find(l => l.index === 1);
+        if (!l1) throw new Error('layer 1 not found');
+        if (l1.autoOrient !== 'cameraOrPOI') {
+          throw new Error(`expected autoOrient=cameraOrPOI, got ${l1.autoOrient}`);
+        }
+        return `layer 1 autoOrient=${l1.autoOrient}`;
+      });
+
+      await test('distributeLayers3D — shape="sphere" returns INVALID_ARGS (not in v1)', async () => {
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP, layerIndices: [1, 2], shape: 'sphere'
+        });
+        assertStructuredError(r, 'INVALID_ARGS');
+        if (!r.message.toLowerCase().includes('sphere') && !r.message.toLowerCase().includes('v1') && !r.message.toLowerCase().includes('v2')) {
+          throw new Error(`expected error to mention sphere/v2 deferral, got: "${r.message}"`);
+        }
+      });
+
+      await test('distributeLayers3D — single layerIndex returns INVALID_ARGS', async () => {
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP, layerIndices: [1], shape: 'cylinder'
+        });
+        assertStructuredError(r, 'INVALID_ARGS');
+      });
+
+      await test('distributeLayers3D — out-of-bounds index returns LAYER_INDEX_OOB', async () => {
+        const r = await send('distributeLayers3D', {
+          compName: DIST_COMP, layerIndices: [1, 999], shape: 'cylinder'
+        });
+        assertStructuredError(r, 'LAYER_INDEX_OOB');
+      });
+
+      await send('deleteComposition', { compName: DIST_COMP });
+    }
+  }
 }

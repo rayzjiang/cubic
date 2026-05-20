@@ -602,6 +602,221 @@ function copyKeyframeEasing(args) {
     }
 }
 
+// ── Motion Recipe Library ──────────────────────────────────────────────────────
+
+var _VALID_RECIPES = {
+    popIn: 1, popOut: 1, fadeIn: 1, fadeOut: 1,
+    slideIn: 1, slideOut: 1, scaleIn: 1, bounceIn: 1, wiggle: 1
+};
+
+// Internal: set one keyframe at `time` with easing applied.
+// rawVal must already be the correctly-typed value for the property (scalar or array).
+function _recipeSetKey(prop, time, rawVal, easeType) {
+    prop.setValueAtTime(time, rawVal);
+    var ki = -1;
+    for (var k = 1; k <= prop.numKeys; k++) {
+        if (Math.abs(prop.keyTime(k) - time) < 0.002) { ki = k; break; }
+    }
+    if (ki === -1) return;
+    var typeMap = {
+        easyEase: [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER],
+        easeIn:   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.LINEAR],
+        easeOut:  [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.BEZIER],
+        linear:   [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR],
+        hold:     [KeyframeInterpolationType.HOLD,   KeyframeInterpolationType.HOLD],
+        bezier:   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER]
+    };
+    var tp = typeMap[easeType] || typeMap.easyEase;
+    prop.setInterpolationTypeAtKey(ki, tp[0], tp[1]);
+    try {
+        var curIn  = prop.keyInTemporalEase(ki);
+        var curOut = prop.keyOutTemporalEase(ki);
+        var dim = curIn.length;
+        if (easeType !== "linear" && easeType !== "hold") {
+            var defArr = [];
+            for (var d = 0; d < dim; d++) { defArr.push(new KeyframeEase(0, 33.33)); }
+            var inArr  = (easeType === "easeOut") ? curIn  : defArr;
+            var outArr = (easeType === "easeIn")  ? curOut : defArr;
+            prop.setTemporalEaseAtKey(ki, inArr, outArr);
+        }
+    } catch (easeErr) {}
+}
+
+// Internal: apply a motion recipe to one layer. Returns per-layer result object.
+// Called directly from applyMotionRecipe — NOT through dispatchCommand, to stay
+// inside the single outer undo group that dispatchCommand already opened.
+function _applyRecipeToLayer(layer, recipeName, t0, duration, opts) {
+    var easeType  = opts.easeType || "easyEase";
+    var bounce    = !!opts.bounce;
+    var intensity = (opts.intensity !== undefined) ? +opts.intensity : 1.0;
+    var overwrite = opts.overwriteKeyframes === true;
+    var fromArg   = opts.from;
+    var appliedKfs   = 0;
+    var exprsApplied = [];
+    var prevVals     = {};
+
+    function getTransformProp(name) {
+        var tf = layer.property("Transform");
+        return tf ? tf.property(name) : null;
+    }
+
+    // Set start + end keyframes on a property; respects overwriteKeyframes guard.
+    function applyTwoKeys(prop, name, startVal, endVal) {
+        if (!prop || !prop.canVaryOverTime) return;
+        try { prevVals[name] = prop.value; } catch (e) {}
+        if (overwrite) { while (prop.numKeys > 0) { prop.removeKey(1); } }
+        _recipeSetKey(prop, t0, startVal, easeType);
+        _recipeSetKey(prop, t0 + duration, endVal, easeType);
+        appliedKfs += 2;
+    }
+
+    // Build a native array from `source` with the same length as `template`.
+    function nativeArr(source) {
+        var out = [];
+        for (var i = 0; i < source.length; i++) { out[i] = +source[i]; }
+        return out;
+    }
+
+    if (recipeName === "popIn" || recipeName === "bounceIn" || recipeName === "scaleIn") {
+        if (recipeName === "bounceIn") { bounce = true; }
+        var scaleProp = getTransformProp("Scale");
+        if (scaleProp) {
+            var curSc  = scaleProp.value;
+            var zeroSc = [];
+            for (var si = 0; si < curSc.length; si++) { zeroSc[si] = (si < 2) ? 0 : +curSc[si]; }
+            applyTwoKeys(scaleProp, "Scale", zeroSc, nativeArr(curSc));
+            if (bounce) {
+                try { prevVals.ScaleExpression = scaleProp.expression || ""; } catch (e) {}
+                scaleProp.expression = _buildPresetExpression("INERTIAL_BOUNCE", { amp: 0.1 * intensity, freq: 2.5, decay: 4 });
+                exprsApplied.push("Scale: INERTIAL_BOUNCE");
+            }
+        }
+        if (recipeName !== "scaleIn") {
+            var opaProp = getTransformProp("Opacity");
+            if (opaProp) { applyTwoKeys(opaProp, "Opacity", 0, 100); }
+        }
+
+    } else if (recipeName === "popOut") {
+        var scaleProp = getTransformProp("Scale");
+        if (scaleProp) {
+            var curSc  = scaleProp.value;
+            var zeroSc = [];
+            for (var si = 0; si < curSc.length; si++) { zeroSc[si] = (si < 2) ? 0 : +curSc[si]; }
+            applyTwoKeys(scaleProp, "Scale", nativeArr(curSc), zeroSc);
+        }
+        var opaProp = getTransformProp("Opacity");
+        if (opaProp) { applyTwoKeys(opaProp, "Opacity", 100, 0); }
+
+    } else if (recipeName === "fadeIn") {
+        var opaProp = getTransformProp("Opacity");
+        if (opaProp) { applyTwoKeys(opaProp, "Opacity", 0, 100); }
+
+    } else if (recipeName === "fadeOut") {
+        var opaProp = getTransformProp("Opacity");
+        if (opaProp) { applyTwoKeys(opaProp, "Opacity", 100, 0); }
+
+    } else if (recipeName === "slideIn" || recipeName === "slideOut") {
+        var posProp = getTransformProp("Position");
+        if (posProp) {
+            var curPos = posProp.value;
+            var offset = fromArg;
+            if (!offset) {
+                offset = [-200 * intensity, 0, 0];
+            } else if (typeof offset === "string") {
+                try { offset = eval("(" + offset + ")"); } catch (e2) {}
+            }
+            var offPos = [];
+            for (var oi = 0; oi < curPos.length; oi++) {
+                offPos[oi] = +curPos[oi] + (offset[oi] !== undefined ? +offset[oi] : 0);
+            }
+            if (recipeName === "slideIn") {
+                applyTwoKeys(posProp, "Position", offPos, nativeArr(curPos));
+            } else {
+                applyTwoKeys(posProp, "Position", nativeArr(curPos), offPos);
+            }
+        }
+
+    } else if (recipeName === "wiggle") {
+        var posProp = getTransformProp("Position");
+        if (posProp) {
+            try { prevVals.PositionExpression = posProp.expression || ""; } catch (e) {}
+            posProp.expression = _buildPresetExpression("WIGGLE", { freq: 3, amp: 25 * intensity });
+            exprsApplied.push("Position: WIGGLE");
+        }
+    }
+
+    return {
+        layerIndex:          layer.index,
+        layerName:           layer.name,
+        startTime:           t0,
+        keyframesAdded:      appliedKfs,
+        expressionsApplied:  exprsApplied,
+        previousValues:      prevVals
+    };
+}
+
+// C/U: applyMotionRecipe — apply a named motion recipe to an array of layers with optional stagger.
+// One call can animate 20+ layers with cascading delays; all mutations run inside the single
+// outer undo group opened by dispatchCommand, so one ⌘Z reverts the entire call.
+function applyMotionRecipe(args) {
+    try {
+        var comp = _resolveComp(args);
+
+        var recipe = args.recipe;
+        if (!recipe || !_VALID_RECIPES[recipe]) {
+            throw _err(ERROR_CODES.INVALID_ARGS,
+                "Unknown recipe: '" + recipe + "'. Valid: popIn, popOut, fadeIn, fadeOut, slideIn, slideOut, scaleIn, bounceIn, wiggle");
+        }
+
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+
+        var t0       = (args.startTime !== undefined && args.startTime !== null) ? +args.startTime : 0;
+        var duration = (args.duration  !== undefined && args.duration  !== null) ? +args.duration  : 0.5;
+        var stagger  = (args.stagger   !== undefined && args.stagger   !== null) ? +args.stagger   : 0;
+
+        if (duration <= 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "duration must be > 0.");
+        }
+
+        var lastStart = t0 + (layerIndices.length - 1) * stagger;
+        if (lastStart + duration > comp.duration + 0.001) {
+            throw _err(ERROR_CODES.TIME_OUT_OF_RANGE,
+                "Recipe extends to " + (lastStart + duration).toFixed(3) + "s, exceeding comp duration " + comp.duration.toFixed(3) + "s.");
+        }
+
+        var opts = {
+            easeType:           args.ease || "easyEase",
+            bounce:             !!args.bounce,
+            intensity:          (args.intensity !== undefined) ? +args.intensity : 1.0,
+            overwriteKeyframes: args.overwriteKeyframes === true,
+            from:               args.from
+        };
+
+        var results = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) {
+                throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            }
+            var layer   = comp.layer(idx);
+            var layerT0 = t0 + i * stagger;
+            results.push(_applyRecipeToLayer(layer, recipe, layerT0, duration, opts));
+        }
+
+        return JSON.stringify({
+            status:        "success",
+            recipe:        recipe,
+            layersAffected: results.length,
+            results:       results
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {

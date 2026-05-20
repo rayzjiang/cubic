@@ -64,6 +64,10 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
 - [x] **opus testing audit v4 - opusplan + fix those**
 - [x] **implement test coverage for opus scripting audit v4**
 - [x] **impl tools + testing for 3rd party plugin features (gemini breakdown)**
+- [x] **impl applyMotionRecipe + distributeLayers3D (macro commands for complex multi-layer scenes)**
+    - applyMotionRecipe: popIn/popOut/fadeIn/fadeOut/slideIn/slideOut/scaleIn/bounceIn/wiggle; layerIndices[] + stagger
+    - distributeLayers3D: cylinder (tunnel) + grid; backend computes XYZ so LLM doesn't do geometry
+    - Tests added to animation.mjs + layers.mjs
 - [ ] ^^After above 3 are done, move onto Phase 2
 
 ## Phase 1
