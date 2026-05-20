@@ -1,5 +1,5 @@
 # CLAUDE.md
-Be sure to keep Claude.md file less than 150 lines (or less if possible), always try to keep things concise but meaningful
+Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
 > **End goal:** Motion Copilot — an AI agent that lives in After Effects and writes animations natively, like GitHub Copilot but for video. See [`docs/PRD.md`](../../docs/PRD.md) for the full vision.
 
