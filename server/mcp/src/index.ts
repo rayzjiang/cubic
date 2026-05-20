@@ -251,16 +251,6 @@ server.registerTool(
 );
 
 server.registerTool(
-  "getResults",
-  {
-    description: "[DEPRECATED] Results are now returned synchronously by each tool. Returns the last cached result for backwards compatibility."
-  },
-  async () => ({
-    content: [{ type: "text", text: bridge.lastResult || JSON.stringify({ status: "no_result", message: "No result cached yet. Tools now return results directly." }) }]
-  })
-);
-
-server.registerTool(
   "getHelp",
   { description: "Get help and available commands for the After Effects MCP integration" },
   async () => ({
@@ -280,12 +270,12 @@ All commands are invoked via \`runScript({ script, parameters })\` or wrapped in
 
 **Compositions:** getProjectInfo, listCompositions, getCompositionInfo, createComposition, setCompositionProperties, deleteComposition, duplicateComposition (deep:true recursively duplicates all nested pre-comps)
 **Playhead:** getCurrentTime, setCurrentTime
-**Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (use \`type\` field: text|shape|solid|adjustment|null|camera|light), duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
+**Layers:** getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (single entry point — use \`type\` field: text|shape|solid|adjustment|null|camera|light), duplicateLayer, setLayerProperties, batchSetLayerProperties, setLayerParent, moveLayer, deleteLayer
 **Layer time ops:** splitLayer, mergeLayer (inverse of splitLayer), trimLayer (inPoint/outPoint/startTime/mode)
 **Anchor & Alignment:** setAnchorPoint (position: TOP_LEFT|TOP_CENTER|TOP_RIGHT|MIDDLE_LEFT|CENTER|MIDDLE_RIGHT|BOTTOM_LEFT|BOTTOM_CENTER|BOTTOM_RIGHT; preserves layer position), centerAnchorPoint (alias for CENTER), alignLayers (alignment: LEFT|HORIZONTAL_CENTER|RIGHT|TOP|VERTICAL_CENTER|BOTTOM; reference: COMPOSITION|SELECTION), sequenceLayers (stagger inPoints; orderType: TOP_DOWN|BOTTOM_UP|RANDOM)
 **Nesting / Mattes:** precompose, decomposeLayer (inverse of precompose), setTrackMatte
 **Shape Operators:** addShapeOperator (type: trimPaths|repeater|roundedCorners|gradientFill|gradientStroke), setShapeOperatorProperty, convertToShape (text→shapes or vector→shapes via menu command; may be CEP-gated)
-**Text:** createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector, explodeTextLayer (splitMethod: CHARACTERS|WORDS|LINES; animator-mask preserves kerning/layout)
+**Text:** createLayer({type:"text"}), addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector, explodeTextLayer (splitMethod: CHARACTERS|WORDS|LINES; animator-mask preserves kerning/layout)
 **Property Reads/Writes:** getLayerProperty, setLayerProperty (path-based — address any nested property, e.g. ['Contents','Group 1','Stroke 1','Color'])
 **Keyframes:** getLayerKeyframes (includes inTemporalEase/outTemporalEase/spatial tangents), setLayerKeyframe, setKeyframeEasing, setKeyframeSpatial, copyKeyframeEasing (copy easing curve between layers without changing values), removePropertyKeyframes
 **Expressions:** getLayerExpressions, setLayerExpression (expressionString or preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG with optional presetParams)
@@ -320,57 +310,6 @@ server.registerTool(
   "runBridgeTest",
   { description: "Run the bridge test to verify MCP ↔ After Effects communication" },
   async () => dispatchTool("getProjectInfo", {}, 10000)
-);
-
-server.registerTool(
-  "testAnimation",
-  {
-    description: "Test animation functionality by writing a one-shot script file to run manually in After Effects",
-    inputSchema: {
-      operation: z.enum(["keyframe", "expression"]).describe("The animation operation to test"),
-      compIndex: z.number().int().positive().describe("Composition index (usually 1)"),
-      layerIndex: z.number().int().positive().describe("Layer index (usually 1)")
-    }
-  },
-  async (params) => {
-    try {
-      const timestamp = new Date().getTime();
-      const tempFile = path.join(os.tmpdir(), `ae_test_${timestamp}.jsx`);
-
-      let scriptContent = "";
-      if (params.operation === "keyframe") {
-        scriptContent = `
-          try {
-            var comp = app.project.items[${params.compIndex}];
-            var layer = comp.layers[${params.layerIndex}];
-            var prop = layer.property("Transform").property("Opacity");
-            prop.setValueAtTime(1, 25);
-            alert("Test successful: Added opacity keyframe at 1s with value 25%");
-          } catch (e) { alert("Test failed: " + e.toString()); }
-        `;
-      } else if (params.operation === "expression") {
-        scriptContent = `
-          try {
-            var comp = app.project.items[${params.compIndex}];
-            var layer = comp.layers[${params.layerIndex}];
-            layer.property("Transform").property("Position").expression = "wiggle(3, 30)";
-            alert("Test successful: Added wiggle expression to Position");
-          } catch (e) { alert("Test failed: " + e.toString()); }
-        `;
-      }
-
-      fs.writeFileSync(tempFile, scriptContent);
-
-      return {
-        content: [{
-          type: "text",
-          text: `Test script written. Run it manually in After Effects:\nFile > Scripts > Run Script File… → ${tempFile}`
-        }]
-      };
-    } catch (error) {
-      return { content: [{ type: "text", text: `Error creating test script: ${String(error)}` }], isError: true };
-    }
-  }
 );
 
 
