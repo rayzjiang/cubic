@@ -358,6 +358,8 @@ Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:17923`, receive
 
 # Possible Improvements
 
+**Top improvements based on better MVP/leverage:** 12, 11, 13, 22, 21, 19, 20, 17, 3, 1, 5 (audio)
+
 Ordered roughly by leverage. None are blockers for Phase 2 — these are the things worth picking up opportunistically.
 
 ### Surface cleanup
@@ -368,23 +370,28 @@ Ordered roughly by leverage. None are blockers for Phase 2 — these are the thi
 
 ### Capability gaps worth considering
 5. **Audio support** — no commands for audio levels, audio keyframes, or `valueAtTime`-based audio-reactive expressions. Out of MVP scope per the PRD, but worth flagging if SaaS launch videos ever need beat sync.
-6. **Render queue / export** — explicitly out of scope per PRD §6, but if the agent ever needs to ship a final MP4, you'd add `addToRenderQueue` + `startRender`.
+6. **Render queue / export** — explicitly out of scope per PRD §6, but if the agent ever needs to ship a final MP4, you'd add `addToRenderQueue` + `startRender`. If web-embedded launch videos ever become a target, add a Bodymovin/Lottie export path here too (`.json` out for direct web playback).
 7. **Layer styles** (vs. effects) — drop shadow / inner glow / bevel as native layer styles, not effects. Currently the agent reaches these via the Effects panel equivalents, which is functionally fine but stylistically different.
 8. **Essential Graphics / Master Properties** — exposing controls to the EGP would let the agent build reusable templates. Post-MVP territory.
 9. **Find/replace text across layers** — useful for one-shot brand swaps; currently doable via `getLayerInfo` + `setLayerProperties` but a single helper would save tokens.
 10. **Composition flowchart introspection** — list comp-of-comp dependencies. Useful for "this comp is used in 3 other comps, are you sure you want to delete it?" agent flows.
+11. **Merge Paths shape operator** — add `mergePaths` (matchName `ADBE Vector Filter - Merge`) to the `addShapeOperator` type list alongside `trimPaths` / `repeater` / `roundedCorners`. Enables liquid/metaball-style circle merging in scene transitions without the four-call Composite + Blobbylize workaround. ~30 min of handler work.
+12. **Vertex-count-aware path generator** — helper like `convertToParametricPath({shape, vertexCount})` that emits a Bezier path with a caller-specified vertex count for AE's parametric shapes (ellipse, rect, rounded rect, polygon). Required for *reliable* shape morphing — without matching topology between morph endpoints AE picks a default interpolation and produces a teleport, not a morph. Turns "shape morphs are theoretically possible via `setLayerKeyframe`" into "shape morphs are first-class."
+13. **`setMaskKeyframe`** — `setLayerMask` writes vertices/tangents but it's a `set`, not a keyframe writer. Animated mask reveals (logo draw-on, animated iris, hand-tuned mask transitions) currently route through generic `setLayerProperty` against the Mask Path property, which is fragile and easy to get wrong. A dedicated `setMaskKeyframe` mirroring `setLayerKeyframe` would close the gap.
+14. **Stop-color scripting on shape gradients** — known AE scripting limitation (documented in §5). Workaround is the Gradient Ramp effect, which covers ~95% of cases. Worth tracking in case a future AE release lifts the restriction.
+15. **Puppet pin / mesh-warp** — squash-and-stretch ball deformation on impact, organic character-style motion. CEP-gated and finicky; recommend faking via anchor-at-bottom + non-uniform Scale keyframes for the squish, which is what most designers do in practice anyway. Listed here so we have a deliberate "not building this" record, not because it should be built.
 
 ### Performance / DX
-11. **Batch streaming results** — currently `batch` returns one consolidated response. For long batches a streaming protocol would surface partial progress to the agent.
-12. **Selective field reads** — `getLayerInfo` returns everything; a `fields?` parameter would let the agent pull only what it needs (token savings on big comps).
-13. **Server-side caching of getProjectInfo / listCompositions** — invalidate on any mutation. Reduces redundant WS round-trips during a turn.
+16. **Batch streaming results** — currently `batch` returns one consolidated response. For long batches a streaming protocol would surface partial progress to the agent.
+17. **Selective field reads** — `getLayerInfo` returns everything; a `fields?` parameter would let the agent pull only what it needs (token savings on big comps).
+18. **Server-side caching of getProjectInfo / listCompositions** — invalidate on any mutation. Reduces redundant WS round-trips during a turn.
 
 ### Safety / observability
-14. **Pre-mutation snapshot** — autosave the project (or write a sidecar `.json` of all mutated state) before each turn so the user has a last-known-good even if undo history is overwhelmed. Mentioned in TODO as Phase 2/3.
-15. **Mutation log** — append a per-turn JSONL of every command + previousValues to `~/.cubic/log/`. Powers Cubic's own undo viewer in the Phase 4 panel.
-16. **Structured warnings** — handlers occasionally encounter non-fatal weirdness (e.g. effect applied but a property name didn't match). Right now they succeed silently. Returning `{ status: "ok", warnings: [...] }` would give the self-healing loop more to chew on.
+19. **Pre-mutation snapshot** — autosave the project (or write a sidecar `.json` of all mutated state) before each turn so the user has a last-known-good even if undo history is overwhelmed. Mentioned in TODO as Phase 2/3.
+20. **Mutation log** — append a per-turn JSONL of every command + previousValues to `~/.cubic/log/`. Powers Cubic's own undo viewer in the Phase 4 panel.
+21. **Structured warnings** — handlers occasionally encounter non-fatal weirdness (e.g. effect applied but a property name didn't match). Right now they succeed silently. Returning `{ status: "ok", warnings: [...] }` would give the self-healing loop more to chew on.
 
 ### Future expressions / motion library
-17. **Expanded preset library** — beyond the 8 current presets: `SPRING`, `SETTLE`, `ROTATION_DECAY`, `SCALE_BREATHE`, `RANDOM_OFFSET`. Likely lives as system prompt content rather than handler code (per TODO Phase 2 note).
-18. **`applyMotionRecipe`** — ✅ Implemented. See §8 "Recipes (macro)".
-19. **`distributeLayers3D`** — ✅ Implemented. See §4 "Spatial".
+22. **Expanded preset library** — beyond the 8 current presets: `SPRING`, `SETTLE`, `ROTATION_DECAY`, `SCALE_BREATHE`, `RANDOM_OFFSET`. Likely lives as system prompt content rather than handler code (per TODO Phase 2 note).
+23. **`applyMotionRecipe`** — ✅ Implemented. See §8 "Recipes (macro)".
+24. **`distributeLayers3D`** — ✅ Implemented. See §4 "Spatial".
