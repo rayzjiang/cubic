@@ -1,69 +1,102 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import * as path from "path";
-import { fileURLToPath } from "url";
+import { WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Resolves to server/mcp/build/index.js regardless of cwd
-// esbuild bundles everything into build/index.js, so __dirname = server/ai/build
-const MCP_SERVER_PATH = path.resolve(__dirname, "../../mcp/build/index.js");
+// wsBridge.ts writes the actual bound port here, but the file can be stale if a
+// manually-started instance overwrote it and then died. We try the file's port first,
+// then scan the fallback range that bindWithFallback uses (17923–17927).
+const PORT_FILE = path.join(os.homedir(), '.ae-mcp-bridge', 'port');
+const PORT_SCAN_RANGE = [17923, 17924, 17925, 17926, 17927];
+
+function candidatePorts(): number[] {
+  try {
+    const filePort = parseInt(fs.readFileSync(PORT_FILE, 'utf8').trim(), 10);
+    if (filePort) return [filePort, ...PORT_SCAN_RANGE.filter(p => p !== filePort)];
+  } catch { /* no file — start with defaults */ }
+  return PORT_SCAN_RANGE;
+}
+
+function tryConnect(port: number): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    ws.once('open', () => resolve(ws));
+    ws.once('error', () => reject());
+  });
+}
+
+async function findBridge(): Promise<WebSocket> {
+  for (const port of candidatePorts()) {
+    try {
+      return await tryConnect(port);
+    } catch { /* try next port */ }
+  }
+  throw new Error(
+    `Could not connect to AE WS bridge on any of ${PORT_SCAN_RANGE.join(', ')} — ` +
+    'is Claude Code running with the MCP server enabled?'
+  );
+}
+
+interface PendingEntry {
+  resolve: (v: unknown) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 export class McpClient {
-  private client: Client | null = null;
+  private ws: WebSocket | null = null;
   private connecting: Promise<void> | null = null;
+  private pending = new Map<string, PendingEntry>();
 
   async connect(): Promise<void> {
-    if (this.client) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return;
     if (this.connecting) return this.connecting;
 
     this.connecting = (async () => {
-      const transport = new StdioClientTransport({
-        command: "node",
-        args: [MCP_SERVER_PATH],
-        env: process.env as Record<string, string>,
-      });
-      const c = new Client({ name: "cubic-ai", version: "0.1.0" }, { capabilities: {} });
-      await c.connect(transport);
-      this.client = c;
+      const ws = await findBridge();
+      this.ws = ws;
+      ws.on('message', (data) => {
+          let msg: { id: string; ok: boolean; result?: string; error?: string };
+          try { msg = JSON.parse(data.toString()); } catch { return; }
+          const entry = this.pending.get(msg.id);
+          if (!entry) return;
+          this.pending.delete(msg.id);
+          clearTimeout(entry.timer);
+          if (msg.ok) {
+            let parsed: unknown;
+            try { parsed = JSON.parse(msg.result!); } catch { parsed = msg.result; }
+            entry.resolve(parsed);
+          } else {
+            entry.reject(new Error(msg.error ?? 'Unknown bridge error'));
+          }
+        });
+      ws.on('close', () => { this.ws = null; });
+      ws.on('error', () => { this.ws = null; });
     })();
 
     await this.connecting;
     this.connecting = null;
   }
 
-  async callRunScript(script: string, parameters: Record<string, unknown> = {}): Promise<unknown> {
+  // Sends { id, command, args } — handled by routeExternalCommand() in wsBridge.ts
+  async callRunScript(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
     await this.connect();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await this.client!.callTool({
-      name: "runScript",
-      arguments: { script, parameters },
+    const id = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Command "${command}" timed out after 10s — AE may be busy`));
+      }, 10000);
+      this.pending.set(id, { resolve, reject, timer });
+      this.ws!.send(JSON.stringify({ id, command, args }));
     });
-
-    const textBlock = (result.content as Array<{ type: string; text?: string }>).find(
-      (b) => b.type === "text"
-    ) as { type: "text"; text: string } | undefined;
-    if (!textBlock) throw new Error(`runScript(${script}): no text content in response`);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(textBlock.text);
-    } catch {
-      throw new Error(`runScript(${script}): response is not JSON — ${textBlock.text.slice(0, 200)}`);
-    }
-
-    if (result.isError) {
-      const p = parsed as Record<string, unknown>;
-      throw new Error(`runScript(${script}) error [${p.errorCode ?? "UNKNOWN"}]: ${p.message ?? textBlock.text}`);
-    }
-
-    return parsed;
   }
 
   async disconnect(): Promise<void> {
-    if (this.client) {
-      await this.client.close();
-      this.client = null;
-    }
+    for (const { timer } of this.pending.values()) clearTimeout(timer);
+    this.pending.clear();
+    this.ws?.close();
+    this.ws = null;
   }
 }
 
