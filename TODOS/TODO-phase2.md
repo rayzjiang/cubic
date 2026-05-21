@@ -1,6 +1,5 @@
 ## Phase 2
-- [ ] Context pipeline
-    - [ ] x
+- [x] Context pipeline
 - [ ] System prompt
 - [ ] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop
