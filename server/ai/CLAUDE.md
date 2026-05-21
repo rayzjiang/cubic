@@ -4,8 +4,8 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 > **Scope:** Claude API backend + agent brain. Consumes the MCP server (`server/mcp/`) as a programmatic client. Does NOT modify any MCP or CEP code.
 
 ## Phase 2 build order (this module)
-1. **Context pipeline** ← you are here: fetch live AE state before every Claude call
-2. System prompt assembly
+1. ✅ **Context pipeline** — fetch live AE state before every Claude call
+2. ✅ **System prompt assembly** — LLM wrapper + buildSystemPrompt()
 3. Tool schema registration (Claude tool use)
 4. State machine / agent loop + self-healing
 
@@ -36,6 +36,9 @@ Final assembled system prompt: `[Static Global System Rules]\n\n<live_ae_state>�
 - All AE handler commands route through `runScript` — do not call individual typed MCP tools directly (per `server/mcp/CLAUDE.md`).
 - For more than one command in the same turn, use `batch` — not multiple `runScript` calls.
 - Use `SessionCache` for slow-changing state (`getProjectInfo`, `listCompositions`). Call `cache.invalidate()` after any mutation turn.
+
+## LLM wrapper rule
+All Claude API calls go through `llm` (from `src/llm/`). Never import `@anthropic-ai/sdk` directly elsewhere — `src/llm/anthropic.ts` is the sole chokepoint that enables multi-provider support later.
 
 ## Context pipeline (per turn)
 Per-turn volatile fetches (run in parallel): `getSelectedLayers`, `getCurrentTime`

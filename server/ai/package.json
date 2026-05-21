@@ -10,9 +10,11 @@
     "start": "node build/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:live": "node tests/context-live.mjs"
+    "test:live": "node tests/context-live.mjs",
+    "test:chat": "node tests/chat-live.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.55.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {

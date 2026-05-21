@@ -7,7 +7,7 @@ Phase 4 (After effects panel UI)
 Phase 5 (Post MVP stuff?)
 
 ---
-# Distribution steps
+# Distribution steps (post mvp)
 1. Obfuscation (meaningful protection, not foolproof)
     - Run javascript-obfuscator on the bundled JSX + compiled MCP server before distribution
     - Makes casual reading/copying painful; deters 95% of people
@@ -17,6 +17,8 @@ Phase 5 (Post MVP stuff?)
     - Tools like pkg or nexe bundle Node.js + your JS into a single executable
     - Much harder to reverse engineer than plain JS
     - This is actually realistic for your MCP server specifically
+
+---
 
 # post mvp (hot swappable models)
 Do later. Design for it now by keeping all LLM calls behind a single wrapper (one file to change).
@@ -34,7 +36,7 @@ adapter interface — NOT Vercel AI SDK. Reason: need direct access to provider-
 
 For MVP: implement AnthropicProvider only. Add others when needed.
 
-# post mvp (billing)
+# somewhat post mvp (billing/usage limiting)
 Model: you own ONE Anthropic API key. All user requests go through your key — you pay Anthropic's
 bill. Users pay you via Stripe monthly subscription. Margin = what you charge - what Anthropic charges.
 
