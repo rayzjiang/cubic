@@ -84,6 +84,9 @@ export async function run(ctx, opts) {
     if (!existsSync(r.path)) throw new Error(`PNG file missing: ${r.path}`);
     const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
     const buf = readFileSync(r.path);
+    if (buf.length < PNG_MAGIC.length) {
+      throw new Error(`PNG file is ${buf.length} bytes — AE render pipeline did not flush. Path: ${r.path}`);
+    }
     for (let i = 0; i < PNG_MAGIC.length; i++) {
       if (buf[i] !== PNG_MAGIC[i]) {
         throw new Error(`PNG header byte ${i} = 0x${buf[i].toString(16).padStart(2, '0')}, expected 0x${PNG_MAGIC[i].toString(16).padStart(2, '0')}`);

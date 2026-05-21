@@ -41,12 +41,36 @@ async function dispatchTool(command: string, args: object, timeoutMs = 10000): P
     }
     const contentBlocks: any[] = [{ type: "text", text: raw }];
     if (command === "saveFrameToPng" && parsed?.path) {
+      let buf: Buffer | undefined;
       try {
-        const buf = fs.readFileSync(parsed.path);
-        contentBlocks.push({ type: "image", data: buf.toString("base64"), mimeType: "image/png" });
-      } catch (e) {
-        // File missing — fall through with text-only; structuredContent carries the path
+        buf = fs.readFileSync(parsed.path);
+      } catch (e: any) {
+        return {
+          content: contentBlocks,
+          isError: true,
+          structuredContent: {
+            ok: false,
+            errorCode: "RENDER_FAILED",
+            message: `PNG file not readable at ${parsed.path}: ${e?.message ?? String(e)}`,
+            command
+          }
+        };
       }
+      const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      const validPng = buf.length >= PNG_MAGIC.length && PNG_MAGIC.every((b, i) => buf![i] === b);
+      if (!validPng) {
+        return {
+          content: contentBlocks,
+          isError: true,
+          structuredContent: {
+            ok: false,
+            errorCode: "RENDER_FAILED",
+            message: `AE wrote an invalid or empty PNG to ${parsed.path} (${buf.length} bytes) — the render pipeline likely did not flush before returning. Try again.`,
+            command
+          }
+        };
+      }
+      contentBlocks.push({ type: "image", data: buf.toString("base64"), mimeType: "image/png" });
     }
     return { content: contentBlocks, structuredContent: { ok: true, command, result: parsed } };
   } catch (e: any) {
