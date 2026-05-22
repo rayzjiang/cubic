@@ -6,8 +6,9 @@ Do a comprehensive analysis of the scripts, analyze the @server/mcp/tests/ to ma
 
 - [x] Critical: migrate mcp architecture to CEP extension instead of nonstop 2 second polling + file reading
 - [x] Wrap each command in an undo group
-    - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command, Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
-- [ ] Finish MCP functionality - Identify potential missing functionality that I would need for my product
+    - [ ] **Note: will eventually need to add: Maybe Autosaving before it runs (for easy revert), wrapping each ai agent call into an undo group instead of each command
+    - [ ] Maybe Cubic only undo history/viewer/dedicated keybind (to be done in ui step)
+- [x] Finish MCP functionality - Identify potential missing functionality that I would need for my product
     - [x] see "*missing mcp feat overview claude code chat"
         - [x] Impl + add testing for tier 1 — motion vocabulary blockers
             - precompose, adjustment layer, track matte, Trim Paths operator, Repeater + Rounded Corners, text animators (per-character), getLayerProperty (read any nested prop)
