@@ -19,6 +19,10 @@ Phase 5 (Post MVP stuff?)
     - This is actually realistic for your MCP server specifically
 
 ---
+# somewhat post mvp, maybe during (billing/usage limiting)
+- System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
+- Take inspo from good looking after effects youtube video tutorials
+- Maybe inspo from gaming montages as well? (since those are usually edited well)
 
 # post mvp (hot swappable models)
 Do later. Design for it now by keeping all LLM calls behind a single wrapper (one file to change).
