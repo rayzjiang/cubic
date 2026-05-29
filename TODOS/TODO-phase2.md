@@ -2,8 +2,8 @@
 - [x] Context pipeline
 - [ ] System prompt + ai agent sdk/llm wrapper setup (anthropic for now)
     - [x] build system prompt
-    - [ ] add anthropic API key
-    - [ ] Test to make sure it works
+    - [x] add anthropic API key
+    - [x] Test to make sure it works
 - [ ] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop
     - [ ] Autosave project before agent run (easy revert point)
