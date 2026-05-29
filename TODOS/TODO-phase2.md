@@ -1,7 +1,8 @@
 ## Phase 2
 - [x] Context pipeline
 - [ ] System prompt + ai agent sdk/llm wrapper setup (anthropic for now)
-    - [ ] add anthropic API key + system prompt
+    - [x] build system prompt
+    - [ ] add anthropic API key
     - [ ] Test to make sure it works
 - [ ] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop
