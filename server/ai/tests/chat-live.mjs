@@ -5,6 +5,7 @@
 //
 // Costs a fraction of a cent per run (two Haiku 4.5 API calls).
 
+import 'dotenv/config';
 import { buildContext, buildSystemPrompt, getLLM } from '../build/index.js';
 
 const llm = getLLM();
