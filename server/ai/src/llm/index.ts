@@ -6,4 +6,4 @@ export function getLLM(): LLMProvider {
   return (_llm ??= new AnthropicProvider());
 }
 export { AnthropicProvider } from './anthropic.js';
-export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk } from './types.js';
+export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolUse, ToolDefinition } from './types.js';

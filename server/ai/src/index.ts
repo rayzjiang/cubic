@@ -7,6 +7,8 @@ export type { ProjectInfo, CompositionsList, CompositionSummary, SelectedLayer, 
 export { getSelectionDetails } from "./mcp/tools.js";
 
 export { getLLM, AnthropicProvider } from "./llm/index.js";
-export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk } from "./llm/index.js";
+export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolUse, ToolDefinition } from "./llm/index.js";
 export { buildSystemPrompt } from "./prompt/buildSystemPrompt.js";
 export { STATIC_RULES } from "./prompt/rules.js";
+export { AE_TOOLS, COMMAND_NAMES } from "./tools/definitions.js";
+export type { CommandName } from "./tools/definitions.js";

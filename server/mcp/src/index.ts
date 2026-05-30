@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import { z } from "zod";
 import { bridge, BridgeError } from "./bridge/wsBridge.js";
+import { COMMANDS } from "./commands.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
@@ -190,84 +191,9 @@ server.registerTool(
     }
   },
   async ({ script, parameters = {} }) => {
-    const allowedScripts = [
-      "listCompositions",
-      "getProjectInfo",
-      "getCompositionInfo",
-      "getLayerInfo",
-      "createComposition",
-      "setLayerProperties",
-      "setLayerKeyframe",
-      "setLayerExpression",
-      "getLayerEffects",
-      "applyEffect",
-      "applyEffectTemplate",
-      "setEffectProperty",
-      "deleteEffect",
-      "setLayerParent",
-      "batchSetLayerProperties",
-      "setCompositionProperties",
-      "deleteComposition",
-      "deleteUnusedSolids",
-      "duplicateLayer",
-      "deleteLayer",
-      "getLayerMasks",
-      "setLayerMask",
-      "deleteLayerMask",
-      "moveLayer",
-      "setKeyframeEasing",
-      "getLayerExpressions",
-      "getLayerKeyframes",
-      "removePropertyKeyframes",
-      "batch",
-      "getSelectedLayers",
-      "getSelectionDetails",
-      "listProjectItems",
-      "importFootage",
-      "addFootageToComp",
-      "deleteProjectItem",
-      "createLayer",
-      "precompose",
-      "setTrackMatte",
-      "addShapeOperator",
-      "setShapeOperatorProperty",
-      "addTextAnimator",
-      "setTextAnimatorProperty",
-      "setTextAnimatorRangeSelector",
-      "getLayerProperty",
-      "setLayerProperty",
-      "splitLayer",
-      "mergeLayer",
-      "trimLayer",
-      "setSelectedLayers",
-      "centerAnchorPoint",
-      "getCurrentTime",
-      "setCurrentTime",
-      "addMarker",
-      "listMarkers",
-      "updateMarker",
-      "removeMarker",
-      "getProjectPath",
-      "saveProject",
-      "saveFrameToPng",
-      "decomposeLayer",
-      "setTimeRemapEnabled",
-      "setKeyframeSpatial",
-      "setAnchorPoint",
-      "alignLayers",
-      "sequenceLayers",
-      "copyKeyframeEasing",
-      "explodeTextLayer",
-      "duplicateComposition",
-      "convertToShape",
-      "importAssetToComp",
-      "applyMotionRecipe",
-      "distributeLayers3D"
-    ];
-
-    if (!allowedScripts.includes(script)) {
+    if (!(COMMANDS as readonly string[]).includes(script)) {
       return {
-        content: [{ type: "text", text: `Error: "${script}" is not an allowed command. Allowed: ${allowedScripts.join(", ")}` }],
+        content: [{ type: "text", text: `Error: "${script}" is not an allowed command. Allowed: ${COMMANDS.join(", ")}` }],
         isError: true
       };
     }

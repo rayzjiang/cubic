@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { COMMANDS } from '../commands.js';
 
 export class BridgeError extends Error {
   code: string;
@@ -119,6 +120,12 @@ class AEBridge {
     callerWs: WebSocket,
     msg: { id: string; command: string; args: object }
   ): void {
+    // listCommands is resolved node-side — no round-trip to AE needed.
+    // server/ai calls this to drift-check its COMMAND_NAMES mirror.
+    if (msg.command === 'listCommands') {
+      callerWs.send(JSON.stringify({ id: msg.id, ok: true, result: JSON.stringify([...COMMANDS]) }));
+      return;
+    }
     this.sendCommand(msg.command, msg.args, 30000)
       .then(result => callerWs.send(JSON.stringify({ id: msg.id, ok: true, result })))
       .catch(err => callerWs.send(JSON.stringify({ id: msg.id, ok: false, error: String(err) })));
