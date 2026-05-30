@@ -8,7 +8,7 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 ## Phase 2 build order (this module)
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call
 2. ✅ **System prompt assembly** — `STATIC_RULES` (Motion Copilot prompt) + `buildSystemPrompt()`
-3. ⬜ **Tool schema registration** (Claude tool use — not wired into the LLM wrapper yet)
+3. ✅ **Tool schema registration** — zod schemas for `runScript`/`batch`/`createComposition`/`getHelp`; wired into `chat()`; `ChatResponse.toolUses[]`; content-block `Message` type
 4. ⬜ **State machine / agent loop + self-healing** — incl. autosave before a run (revert point) and wrapping a whole agent turn in one undo group
 
 See `../../TODOS/TODO-phase2.md` for the full checklist.
@@ -40,9 +40,9 @@ getLLM().chat() / .stream()   ← Anthropic SDK
 - `index.ts` — public barrel export.
 
 ## Bridge transport (McpClient)
-- Connects to the AE WS bridge at `ws://127.0.0.1:<port>`. Port discovery: read `~/.ae-mcp-bridge/port`, then fall back to scanning `17923–17927` (the bridge's `bindWithFallback` range). The port file can be stale, so the file's port is just tried first.
-- One shared `mcpClient` singleton per process; lazy `connect()` is idempotent and reused across concurrent callers.
-- `callRunScript(command, args)` sends `{ id, command, args }` — routed by `routeExternalCommand()` in `wsBridge.ts`. 10s per-command timeout. Results are JSON-parsed (falls back to raw string).
+- **How the bridge starts:** Claude Code spawns `server/mcp/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `McpClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
+- **`npm start` is NOT needed** when Claude Code is running — the bridge is already up. Run `npm start` only when running `server/ai` standalone outside Claude Code.
+- Port discovery: read `~/.ae-mcp-bridge/port`, then fall back to scanning `17923–17927`. `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
 - Requires AE open **with the MCP Bridge panel connected**; a bare bridge with no panel replies with empty/blank state.
 
 ## Context pipeline (per turn)
@@ -64,8 +64,10 @@ The model drives AE through a small parameterized tool set, **not** one tool per
 - Note: this is the model's tool surface. The internal context pipeline still calls typed reads directly via `callRunScript`.
 
 ## Tests
-- Unit (vitest): `npm test` — `format.test.ts`, `buildSystemPrompt.test.ts`.
-- Live smoke (need AE + MCP panel + `ANTHROPIC_API_KEY`): `npm run test:live` (context) and `npm run test:chat` (full LLM round-trip; uses Haiku 4.5, ~sub-cent/run).
+- `npm test` — unit tests (vitest), no deps needed.
+- `npm run test:tools` — tool-use round-trip; needs `ANTHROPIC_API_KEY` only, no AE (uses Haiku 4.5, ~sub-cent/run).
+- `npm run test:drift` — asserts `COMMAND_NAMES` matches `server/mcp`; needs Claude Code running (bridge already up), no AE panel needed.
+- `npm run test:live` / `npm run test:chat` — context + full LLM round-trip; need AE + MCP panel + `ANTHROPIC_API_KEY`.
 
 ## Engineering constraints
 Same as `server/mcp/CLAUDE.md`: no sleeps/polling, match existing style, no per-variant tool explosion.

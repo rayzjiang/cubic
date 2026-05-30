@@ -13,7 +13,7 @@ cubic/
 │   ├── ai/                  # Phase 2: Claude API backend / agent brain — empty placeholder
 │   └── mcp/                 # ← YOU ARE HERE (Phase 1.5)
 │       ├── src/
-│       │   ├── index.ts         # MCP server: tool/resource registration, allowedScripts list
+│       │   ├── index.ts         # MCP server: tool/resource registration (allowedScripts → COMMANDS from commands.ts)
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
 │       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
 │       │       ├── mcp-bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
@@ -35,7 +35,7 @@ npm run build:server   # Compile src/index.ts → build/index.js
 npm run build:plugin   # Bundle CEP extension → cep-extension/dist/
 npm run build          # Both of the above
 npm run install-plugin # Copy extension to Adobe CEP folder + enable PlayerDebugMode
-npm start              # Run the MCP server (WS bridge on 127.0.0.1:17923)
+npm start              # Run the MCP server standalone (not needed — Claude Code already spawns it)
 ```
 
 ## When to restart what
