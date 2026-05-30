@@ -873,6 +873,147 @@ function getSelectedLayers(args) {
     }
 }
 
+// R: getSelectionDetails — returns selected properties, values, expressions, and selected
+// keyframes for every highlighted property across all selected layers in the active comp.
+//
+// Uses comp.selectedLayers + downward tree walk (prop.selected) rather than
+// comp.selectedProperties + walk-up, because Layer.parent means the parenting relationship
+// (Parent & Link), not the property-hierarchy parent, making walk-up unreliable.
+function getSelectionDetails(args) {
+    var foundProps = []; // reused per layer; captured by collectSelected closure
+
+    function collectSelected(group, path) {
+        for (var i = 1; i <= group.numProperties; i++) {
+            var prop = group.property(i);
+            var propPath = path.concat([prop.name]);
+            if (prop.selected) {
+                foundProps.push({ prop: prop, path: propPath });
+            }
+            if (typeof prop.numProperties === "number" && prop.numProperties > 0) {
+                collectSelected(prop, propPath);
+            }
+        }
+    }
+
+    try {
+        var activeItem = (args && args.compName) ? _resolveComp(args) : app.project.activeItem;
+        if (!(activeItem instanceof CompItem)) {
+            return JSON.stringify({
+                status: "success",
+                activeComp: null,
+                layers: [],
+                count: 0,
+                message: "No active composition"
+            }, null, 2);
+        }
+
+        var MAX_PROPS_PER_LAYER = 10;
+        var MAX_EXPRESSION_CHARS = 2000;
+        var MAX_SELECTED_KEYS = 20;
+
+        var selectedLayersList = activeItem.selectedLayers;
+        if (!selectedLayersList || selectedLayersList.length === 0) {
+            return JSON.stringify({
+                status: "success",
+                activeComp: { name: activeItem.name, id: activeItem.id },
+                layers: [],
+                count: 0
+            }, null, 2);
+        }
+
+        var resultLayers = [];
+
+        for (var li = 0; li < selectedLayersList.length; li++) {
+            var layer = selectedLayersList[li];
+
+            foundProps = [];
+            collectSelected(layer, []);
+
+            if (foundProps.length === 0) continue;
+
+            var truncProps = 0, truncExprChars = 0, truncKeys = 0;
+            var propLimit = Math.min(foundProps.length, MAX_PROPS_PER_LAYER);
+            if (foundProps.length > MAX_PROPS_PER_LAYER) {
+                truncProps = foundProps.length - MAX_PROPS_PER_LAYER;
+            }
+
+            var propsOut = [];
+            for (var pi = 0; pi < propLimit; pi++) {
+                var pObj = foundProps[pi];
+                var p = pObj.prop;
+                var isGroup = (typeof p.numProperties === "number" && p.numProperties > 0);
+
+                var entry = { propertyPath: pObj.path };
+
+                if (!isGroup) {
+                    try { entry.value = p.value; } catch (e) {}
+
+                    if (p.canSetExpression && p.expressionEnabled && p.expression !== "") {
+                        var expr = p.expression;
+                        if (expr.length > MAX_EXPRESSION_CHARS) {
+                            var over = expr.length - MAX_EXPRESSION_CHARS;
+                            truncExprChars += over;
+                            entry.expression = expr.substring(0, MAX_EXPRESSION_CHARS) +
+                                "…[truncated, " + over + " more chars]";
+                        } else {
+                            entry.expression = expr;
+                        }
+                    }
+
+                    try {
+                        if (p.numKeys > 0) {
+                            var selKeys = p.selectedKeys;
+                            if (selKeys && selKeys.length > 0) {
+                                var keyLimit = Math.min(selKeys.length, MAX_SELECTED_KEYS);
+                                if (selKeys.length > MAX_SELECTED_KEYS) {
+                                    truncKeys += selKeys.length - MAX_SELECTED_KEYS;
+                                }
+                                var keysOut = [];
+                                for (var ki = 0; ki < keyLimit; ki++) {
+                                    var kIdx = selKeys[ki];
+                                    try {
+                                        keysOut.push({
+                                            keyIndex: kIdx,
+                                            time: p.keyTime(kIdx),
+                                            value: p.keyValue(kIdx)
+                                        });
+                                    } catch (ke) {}
+                                }
+                                entry.selectedKeys = keysOut;
+                            }
+                        }
+                    } catch (ke) {}
+                } else {
+                    entry.isGroup = true;
+                }
+
+                propsOut.push(entry);
+            }
+
+            if (propsOut.length === 0) continue;
+
+            var layerOut = { layerIndex: layer.index, selectedProperties: propsOut };
+            if (truncProps > 0 || truncExprChars > 0 || truncKeys > 0) {
+                var trunc = {};
+                if (truncProps > 0)     trunc.properties = truncProps;
+                if (truncExprChars > 0) trunc.expressionChars = truncExprChars;
+                if (truncKeys > 0)      trunc.keyframes = truncKeys;
+                layerOut._truncated = trunc;
+            }
+            resultLayers.push(layerOut);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            activeComp: { name: activeItem.name, id: activeItem.id },
+            layers: resultLayers,
+            count: resultLayers.length
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // U: setSelectedLayers — select layers by index or name; deselects all others by default
 function setSelectedLayers(args) {
     try {

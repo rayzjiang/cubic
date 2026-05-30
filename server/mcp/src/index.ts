@@ -221,6 +221,7 @@ server.registerTool(
       "removePropertyKeyframes",
       "batch",
       "getSelectedLayers",
+      "getSelectionDetails",
       "listProjectItems",
       "importFootage",
       "addFootageToComp",
