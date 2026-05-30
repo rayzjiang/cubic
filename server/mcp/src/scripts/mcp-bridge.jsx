@@ -172,7 +172,7 @@ var READ_ONLY_COMMANDS = {
     getProjectInfo: 1, listCompositions: 1, getLayerInfo: 1,
     getLayerKeyframes: 1, getLayerExpressions: 1,
     getLayerMasks: 1, getLayerEffects: 1,
-    getSelectedLayers: 1, listProjectItems: 1,
+    getSelectedLayers: 1, getSelectionDetails: 1, listProjectItems: 1,
     getLayerProperty: 1,
     listMarkers: 1, getCurrentTime: 1, getProjectPath: 1,
     getCompositionInfo: 1
@@ -209,6 +209,7 @@ function _dispatchSwitch(command, args) {
         // layers.jsx (core)
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
+        case "getSelectionDetails":      return getSelectionDetails(args);
         case "setSelectedLayers":        return setSelectedLayers(args);
         case "createLayer":              return createLayer(args);
         case "createSolidLayer":         return createSolidLayer(args);

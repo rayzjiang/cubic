@@ -27,14 +27,22 @@ export function formatStateForPrompt(state: LiveAEState): string {
 
   payload.selectedLayers =
     state.selectedLayers.length > 0
-      ? state.selectedLayers.map((l) => ({
-          index: l.index,
-          name: l.name,
-          type: l.type,
-          enabled: l.enabled,
-          threeDLayer: l.threeDLayer,
-          parent: l.parent,
-        }))
+      ? state.selectedLayers.map((l) => {
+          const base: Record<string, unknown> = {
+            index: l.index,
+            name: l.name,
+            type: l.type,
+            enabled: l.enabled,
+            threeDLayer: l.threeDLayer,
+            parent: l.parent,
+          };
+          // Only include selectedProperties when the user has highlighted props on this layer.
+          if (l.selectedProperties && l.selectedProperties.length > 0) {
+            base.selectedProperties = l.selectedProperties;
+            if (l._truncated) base._truncated = l._truncated;
+          }
+          return base;
+        })
       : [];
 
   return `<live_ae_state>\n${JSON.stringify(payload, null, 2)}\n</live_ae_state>`;

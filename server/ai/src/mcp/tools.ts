@@ -40,6 +40,33 @@ export interface CurrentTimeResult {
   message?: string;
 }
 
+export interface SelectedProperty {
+  propertyPath: string[];
+  isGroup?: true;
+  // Leaf-only fields (absent on groups):
+  value?: unknown;
+  expression?: string;
+  selectedKeys?: Array<{ keyIndex: number; time: number; value: unknown }>;
+}
+
+export interface SelectionDetailsLayer {
+  layerIndex: number;
+  selectedProperties: SelectedProperty[];
+  _truncated?: {
+    properties?: number;
+    expressionChars?: number;
+    keyframes?: number;
+  };
+}
+
+export interface SelectionDetailsResult {
+  status: "success";
+  activeComp: { name: string; id: number } | null;
+  layers: SelectionDetailsLayer[];
+  count: number;
+  message?: string;
+}
+
 export interface SelectedLayer {
   index: number;
   name: string;
@@ -49,6 +76,9 @@ export interface SelectedLayer {
   inPoint: number;
   outPoint: number;
   parent: { name: string; index: number } | null;
+  // Populated by buildContext() from getSelectionDetails (absent when no props are highlighted)
+  selectedProperties?: SelectedProperty[];
+  _truncated?: SelectionDetailsLayer["_truncated"];
 }
 
 export interface SelectedLayersResult {
@@ -73,4 +103,8 @@ export async function getCurrentTime(): Promise<CurrentTimeResult> {
 
 export async function getSelectedLayers(): Promise<SelectedLayersResult> {
   return mcpClient.callRunScript("getSelectedLayers") as Promise<SelectedLayersResult>;
+}
+
+export async function getSelectionDetails(): Promise<SelectionDetailsResult> {
+  return mcpClient.callRunScript("getSelectionDetails") as Promise<SelectionDetailsResult>;
 }
