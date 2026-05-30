@@ -6,6 +6,7 @@ const fullState: LiveAEState = {
   project: { name: 'demo.aep', itemCount: 10, compositionCount: 3 },
   activeComp: { name: 'Main', width: 1920, height: 1080, fps: 30, duration: 10, numLayers: 5 },
   playhead: 2.5,
+  frame: 75,
   selectedLayers: [{ index: 2, name: 'Logo', type: 'solid', enabled: true, threeDLayer: false, inPoint: 0, outPoint: 10, parent: null }],
 };
 
@@ -13,6 +14,7 @@ const nullState: LiveAEState = {
   project: null,
   activeComp: null,
   playhead: null,
+  frame: null,
   selectedLayers: [],
 };
 

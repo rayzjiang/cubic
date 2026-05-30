@@ -30,11 +30,20 @@ class AEBridge {
 
   async start(port: number): Promise<void> {
     const actualPort = await this.bindWithFallback(port, 5);
-    const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
-    try {
-      fs.mkdirSync(bridgeDir, { recursive: true });
-      fs.writeFileSync(path.join(bridgeDir, 'port'), String(actualPort), 'utf8');
-    } catch { /* non-fatal */ }
+    // Only the bridge that binds the requested primary port owns the shared port
+    // file. A fallback instance (primary port already taken by a still-running
+    // bridge) must NOT overwrite it — doing so points clients (server/ai) at a
+    // duplicate bridge that has no CEP panel connected, silently yielding empty
+    // AE state. See the PORT_FILE note in server/ai/src/mcp/client.ts.
+    if (actualPort === port) {
+      const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
+      try {
+        fs.mkdirSync(bridgeDir, { recursive: true });
+        fs.writeFileSync(path.join(bridgeDir, 'port'), String(actualPort), 'utf8');
+      } catch { /* non-fatal */ }
+    } else {
+      console.error(`WS bridge on fallback port ${actualPort} (primary ${port} in use) — not claiming shared port file`);
+    }
     console.error(`WS bridge listening on 127.0.0.1:${actualPort}`);
   }
 

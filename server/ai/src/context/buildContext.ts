@@ -14,6 +14,7 @@ export interface LiveAEState {
   project: { name: string; itemCount: number; compositionCount: number } | null;
   activeComp: ActiveComp | null;
   playhead: number | null;
+  frame: number | null;
   selectedLayers: SelectedLayer[];
 }
 
@@ -56,6 +57,7 @@ export async function buildContext(): Promise<LiveAEState> {
     project,
     activeComp,
     playhead: timeResult?.timeInSeconds ?? null,
+    frame: timeResult?.frame ?? null,
     selectedLayers: selectedResult?.selectedLayers ?? [],
   };
 }

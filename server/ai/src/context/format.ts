@@ -23,6 +23,7 @@ export function formatStateForPrompt(state: LiveAEState): string {
   }
 
   payload.playhead = state.playhead;
+  payload.frame = state.frame;
 
   payload.selectedLayers =
     state.selectedLayers.length > 0

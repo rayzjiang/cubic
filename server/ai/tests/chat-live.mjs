@@ -1,4 +1,4 @@
-// chat-live.mjs — manual smoke test for the full LLM round-trip
+// chat-live.mjs — manual smoke test for the full LLM round-trip (asks what is the current state of the AE project)
 //
 // Requires: ANTHROPIC_API_KEY set + After Effects open + MCP Bridge panel connected
 // Run: npm run test:chat
@@ -6,7 +6,7 @@
 // Costs a fraction of a cent per run (two Haiku 4.5 API calls).
 
 import 'dotenv/config';
-import { buildContext, buildSystemPrompt, getLLM } from '../build/index.js';
+import { buildContext, buildSystemPrompt, getLLM, mcpClient } from '../build/index.js';
 
 const llm = getLLM();
 const HAIKU = 'claude-haiku-4-5';
@@ -36,6 +36,34 @@ console.log(bold('\nChat Live (requires ANTHROPIC_API_KEY + AE + MCP panel)\n'))
 
 let systemPrompt;
 let state;
+
+// Preflight: assert we're actually talking to a panel-connected bridge BEFORE any
+// API calls. buildContext() swallows bridge errors into null (graceful degradation
+// for production), which silently turns "not connected" into an empty AE state and
+// makes the chat tests "pass" against a blank project. Here we call the raw client
+// directly so a disconnected/panel-less bridge fails loudly instead.
+await test('AE bridge is connected (panel attached)', async () => {
+  let info;
+  try {
+    info = await mcpClient.callRunScript('getProjectInfo');
+  } catch (e) {
+    throw new Error(
+      `cannot reach a panel-connected AE bridge: ${e.message}\n` +
+      `    → check 'lsof -nP -iTCP:17923-17927' for stray bridges and that ` +
+      `~/.ae-mcp-bridge/port points at the bridge the MCP Bridge panel is connected to`
+    );
+  }
+  assert(info && typeof info.projectName === 'string',
+    'bridge replied but without a project — panel likely not attached');
+  return `project "${info.projectName}", ${info.numItems} items`;
+});
+
+// Everything below is meaningless without a live bridge — bail loudly if preflight failed.
+if (!results[results.length - 1].ok) {
+  console.log(red('\nBridge preflight failed — skipping LLM round-trip tests.\n'));
+  await mcpClient.disconnect();
+  process.exit(1);
+}
 
 await test('buildContext() + buildSystemPrompt() produces a system prompt', async () => {
   state = await buildContext();
