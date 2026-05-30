@@ -6,7 +6,7 @@
     - [x] add anthropic API key
     - [x] Test to make sure it works
     - [ ] verify that the messages sent by the ai agent are somewhat along the lines of what claude code probably does (answer question/summary ish, makes changes + narration, concise summary of what was done + ends with next steps/short question or something)
-- [ ] Tool schema registration
+- [x] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop
     - [ ] make sure the ai agent is set up to narrate what its doing as it works (like claude code); doesn't just edit your project without saying anything and spits out stuff at the end
     - [ ] Autosave project before agent run (easy revert point)
