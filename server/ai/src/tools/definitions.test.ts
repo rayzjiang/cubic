@@ -3,13 +3,13 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { AE_TOOLS, COMMAND_NAMES } from './definitions.js';
 
 describe('AE_TOOLS', () => {
-  it('exports exactly 4 tools', () => {
-    expect(AE_TOOLS).toHaveLength(4);
+  it('exports exactly 3 tools (no getHelp — params are always in the catalog)', () => {
+    expect(AE_TOOLS).toHaveLength(3);
     const names = AE_TOOLS.map(t => t.name);
     expect(names).toContain('runScript');
     expect(names).toContain('batch');
     expect(names).toContain('createComposition');
-    expect(names).toContain('getHelp');
+    expect(names).not.toContain('getHelp');
   });
 
   it('every tool has a non-empty name and description', () => {

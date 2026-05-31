@@ -8,7 +8,7 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 ## Phase 2 build order (this module)
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call
 2. ✅ **System prompt assembly** — `STATIC_RULES` (Motion Copilot prompt) + `buildSystemPrompt()`
-3. ✅ **Tool schema registration** — zod schemas for `runScript`/`batch`/`createComposition`/`getHelp`; wired into `chat()`; `ChatResponse.toolUses[]`; content-block `Message` type
+3. ✅ **Tool schema registration** — zod schemas for `runScript`/`batch`/`createComposition` (no `getHelp` — see tool-surface rule); wired into `chat()`; `ChatResponse.toolUses[]`; content-block `Message` type
 4. ⬜ **State machine / agent loop + self-healing** — incl. autosave before a run (revert point) and wrapping a whole agent turn in one undo group
 
 See `../../TODOS/TODO-phase2.md` for the full checklist.
@@ -21,9 +21,10 @@ buildContext()          ← reads live AE state via the WS bridge (McpClient)
     ↓
 formatStateForPrompt()  ← wraps state in <live_ae_state>...</live_ae_state> XML block
     ↓
-buildSystemPrompt()     ← [STATIC_RULES] + <live_ae_state>…</live_ae_state>
+buildSystemPrompt()     ← { cached: STATIC_RULES + generated <command_catalog>,
+                            volatile: <live_ae_state>… }   (split for prompt caching)
     ↓
-getLLM().chat() / .stream()   ← Anthropic SDK
+getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_control)
     ↓
 (planned) agent loop: tool calls → bridge → AE → repeat
 ```
@@ -34,8 +35,10 @@ getLLM().chat() / .stream()   ← Anthropic SDK
 - `context/buildContext.ts` — assembles `LiveAEState` per turn.
 - `context/cache.ts` — `SessionCache` / `sessionCache`: caches `getProjectInfo` + `getCompositionsList`; `invalidate()`.
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
-- `prompt/rules.ts` — `STATIC_RULES` static system-prompt text (user-edited; no logic).
-- `prompt/buildSystemPrompt.ts` — joins rules + live state.
+- `prompt/rules.ts` — `STATIC_RULES` system-prompt text (user-edited) with a `{{COMMAND_CATALOG}}` placeholder; no logic.
+- `tools/command-params.ts` — **single source of truth** for every command + its params (`COMMAND_PARAMS`); `COMMAND_NAMES`/`CommandName` are derived from its keys.
+- `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
+- `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
 - `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).
 - `index.ts` — public barrel export.
 
@@ -59,14 +62,14 @@ All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@ant
 
 ## Agent tool-surface rule (encoded in `STATIC_RULES`)
 The model drives AE through a small parameterized tool set, **not** one tool per feature:
-- `runScript({ script, parameters })` is the primary tool; `batch` runs multiple commands in one turn (always with a `groupLabel` for one-Cmd+Z revert); `createComposition` and `getHelp` are the only other tools.
+- `runScript({ script, parameters })` is the primary tool; `batch` runs multiple commands in one turn (always with a `groupLabel` for one-Cmd+Z revert); `createComposition` is the only other tool. **No `getHelp`** — per-command params are always present in the `<command_catalog>` (generated from `command-params.ts`), so the model never fetches docs and never guesses args.
 - Never call programmatic undo; self-heal forward on tool errors. (Full operating rules live in `prompt/rules.ts`.)
 - Note: this is the model's tool surface. The internal context pipeline still calls typed reads directly via `callRunScript`.
 
 ## Tests
 - `npm test` — unit tests (vitest), no deps needed.
 - `npm run test:tools` — tool-use round-trip; needs `ANTHROPIC_API_KEY` only, no AE (uses Haiku 4.5, ~sub-cent/run).
-- `npm run test:drift` — asserts `COMMAND_NAMES` matches `server/mcp`; needs Claude Code running (bridge already up), no AE panel needed.
+- `npm run test:drift` — **static** unified guard (builds first): asserts the `command-params.ts` registry matches `server/mcp/commands.ts` (names) AND the `.jsx` handler `args.X` reads (params). No bridge/AE/Claude Code needed — runs in CI.
 - `npm run test:live` / `npm run test:chat` — context + full LLM round-trip; need AE + MCP panel + `ANTHROPIC_API_KEY`.
 
 ## Engineering constraints

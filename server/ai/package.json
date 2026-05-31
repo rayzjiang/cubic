@@ -13,7 +13,7 @@
     "test:live": "node tests/context-live.mjs",
     "test:chat": "node tests/chat-live.mjs",
     "test:tools": "node tests/tools-live.mjs",
-    "test:drift": "node tests/drift-guard.mjs"
+    "test:drift": "npm run build && node tests/drift-guard.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.55.0",

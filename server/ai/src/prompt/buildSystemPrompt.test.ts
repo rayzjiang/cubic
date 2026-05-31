@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt } from './buildSystemPrompt.js';
-import { STATIC_RULES } from './rules.js';
 import type { LiveAEState } from '../context/buildContext.js';
 
 const fullState: LiveAEState = {
@@ -20,33 +19,42 @@ const nullState: LiveAEState = {
 };
 
 describe('buildSystemPrompt', () => {
-  it('starts with STATIC_RULES', () => {
+  it('splits into a cached prefix and a volatile suffix', () => {
     const out = buildSystemPrompt(fullState);
-    expect(out.startsWith(STATIC_RULES)).toBe(true);
+    expect(typeof out.cached).toBe('string');
+    expect(typeof out.volatile).toBe('string');
   });
 
-  it('contains <live_ae_state> block', () => {
-    const out = buildSystemPrompt(fullState);
-    expect(out).toContain('<live_ae_state>');
-    expect(out).toContain('</live_ae_state>');
+  it('cached prefix contains the generated command catalog (placeholder resolved)', () => {
+    const { cached } = buildSystemPrompt(fullState);
+    expect(cached).toContain('<command_catalog>');
+    // Generated, previously-hidden params must be present.
+    expect(cached).toContain('setCompositionProperties(');
+    expect(cached).toContain('shutterAngle');
+    // The placeholder must have been replaced.
+    expect(cached).not.toContain('{{COMMAND_CATALOG}}');
   });
 
-  it('rules come before the state block', () => {
+  it('cached prefix does NOT contain the volatile state block', () => {
     const out = buildSystemPrompt(fullState);
-    const rulesIdx = out.indexOf(STATIC_RULES);
-    const stateIdx = out.indexOf('<live_ae_state>');
-    expect(rulesIdx).toBeLessThan(stateIdx);
+    // The rules prose may reference the <live_ae_state> tag name, but the actual
+    // state block (closing tag + data) must live only in the volatile half.
+    expect(out.cached).not.toContain('</live_ae_state>');
+    expect(out.cached.includes(out.volatile ?? '')).toBe(false);
   });
 
-  it('two blank lines separate sections', () => {
-    const out = buildSystemPrompt(fullState);
-    expect(out).toContain(`${STATIC_RULES}\n\n<live_ae_state>`);
+  it('volatile suffix carries the live AE state block', () => {
+    const { volatile } = buildSystemPrompt(fullState);
+    expect(volatile).toContain('<live_ae_state>');
+    expect(volatile).toContain('</live_ae_state>');
+  });
+
+  it('cached prefix is identical across turns (byte-stable for caching)', () => {
+    expect(buildSystemPrompt(fullState).cached).toBe(buildSystemPrompt(nullState).cached);
   });
 
   it('handles null state without throwing', () => {
     expect(() => buildSystemPrompt(nullState)).not.toThrow();
-    const out = buildSystemPrompt(nullState);
-    expect(out).toContain(STATIC_RULES);
-    expect(out).toContain('<live_ae_state>');
+    expect(buildSystemPrompt(nullState).volatile).toContain('<live_ae_state>');
   });
 });

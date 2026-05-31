@@ -75,9 +75,11 @@ if (!results[results.length - 1].ok) {
 await test('buildContext() + buildSystemPrompt() produces a system prompt', async () => {
   state = await buildContext();
   systemPrompt = buildSystemPrompt(state);
-  assert(systemPrompt.includes('<live_ae_state>'), 'missing <live_ae_state> block');
-  assert(systemPrompt.length > 20, 'system prompt too short');
-  return `${systemPrompt.length} chars`;
+  assert(systemPrompt.volatile.includes('<live_ae_state>'), 'missing <live_ae_state> block');
+  assert(systemPrompt.cached.includes('<command_catalog>'), 'missing <command_catalog> in cached prefix');
+  const total = systemPrompt.cached.length + systemPrompt.volatile.length;
+  assert(total > 20, 'system prompt too short');
+  return `${systemPrompt.cached.length} cached + ${systemPrompt.volatile.length} volatile chars`;
 });
 
 await test('llm.chat() returns a non-empty response', async () => {

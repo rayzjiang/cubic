@@ -1,110 +1,15 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../llm/types.js';
+import { COMMAND_NAMES, type CommandName } from './command-params.js';
 
 /**
- * Curated mirror of the canonical command list in `server/mcp/src/commands.ts`.
- *
- * KEEP IN SYNC: When a new ExtendScript command is added to server/mcp, add its
- * name here too. The drift-guard test (`tests/drift-guard.mjs`) calls `listCommands`
- * over the bridge and fails if this array diverges — CI will catch it.
- *
- * Source of truth: `server/mcp/src/commands.ts` (returned via `listCommands` bridge call).
+ * Command names + per-command parameter docs both come from the single registry
+ * in `command-params.ts` (whose keys are kept matching `server/mcp/src/commands.ts`
+ * and whose params are kept matching the `.jsx` handlers by `tests/drift-guard.mjs`).
+ * Re-exported here so existing importers keep working.
  */
-export const COMMAND_NAMES = [
-  // Compositions / project info
-  "listCompositions",
-  "getProjectInfo",
-  "getCompositionInfo",
-  "createComposition",
-  "setCompositionProperties",
-  "deleteComposition",
-  "duplicateComposition",
-  // Playhead
-  "getCurrentTime",
-  "setCurrentTime",
-  // Layers — selection & info
-  "getLayerInfo",
-  "getSelectedLayers",
-  "getSelectionDetails",
-  "setSelectedLayers",
-  // Layers — create / duplicate / delete
-  "createLayer",
-  "duplicateLayer",
-  "deleteLayer",
-  // Layers — properties
-  "setLayerProperties",
-  "batchSetLayerProperties",
-  "getLayerProperty",
-  "setLayerProperty",
-  // Layers — hierarchy & transform
-  "setLayerParent",
-  "moveLayer",
-  "setAnchorPoint",
-  "centerAnchorPoint",
-  "alignLayers",
-  "sequenceLayers",
-  // Layers — time ops
-  "splitLayer",
-  "mergeLayer",
-  "trimLayer",
-  "setTimeRemapEnabled",
-  // Layers — nesting / mattes
-  "precompose",
-  "decomposeLayer",
-  "setTrackMatte",
-  // Keyframes
-  "getLayerKeyframes",
-  "setLayerKeyframe",
-  "setKeyframeEasing",
-  "setKeyframeSpatial",
-  "copyKeyframeEasing",
-  "removePropertyKeyframes",
-  // Expressions
-  "getLayerExpressions",
-  "setLayerExpression",
-  // Masks
-  "getLayerMasks",
-  "setLayerMask",
-  "deleteLayerMask",
-  // Effects
-  "getLayerEffects",
-  "applyEffect",
-  "applyEffectTemplate",
-  "setEffectProperty",
-  "deleteEffect",
-  // Text
-  "addTextAnimator",
-  "setTextAnimatorProperty",
-  "setTextAnimatorRangeSelector",
-  "explodeTextLayer",
-  // Shapes
-  "addShapeOperator",
-  "setShapeOperatorProperty",
-  "convertToShape",
-  // Markers
-  "addMarker",
-  "listMarkers",
-  "updateMarker",
-  "removeMarker",
-  // Footage / project panel
-  "listProjectItems",
-  "importFootage",
-  "addFootageToComp",
-  "importAssetToComp",
-  "deleteProjectItem",
-  "deleteUnusedSolids",
-  // Project
-  "getProjectPath",
-  "saveProject",
-  "saveFrameToPng",
-  // Motion recipes & 3D
-  "applyMotionRecipe",
-  "distributeLayers3D",
-  // Multi-command
-  "batch",
-] as const;
-
-export type CommandName = (typeof COMMAND_NAMES)[number];
+export { COMMAND_NAMES };
+export type { CommandName };
 
 // ─── Shared sub-schemas ───────────────────────────────────────────────────────
 
@@ -174,22 +79,12 @@ const createCompositionTool: ToolDefinition = {
 };
 
 /**
- * getHelp — pull the full command catalog + parameter docs + effect match names.
- * The model should call this when it needs specific parameter details for an
- * unfamiliar command rather than guessing.
+ * Tools exposed to the Claude API. Per-command parameters are always present in
+ * the system prompt's `<command_catalog>` (generated from `command-params.ts`),
+ * so there is no `getHelp` lookup tool — the model never needs to fetch docs.
  */
-const getHelpTool: ToolDefinition = {
-  name: 'getHelp',
-  description:
-    'Get the full command catalog with parameter docs, effect templates, and common match names. ' +
-    'Call this when you need the exact parameters for an unfamiliar command.',
-  schema: z.object({}),
-};
-
-/** All four tools exposed to the Claude API. */
 export const AE_TOOLS: ToolDefinition[] = [
   runScriptTool,
   batchTool,
   createCompositionTool,
-  getHelpTool,
 ];

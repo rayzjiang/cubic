@@ -56,10 +56,25 @@ export interface ToolDefinition {
   schema: ZodTypeAny;
 }
 
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+/**
+ * A split system prompt: the stable `cached` prefix (role + rules + command
+ * catalog) is marked as a prompt-cache breakpoint by anthropic.ts; the `volatile`
+ * suffix (per-turn live AE state) is left uncached so timeline changes never bust
+ * the catalog cache. A plain string is also accepted (no caching).
+ */
+export interface SystemPrompt {
+  cached: string;
+  volatile?: string;
+}
+
+export type SystemPromptInput = string | SystemPrompt;
+
 // ─── Chat API types ──────────────────────────────────────────────────────────
 
 export interface ChatOptions {
-  systemPrompt: string;
+  systemPrompt: SystemPromptInput;
   model?: string;
   maxTokens?: number;
   temperature?: number;
@@ -71,7 +86,14 @@ export interface ChatResponse {
   /** Joined text from all text blocks in the response (empty string if tool-only turn). */
   content: string;
   stopReason: 'end_turn' | 'max_tokens' | 'tool_use' | string;
-  usage: { inputTokens: number; outputTokens: number };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    /** Tokens written to the prompt cache this turn (first turn of a session). */
+    cacheCreationInputTokens?: number;
+    /** Tokens read from the prompt cache this turn (~90% cheaper than input). */
+    cacheReadInputTokens?: number;
+  };
   /** Tool calls emitted by the model this turn (empty array when none). */
   toolUses: ToolUse[];
 }
