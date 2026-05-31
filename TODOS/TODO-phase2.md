@@ -6,7 +6,7 @@
     - [x] add anthropic API key
     - [x] Test to make sure it works
     - [x] tool single registry, prompt caching, drift test command
-    - [ ] **verify that the mcp server/ai ae panel test connections work (the write:clean test)
+    - [x] yes lgtm - **verify that the mcp server/ai ae panel test connections work (the write:clean test)
     - [ ] verify that the messages sent by the ai agent are somewhat along the lines of what claude code probably does (answer question/summary ish, makes changes + narration, concise summary of what was done + ends with next steps/short question or something)
 - [x] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop
