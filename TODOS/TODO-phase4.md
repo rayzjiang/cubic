@@ -1,3 +1,13 @@
 ## Phase 4
 - new ux (similar to claude's spinning progress bar + nice words, etc.)
 - Cubic undo history viewer + dedicated keybind?
+- [ ] **Agent-run controls (Claude-Code-style)** — the loop's BACKEND hooks already exist from Phase 2 item 4 (`Session.cancelRequested` + `Session.pendingMessage`, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue` messages to them). Phase 4 wires the panel UI to them:
+    - [ ] Esc / cancel button → sends `{type:'cancel'}` to stop the current run at the next boundary.
+    - [ ] Type-while-running → sends `{type:'queue', text}` to steer the agent (injected at the next tool boundary, or as a fresh follow-up turn).
+    - [ ] Show the queued/steering message(s) in the UI + allow editing/removing before they fire.
+    - [ ] ⚠️ Backend bump needed for FULL parity: today `pendingMessage` is a single slot (last-write-wins). Editing/stacking multiple queued messages needs a queue *list* on Session (small change) — single-message steer works today without it.
+- [ ] **Seamless backup recovery** — the agent loop already saves a pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10), but recovery is currently manual (dig into the hidden folder in Finder). Make it ergonomic:
+    - [ ] Panel "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
+    - [ ] Agent-driven restore — a "Cubic, undo that / revert the last change" command the model understands, mapping to a restore handler (new MCP command: copy a chosen `.cubic-backups/` file back + reopen project).
+    - [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
+    - Pairs with the chat-panel build (consumes the same agentEvent/session surface).

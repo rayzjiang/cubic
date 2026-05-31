@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
+    "cubic-ai": "file:../ai",
     "ws": "^8.20.1",
     "zod": "^3.22.2"
   },

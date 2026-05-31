@@ -14,3 +14,7 @@ export { STATIC_RULES } from "./prompt/rules.js";
 export { AE_TOOLS, COMMAND_NAMES } from "./tools/definitions.js";
 export { COMMAND_PARAMS } from "./tools/command-params.js";
 export type { CommandName, CommandSpec } from "./tools/command-params.js";
+
+// Agent loop / self-healing loop (Phase 2 item 4)
+export { runAgentTurn, Session, executeTool, snapshotProject, describeToolCall } from "./agent/index.js";
+export type { AgentDeps, ToolExecution, SnapshotResult, AgentEvent, EmitFn } from "./agent/index.js";

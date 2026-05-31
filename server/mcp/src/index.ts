@@ -6,6 +6,7 @@ import * as path from "path";
 import { z } from "zod";
 import { bridge, BridgeError } from "./bridge/wsBridge.js";
 import { COMMANDS } from "./commands.js";
+import { registerAgentChat } from "./agentChat.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
@@ -308,6 +309,7 @@ server.registerTool(
 async function main() {
   console.error("After Effects MCP Server starting...");
   await bridge.start(AE_MCP_PORT);
+  registerAgentChat();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("After Effects MCP Server running...");

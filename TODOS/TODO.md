@@ -1,10 +1,10 @@
 ## General Roadmap
 ✅ Phase 1 — MCP validation
-✅ Phase 1.5 - **Fixing the MCP + Finishing/adding all functionality that I need + Organizing it for CRUD for each operation + Comprehensive testing suite
-➡️ Phase 2 — Build the LLM brain + agent architecture (system prompt + Claude API backend)
-Phase 3 (self-healing/correcting/bug checking loop)
-Phase 4 (After effects panel UI)
-Phase 5 (Post MVP stuff?)
+✅ Phase 1.5 — Fix the MCP + finish all functionality I need + organize CRUD per operation + comprehensive testing suite
+✅ Phase 2 — LLM brain + agent architecture (system prompt + Claude API backend) **and** the agent loop / self-healing loop (item 4): tool-execution loop, self-heal on errors, pre-turn backup snapshot, live narration, cancel/steer. Built + unit-tested; live run against AE (`npm run test:agent`) is the one remaining check.
+   ↳ No separate Phase 3 — what I'd loosely planned as "Phase 3" (the self-healing/correcting loop) was absorbed here as Phase 2 item 4.
+⬜ Phase 4 — After Effects panel UI: the in-AE chat panel that consumes the agentEvent protocol, + seamless backup recovery (restore button + "Cubic, undo that"). See TODO-phase4.md.
+⬜ Phase 5 — Pre-ship gate (nothing ships to anyone until ALL of these): hosted LLM proxy that holds the API key + injects the system prompt server-side, code obfuscation + binary packaging, and Stripe billing. **I also need a way to push updates to my users.. Details below the line.
 
 ---
 # Distribution steps (post mvp)
@@ -23,6 +23,13 @@ Phase 5 (Post MVP stuff?)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
 - Take inspo from good looking after effects youtube video tutorials
 - Maybe inspo from gaming montages as well? (since those are usually edited well)
+
+# post mvp
+True token-level streaming + tool events
+  WHY: Smoothest 'typing' feel, most like Claude Code. WHY NOT: Must rebuild
+  stream() to pass tools + accumulate tool_use JSON deltas + reconcile with
+  the loop — meaningfully more code and edge cases. Polish you can add
+  post-MVP without changing the loop's shape.
 
 # post mvp (hot swappable models)
 Do later. Design for it now by keeping all LLM calls behind a single wrapper (one file to change).

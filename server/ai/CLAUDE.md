@@ -9,7 +9,7 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call
 2. ✅ **System prompt assembly** — `STATIC_RULES` (Motion Copilot prompt) + `buildSystemPrompt()`
 3. ✅ **Tool schema registration** — zod schemas for `runScript`/`batch`/`createComposition` (no `getHelp` — see tool-surface rule); wired into `chat()`; `ChatResponse.toolUses[]`; content-block `Message` type
-4. ⬜ **State machine / agent loop + self-healing** — incl. autosave before a run (revert point) and wrapping a whole agent turn in one undo group
+4. ✅ **Agent loop + self-healing** (`src/agent/`) — bounded while-loop: chat → execute tools → feed `tool_result` back → repeat until no tool calls or the iteration budget. Pre-turn `.aep` snapshot is the revert point (NOT a per-turn undo group — infeasible across async round-trips). Self-heals by returning error tool_results; retries `RENDER_FAILED` once; invalidates `sessionCache` after mutations. Folded into the MCP process via a `userChat`/`agentEvent` channel.
 
 See `../../TODOS/TODO-phase2.md` for the full checklist.
 
@@ -40,7 +40,16 @@ getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_cont
 - `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
 - `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
 - `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).
+- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps are injectable for tests), `session.ts` (`Session`: history + run lock + cancel/steer flags), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `snapshot.ts` (`backupProject` call), `events.ts` (`AgentEvent` union streamed to the panel).
 - `index.ts` — public barrel export.
+
+## Agent loop (`src/agent/`)
+- **Shape:** bounded while-loop (`MAX_ITERATIONS = 15`), not a formal state machine. One model call per iteration; tools execute in order; their `tool_result` blocks become the next user message.
+- **Self-healing:** tool errors return as `tool_result(is_error)` so the model reasons + retries forward, bounded by the iteration budget. `RENDER_FAILED` retries once (transient flush race). Transport failures surface as a `BRIDGE_ERROR` result, never a thrown turn.
+- **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `mcpClient`). A failed snapshot warns and proceeds.
+- **Narration:** per-iteration `AgentEvent` push (assistant text, then `tool_start`/`tool_end`). Token-level streaming is a later swap (`chat()`→`stream()`) with no change to the loop.
+- **Concurrency:** single in-flight run per `Session`; `cancelRequested` and `pendingMessage` (queued steer) are checked at iteration boundaries — mirrors Claude Code.
+- **Transport (folded into MCP process):** `server/mcp` depends on `cubic-ai` (`file:../ai`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; `wsBridge.onChat` → `agentChat.ts` runs the loop and streams `{type:'agentEvent', event}` back. The loop reaches AE through `mcpClient` (a second loopback bridge client). Rebuild `cubic-ai` (incl. `build:types`) before building `server/mcp`.
 
 ## Bridge transport (McpClient)
 - **How the bridge starts:** Claude Code spawns `server/mcp/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `McpClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
@@ -71,6 +80,7 @@ The model drives AE through a small parameterized tool set, **not** one tool per
 - `npm run test:tools` — tool-use round-trip; needs `ANTHROPIC_API_KEY` only, no AE (uses Haiku 4.5, ~sub-cent/run).
 - `npm run test:drift` — **static** unified guard (builds first): asserts the `command-params.ts` registry matches `server/mcp/commands.ts` (names) AND the `.jsx` handler `args.X` reads (params). No bridge/AE/Claude Code needed — runs in CI.
 - `npm run test:live` / `npm run test:chat` — context + full LLM round-trip; need AE + MCP panel + `ANTHROPIC_API_KEY`.
+- `npm run test:agent` — **full agent loop** end-to-end (snapshot → context → chat → tools → loop); needs AE + panel + `ANTHROPIC_API_KEY`. ⚠️ mutates the project (creates a `__CUBIC_AGENT_TEST` comp — delete after).
 
 ## Engineering constraints
 Same as `server/mcp/CLAUDE.md`: no sleeps/polling, match existing style, no per-variant tool explosion.

@@ -21,12 +21,22 @@ interface PendingCommand {
 
 type BridgeEvent = 'connect' | 'disconnect';
 
+/** Chat-channel messages the panel sends over its worker socket (Phase 2 agent loop). */
+export interface ChatInbound {
+  type: 'userChat' | 'cancel' | 'queue';
+  sessionId?: string;
+  text?: string;
+}
+
+export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;
+
 class AEBridge {
   private wss: WebSocketServer | null = null;
   private workerClient: WebSocket | null = null;
   private pending: Map<string, PendingCommand> = new Map();
   private eventHandlers: Map<BridgeEvent, Array<() => void>> = new Map();
   private connectWaiters: Array<() => void> = [];
+  private chatHandler: ChatHandler | null = null;
   public lastResult: string = '';
 
   async start(port: number): Promise<void> {
@@ -84,6 +94,10 @@ class AEBridge {
           for (const w of this.connectWaiters) w();
           this.connectWaiters = [];
           this.emit('connect');
+        } else if (msg.type === 'userChat' || msg.type === 'cancel' || msg.type === 'queue') {
+          // Agent-chat channel: panel → loop. The handler streams agentEvent messages
+          // back over this same socket (see registerAgentChat in agentChat.ts).
+          this.chatHandler?.(ws, msg as ChatInbound);
         } else if ('ok' in msg) {
           // Response from UXP plugin to a pending command
           const pending = this.pending.get(msg.id);
@@ -177,6 +191,15 @@ class AEBridge {
     const handlers = this.eventHandlers.get(event) ?? [];
     handlers.push(handler);
     this.eventHandlers.set(event, handlers);
+  }
+
+  /**
+   * Register the agent-chat handler. Inbound userChat/cancel/queue messages from the
+   * panel are routed here; the handler streams agentEvent messages back over the
+   * provided socket. Only one handler is supported (the agent loop owns it).
+   */
+  onChat(handler: ChatHandler): void {
+    this.chatHandler = handler;
   }
 
   private emit(event: BridgeEvent): void {
