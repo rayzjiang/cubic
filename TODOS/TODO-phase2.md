@@ -2,9 +2,11 @@
 - [x] Context pipeline (live state)
 - [x] System prompt + ai agent sdk/llm wrapper setup (anthropic for now)
     - [x] build system prompt
-        - [ ] What guardrails should be put onto the ai prompt (like shouldn't it not be spitting out what tool calls it can make + its inner functionality on how it's built/was created)
+        - [x] What guardrails should be put onto the ai prompt (like shouldn't it not be spitting out what tool calls it can make + its inner functionality on how it's built/was created)
     - [x] add anthropic API key
     - [x] Test to make sure it works
+    - [x] tool single registry, prompt caching, drift test command
+    - [ ] **verify that the mcp server/ai ae panel test connections work (the write:clean test)
     - [ ] verify that the messages sent by the ai agent are somewhat along the lines of what claude code probably does (answer question/summary ish, makes changes + narration, concise summary of what was done + ends with next steps/short question or something)
 - [x] Tool schema registration
 - [ ] The state machine / agent loop / self healing loop

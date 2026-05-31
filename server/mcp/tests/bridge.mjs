@@ -3,7 +3,8 @@
 // Two scopes:
 //   1. Happy-path WS round-trips for read-only allowlisted commands
 //      (getProjectInfo, listCompositions). Verifies the Node ↔ CEP ↔ AE chain.
-//   2. Static-file diff between `allowedScripts` (src/index.ts) and the
+//   2. Static-file diff between the `COMMANDS` allowlist (src/commands.ts —
+//      the single source `src/index.ts` derives its allowlist from) and the
 //      `_dispatchSwitch` cases (src/scripts/mcp-bridge.jsx). Catches new
 //      handlers added without an allowlist entry, and stale allowlist
 //      entries that no longer match a dispatch case.
@@ -41,8 +42,10 @@ const EXPECTED_INTERNAL_ONLY = [
 ];
 
 function _extractAllowedScripts(src) {
-  const m = src.match(/const allowedScripts = \[([\s\S]*?)\];/);
-  if (!m) throw new Error('Could not locate `const allowedScripts = [...]` in src/index.ts');
+  // The allowlist is the COMMANDS array in src/commands.ts (the single source of
+  // truth that src/index.ts enforces via `COMMANDS.includes(script)`).
+  const m = src.match(/COMMANDS[^=]*=\s*\[([\s\S]*?)\]/);
+  if (!m) throw new Error('Could not locate the `COMMANDS = [...]` array in src/commands.ts');
   const out = [];
   const re = /["']([A-Za-z_][A-Za-z0-9_]*)["']/g;
   let hit;
@@ -84,10 +87,10 @@ export async function run(ctx, opts) {
   // ── Allowlist drift guard (static-file diff, no AE round trip) ────────────
 
   await test('drift — allowedScripts and _dispatchSwitch agree (minus internal-only)', async () => {
-    const indexTs    = await readFile(path.resolve(__dirname, '../src/index.ts'), 'utf8');
+    const commandsTs = await readFile(path.resolve(__dirname, '../src/commands.ts'), 'utf8');
     const bridgeJsx  = await readFile(path.resolve(__dirname, '../src/scripts/mcp-bridge.jsx'), 'utf8');
 
-    const allowed    = _extractAllowedScripts(indexTs);
+    const allowed    = _extractAllowedScripts(commandsTs);
     const dispatched = _extractDispatchCases(bridgeJsx);
 
     const allowedSet    = new Set(allowed);
