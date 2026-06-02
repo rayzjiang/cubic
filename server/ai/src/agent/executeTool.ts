@@ -34,8 +34,18 @@ function toCommandCall(tool: ToolUse): { command: string; args: Record<string, u
   switch (tool.name) {
     case 'runScript':
       return { command: String(input.script ?? ''), args: (input.parameters as Record<string, unknown>) ?? {} };
-    case 'batch':
-      return { command: 'batch', args: input };
+    case 'batch': {
+      // Batch sub-commands use the model-facing { script, parameters } shape (same as
+      // runScript); the bridge's batch handler reads { command, args }. Translate each
+      // entry here — the single model→bridge naming boundary — so the model keeps one
+      // uniform command shape everywhere.
+      const rawCommands = Array.isArray(input.commands) ? input.commands : [];
+      const commands = rawCommands.map((c) => {
+        const entry = (c ?? {}) as Record<string, unknown>;
+        return { command: String(entry.script ?? ''), args: (entry.parameters as Record<string, unknown>) ?? {} };
+      });
+      return { command: 'batch', args: { ...input, commands } };
+    }
     case 'createComposition':
       return { command: 'createComposition', args: input };
     default:

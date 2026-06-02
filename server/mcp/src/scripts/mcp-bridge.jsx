@@ -68,7 +68,8 @@ var ERROR_CODES = {
     RENDER_FAILED:      "RENDER_FAILED",
     UNKNOWN_COMMAND:    "UNKNOWN_COMMAND",
     HANDLER_UNCAUGHT:   "HANDLER_UNCAUGHT",
-    INTERNAL_ERROR:     "INTERNAL_ERROR"
+    INTERNAL_ERROR:     "INTERNAL_ERROR",
+    BATCH_FAILED:       "BATCH_FAILED"
 };
 
 function _err(code, message) {
@@ -370,7 +371,7 @@ function batch(args) {
         app.endUndoGroup();
     }
 
-    return JSON.stringify({
+    var envelope = {
         status: failed === 0 ? "success" : "error",
         total: commands.length,
         executed: results.length,
@@ -378,5 +379,10 @@ function batch(args) {
         failed: failed,
         stoppedEarly: stopOnError && results.length < commands.length,
         results: results
-    }, null, 2);
+    };
+    // On any sub-command failure the envelope is status:"error"; carry a top-level
+    // errorCode so callers (agent loop / logs) see a real code, not undefined. The
+    // per-command codes live in results[].
+    if (failed > 0) { envelope.errorCode = ERROR_CODES.BATCH_FAILED; }
+    return JSON.stringify(envelope, null, 2);
 }

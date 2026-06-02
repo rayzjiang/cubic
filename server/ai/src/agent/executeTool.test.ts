@@ -60,12 +60,28 @@ describe('executeTool', () => {
     expect(exec.retried).toBe(true);
   });
 
-  it('maps batch tool input to the batch command verbatim', async () => {
+  it('translates batch sub-commands from {script,parameters} to the bridge {command,args} shape', async () => {
     callRunScript.mockResolvedValue({ status: 'success' });
-    const tool: ToolUse = { id: 'b', name: 'batch', input: { commands: [{ script: 'createLayer' }], groupLabel: 'add' } };
+    const tool: ToolUse = {
+      id: 'b',
+      name: 'batch',
+      input: {
+        commands: [
+          { script: 'createLayer', parameters: { type: 'solid' } },
+          { script: 'setLayerKeyframe', parameters: { propertyName: 'Opacity', value: 0, timeInSeconds: 0 } },
+        ],
+        groupLabel: 'add',
+      },
+    };
     await executeTool(tool);
 
-    expect(callRunScript).toHaveBeenCalledWith('batch', { commands: [{ script: 'createLayer' }], groupLabel: 'add' });
+    expect(callRunScript).toHaveBeenCalledWith('batch', {
+      commands: [
+        { command: 'createLayer', args: { type: 'solid' } },
+        { command: 'setLayerKeyframe', args: { propertyName: 'Opacity', value: 0, timeInSeconds: 0 } },
+      ],
+      groupLabel: 'add',
+    });
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 

@@ -345,7 +345,7 @@ export const COMMAND_PARAMS = {
   batch: {
     domain: 'Batch',
     summary: 'Run multiple commands in one undo group (also a typed tool).',
-    params: { commands: 'array of {command, args}', groupLabel: 'string — undo-group label', stopOnError: 'bool — abort on first error' },
+    params: { commands: 'array of {script, parameters}', groupLabel: 'string — undo-group label', stopOnError: 'bool — abort on first error' },
     required: ['commands'],
   },
 } satisfies Record<string, CommandSpec>;
