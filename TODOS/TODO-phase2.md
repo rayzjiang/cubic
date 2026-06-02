@@ -15,7 +15,7 @@
     - [~] ~~Wrap entire agent's single msgs' calls into a single undo group~~ — DROPPED: infeasible (AE undo groups can't span async LLM round-trips). The pre-turn snapshot IS the turn-level revert; per-command undo groups stay for granular ⌘Z.
     - [x] Execute tool calls via callRunScript → feed tool_result blocks back → loop; snapshot before run; sessionCache.invalidate() after mutations; treat RENDER_FAILED as retryable (retry once)
     - [x] Transport: folded the brain into the MCP process — panel sends `userChat`/`cancel`/`queue` over its socket, loop streams `agentEvent` back (wsBridge.onChat + agentChat.ts). cubic-ai is a `file:../ai` dep of server/mcp.
-    - [ ] **Live verification pending** — run `npm run test:agent` (server/ai) with AE + panel + API key; then `npm run test:write-clean` (server/mcp) for connection sanity.
+    - [x] **Live verification pending** — run `npm run test:agent` (server/ai) with AE + panel + API key; then `npm run test:write-clean` (server/mcp) for connection sanity.
 - [ ] **Next pass (not this item):** CEP panel chat UI that consumes the agentEvent protocol; agent-run controls UI (Esc/cancel + queue/steer + edit-queued — backend hooks already built here, UI in Phase 4); optional token-level streaming; seamless backup recovery (restore button + agent "undo that" command — see TODO-phase4.md).
 
 #### Caching?? - for system ae live state
