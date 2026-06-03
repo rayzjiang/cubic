@@ -27,25 +27,25 @@ describe('formatStateForPrompt', () => {
 
   it('includes activeComp fields in full state', () => {
     const out = formatStateForPrompt(fullState);
-    expect(out).toContain('"name": "Main"');
-    expect(out).toContain('"width": 1920');
-    expect(out).toContain('"fps": 30');
-    expect(out).toContain('"duration": 10');
+    expect(out).toContain('"name":"Main"');
+    expect(out).toContain('"width":1920');
+    expect(out).toContain('"fps":30');
+    expect(out).toContain('"duration":10');
   });
 
   it('includes playhead and selectedLayers in full state', () => {
     const out = formatStateForPrompt(fullState);
-    expect(out).toContain('"playhead": 2.5');
-    expect(out).toContain('"name": "Logo"');
-    expect(out).toContain('"type": "solid"');
+    expect(out).toContain('"playhead":2.5');
+    expect(out).toContain('"name":"Logo"');
+    expect(out).toContain('"type":"solid"');
   });
 
   it('handles null state without throwing', () => {
     const out = formatStateForPrompt(nullState);
     expect(out).toContain('<live_ae_state>');
     expect(out).toContain('</live_ae_state>');
-    expect(out).toContain('"playhead": null');
-    expect(out).toContain('"selectedLayers": []');
+    expect(out).toContain('"playhead":null');
+    expect(out).toContain('"selectedLayers":[]');
   });
 
   it('body is valid JSON', () => {

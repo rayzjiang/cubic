@@ -1,6 +1,7 @@
 ## Phase 4
 - new ux (similar to claude's spinning progress bar + nice words, etc.)
 - Cubic undo history viewer + dedicated keybind?
+- [ ] **CEP panel chat UI** — build the panel-side UI that consumes the `agentEvent` protocol (streaming event display, message history); prerequisite for agent-run controls and recovery UI. Optional: token-level streaming.
 - [ ] **Agent-run controls (Claude-Code-style)** — the loop's BACKEND hooks already exist from Phase 2 item 4 (`Session.cancelRequested` + `Session.pendingMessage`, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue` messages to them). Phase 4 wires the panel UI to them:
     - [ ] Esc / cancel button → sends `{type:'cancel'}` to stop the current run at the next boundary.
     - [ ] Type-while-running → sends `{type:'queue', text}` to steer the agent (injected at the next tool boundary, or as a fresh follow-up turn).
@@ -10,4 +11,3 @@
     - [ ] Panel "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
     - [ ] Agent-driven restore — a "Cubic, undo that / revert the last change" command the model understands, mapping to a restore handler (new MCP command: copy a chosen `.cubic-backups/` file back + reopen project).
     - [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
-    - Pairs with the chat-panel build (consumes the same agentEvent/session surface).

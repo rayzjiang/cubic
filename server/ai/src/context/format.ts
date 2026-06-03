@@ -45,5 +45,7 @@ export function formatStateForPrompt(state: LiveAEState): string {
         })
       : [];
 
-  return `<live_ae_state>\n${JSON.stringify(payload, null, 2)}\n</live_ae_state>`;
+  // Compact JSON (no pretty-print): this volatile block is re-sent every turn and
+  // can't be prompt-cached, so indentation whitespace is pure wasted tokens.
+  return `<live_ae_state>\n${JSON.stringify(payload)}\n</live_ae_state>`;
 }
