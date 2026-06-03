@@ -11,14 +11,13 @@
 
 import 'dotenv/config';
 import { runAgentTurn, Session, mcpClient, sessionCache } from '../build/index.js';
+import { green, red, dim, bold, cyan, enableLlmIO, printCostTotal } from './lib/format.mjs';
 
+// Real Haiku calls below (incl. the agent loop's internal ones) — show every request/response/cost.
+enableLlmIO();
 const HAIKU = 'claude-haiku-4-5';
-
-const green = s => `\x1b[32m${s}\x1b[0m`;
-const red   = s => `\x1b[31m${s}\x1b[0m`;
-const dim   = s => `\x1b[2m${s}\x1b[0m`;
-const bold  = s => `\x1b[1m${s}\x1b[0m`;
-const cyan  = s => `\x1b[36m${s}\x1b[0m`;
+// Cap loop length so a runaway multi-tool turn can't quietly rack up cost during a smoke test.
+const MAX_ITERATIONS = 5;
 
 const results = [];
 async function test(name, fn) {
@@ -75,7 +74,7 @@ await test('runAgentTurn completes a multi-step task', async () => {
     session,
     'Create a composition named "__CUBIC_AGENT_TEST" (1920x1080, 5s, 30fps), then add a red solid layer to it that fades in over the first second. Keep it brief.',
     emit,
-    { model: HAIKU },
+    { model: HAIKU, maxIterations: MAX_ITERATIONS },
   );
   const kinds = events.map(e => e.type);
   assert(kinds.includes('turn_start'), 'no turn_start event');
@@ -97,7 +96,7 @@ await test('conversation history accumulated (multi-turn ready)', async () => {
 
 await test('follow-up turn reuses the same session', async () => {
   const before = session.messages.length;
-  await runAgentTurn(session, 'What did you just create? One sentence.', emit, { model: HAIKU, takeSnapshot: false });
+  await runAgentTurn(session, 'What did you just create? One sentence.', emit, { model: HAIKU, takeSnapshot: false, maxIterations: MAX_ITERATIONS });
   assert(session.messages.length > before, 'follow-up turn did not extend history');
   const lastText = [...events].reverse().find(e => e.type === 'text');
   return lastText ? `"${lastText.text.slice(0, 60)}…"` : 'completed';
@@ -106,6 +105,7 @@ await test('follow-up turn reuses the same session', async () => {
 const passed = results.filter(r => r.ok).length;
 const failed = results.filter(r => !r.ok).length;
 console.log(`\n${bold('Results:')} ${green(`${passed} passed`)}, ${failed > 0 ? red(`${failed} failed`) : `${failed} failed`}`);
+printCostTotal();
 console.log(dim('\n  Remember to delete the "__CUBIC_AGENT_TEST" comp from your project.\n'));
 await mcpClient.disconnect();
 process.exit(failed > 0 ? 1 : 0);

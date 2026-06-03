@@ -15,6 +15,12 @@ export type AgentEvent =
   | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean }
   | { type: 'steer'; text: string }
   | { type: 'cancelled' }
+  // History compaction: older turns summarized to stay under the context window. 'done' also
+  // covers a /clear (reason: 'cleared'). 'failed' is a soft notice — the turn still proceeds.
+  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
+  // Hard ceiling: compaction can't free enough room, so the turn is paused. A call-to-action
+  // (start a new conversation), NOT an error — the panel renders it differently.
+  | { type: 'context_full'; message: string }
   | { type: 'error'; message: string }
   | { type: 'done'; stopReason: string };
 

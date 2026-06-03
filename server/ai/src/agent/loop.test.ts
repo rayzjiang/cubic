@@ -32,6 +32,7 @@ function mockLLM(responses: ChatResponse[]) {
     },
     // eslint-disable-next-line require-yield
     stream: async function* () { yield { type: 'done' as const }; },
+    contextWindow: () => 200_000,
   };
   return { provider, seen, calls: () => i };
 }
@@ -156,5 +157,83 @@ describe('runAgentTurn', () => {
     expect(snap).toMatchObject({ type: 'snapshot', ok: false, reason: 'project never saved' });
     // The turn still completes despite the failed snapshot.
     expect(events.map((e) => e.type)).toContain('done');
+  });
+});
+
+// ─── History compaction (turn-boundary) ──────────────────────────────────────────
+
+/** A plain conversation of alternating string user / assistant turns (compaction-safe boundaries). */
+function chatHistory(turns: number): Message[] {
+  const msgs: Message[] = [];
+  for (let i = 0; i < turns; i++) {
+    msgs.push({ role: 'user', content: `q${i}` });
+    msgs.push({ role: 'assistant', content: `a${i}` });
+  }
+  return msgs;
+}
+
+describe('runAgentTurn — context-window management', () => {
+  it('stores the true prefill size (input + cache creation + cache read) after each chat', async () => {
+    const provider = mockLLM([
+      { content: 'done', stopReason: 'end_turn', toolUses: [],
+        usage: { inputTokens: 100, outputTokens: 5, cacheCreationInputTokens: 50, cacheReadInputTokens: 1000 } },
+    ]).provider;
+    const session = new Session();
+
+    await runAgentTurn(session, 'hi', () => {}, baseDeps(provider));
+
+    expect(session.lastContextTokens).toBe(1150);
+  });
+
+  it('auto-compacts at the threshold before running the turn, preserving recent turns', async () => {
+    const { provider, seen } = mockLLM([
+      textResponse('## Goal\nMake a bouncy logo.'), // consumed by the summary call
+      textResponse('on it'),                         // the actual turn
+    ]);
+    const session = new Session();
+    session.messages = chatHistory(4);          // q0..q3 — 4 safe boundaries, so a cut exists
+    session.lastContextTokens = 200_000 * 0.95; // over 90% → compaction fires
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e), baseDeps(provider));
+
+    // Compaction ran (and finished) before the turn proper started.
+    const kinds = events.map((e) => e.type);
+    expect(kinds.slice(0, 3)).toEqual(['compaction', 'compaction', 'turn_start']);
+    expect(events[0]).toMatchObject({ type: 'compaction', status: 'start' });
+    expect(events[1]).toMatchObject({ type: 'compaction', status: 'done' });
+
+    // History collapsed to [summary, ...keptRecent, newUser, assistant]; summary is XML-wrapped.
+    expect(session.messages[0].content).toContain('<conversation_summary>');
+    expect(session.messages[0].content).toContain('Make a bouncy logo.');
+    // The summary call only saw the older messages (the prefix before the kept turns).
+    expect(seen[0].length).toBeLessThan(session.messages.length);
+  });
+
+  it('pauses with context_full at the hard ceiling without starting the turn', async () => {
+    const m = mockLLM([textResponse('should never run')]);
+    const session = new Session();
+    session.lastContextTokens = 200_000 * 0.98; // over the 97% hard ceiling
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e), baseDeps(m.provider));
+
+    expect(events).toEqual([{ type: 'context_full', message: expect.stringContaining('start a new one') }]);
+    expect(m.calls()).toBe(0);          // no model call, no spend
+    expect(session.messages).toHaveLength(0); // user message was never pushed
+    expect(session.running).toBe(false);
+  });
+
+  it('respects a lowered compactThreshold override (cheap to trigger in tests)', async () => {
+    const { provider } = mockLLM([textResponse('summary'), textResponse('ok')]);
+    const session = new Session();
+    session.messages = chatHistory(4);
+    session.lastContextTokens = 100; // tiny — only fires because of the override
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e),
+      baseDeps(provider, { compactThreshold: 0.0001, contextWindowOverride: 1000 }));
+
+    expect(events.some((e) => e.type === 'compaction' && e.status === 'start')).toBe(true);
   });
 });

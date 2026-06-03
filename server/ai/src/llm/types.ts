@@ -106,4 +106,10 @@ export interface StreamChunk {
 export interface LLMProvider {
   chat(messages: Message[], opts: ChatOptions): Promise<ChatResponse>;
   stream(messages: Message[], opts: ChatOptions): AsyncIterable<StreamChunk>;
+  /**
+   * Total context window (tokens) for `model` — or this provider's default model when omitted.
+   * The API never reports this (responses carry tokens USED, not the limit), so each provider
+   * keeps its own per-model table. Used by the agent loop to decide when to auto-compact history.
+   */
+  contextWindow(model?: string): number;
 }

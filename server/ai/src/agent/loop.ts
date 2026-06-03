@@ -5,6 +5,7 @@ import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSy
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
 import { describeToolCall, type EmitFn } from './events.js';
+import { compactSession, contextTokensOf, COMPACT_THRESHOLD, HARD_CEILING } from './compaction.js';
 import type { Session } from './session.js';
 import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput } from '../llm/types.js';
 import type { LiveAEState } from '../context/buildContext.js';
@@ -26,6 +27,11 @@ export interface AgentDeps {
   maxIterations?: number;
   /** Set false to skip the pre-turn snapshot (tests / read-only contexts). */
   takeSnapshot?: boolean;
+  /** Override the auto-compact trigger fraction (default COMPACT_THRESHOLD). Lets tests force
+   *  compaction after a couple of short turns instead of inflating history to ~180K real tokens. */
+  compactThreshold?: number;
+  /** Override the model's context window (tokens). Same purpose as compactThreshold for tests. */
+  contextWindowOverride?: number;
 }
 
 /** Reconstructs the assistant message (narration text + tool_use blocks) for history. */
@@ -68,11 +74,28 @@ export async function runAgentTurn(
   const maxIterations = deps.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const takeSnapshot = deps.takeSnapshot ?? true;
   const model = deps.model;
+  const compactThreshold = deps.compactThreshold ?? COMPACT_THRESHOLD;
+  const window = deps.contextWindowOverride ?? llm.contextWindow(model);
 
   session.running = true;
   session.cancelRequested = false;
 
   try {
+    // Context-window management at the turn boundary (history always ends on a complete turn here,
+    // so compaction never splits a tool_use/tool_result pair).
+    if (session.lastContextTokens >= window * HARD_CEILING) {
+      // Compaction can't free enough room — pause honestly instead of crashing on overflow.
+      emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
+      return;
+    }
+    if (session.lastContextTokens >= window * compactThreshold) {
+      emit({ type: 'compaction', status: 'start' });
+      const res = await compactSession(session, { llm, model });
+      emit({ type: 'compaction', status: res.ok ? 'done' : 'failed', reason: res.reason });
+      // No throw on failure: ~10% headroom remains at the 90% trigger, so we proceed and retry
+      // compaction at the next turn boundary. Only the hard ceiling above pauses the turn.
+    }
+
     emit({ type: 'turn_start' });
     session.messages.push({ role: 'user', content: userText });
 
@@ -96,6 +119,14 @@ export async function runAgentTurn(
       }
 
       const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model });
+      session.lastContextTokens = contextTokensOf(response.usage);
+
+      // The model itself reports the prompt was too large to process — pause honestly.
+      if (response.stopReason === 'model_context_window_exceeded') {
+        emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
+        return;
+      }
+
       session.messages.push({ role: 'assistant', content: assistantContent(response.content, response.toolUses) });
 
       if (response.content) emit({ type: 'text', text: response.content });
@@ -127,7 +158,14 @@ export async function runAgentTurn(
 
     emit({ type: 'error', message: `Stopped after ${maxIterations} iterations without completing.` });
   } catch (e) {
-    emit({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+    const message = e instanceof Error ? e.message : String(e);
+    // A real context-length error from the API is the same situation as the hard ceiling — pause
+    // and ask for a fresh conversation rather than surfacing it as a generic failure.
+    if (/context|too long|prompt is too long/i.test(message)) {
+      emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
+    } else {
+      emit({ type: 'error', message });
+    }
   } finally {
     session.running = false;
     session.cancelRequested = false;

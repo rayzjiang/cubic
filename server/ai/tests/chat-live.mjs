@@ -14,14 +14,12 @@
 
 import 'dotenv/config';
 import { buildContext, buildSystemPrompt, formatStateForPrompt, getLLM, mcpClient, getSelectionDetails } from '../build/index.js';
+import { green, red, dim, bold, enableLlmIO, printCostTotal } from './lib/format.mjs';
 
+// Real Haiku calls below — show every request/response/token/cost (no flag to remember).
+enableLlmIO();
 const llm = getLLM();
 const HAIKU = 'claude-haiku-4-5';
-
-const green  = s => `\x1b[32m${s}\x1b[0m`;
-const red    = s => `\x1b[31m${s}\x1b[0m`;
-const dim    = s => `\x1b[2m${s}\x1b[0m`;
-const bold   = s => `\x1b[1m${s}\x1b[0m`;
 
 const results = [];
 
@@ -90,7 +88,6 @@ await test('llm.chat() returns a non-empty response', async () => {
   assert(typeof response.content === 'string' && response.content.length > 0, 'empty response');
   assert(typeof response.usage.inputTokens === 'number', 'missing usage.inputTokens');
   assert(typeof response.usage.outputTokens === 'number', 'missing usage.outputTokens');
-  console.log(dim(`\n\n    Claude: ${response.content}\n`));
   return `${response.usage.inputTokens} in / ${response.usage.outputTokens} out tokens`;
 });
 
@@ -181,4 +178,5 @@ await test('formatStateForPrompt() never emits empty selectedProperties array', 
 const passed = results.filter(r => r.ok).length;
 const failed = results.filter(r => !r.ok).length;
 console.log(`\n${bold('Results:')} ${green(`${passed} passed`)}, ${failed > 0 ? red(`${failed} failed`) : `${failed} failed`}`);
+printCostTotal();
 process.exit(failed > 0 ? 1 : 0);

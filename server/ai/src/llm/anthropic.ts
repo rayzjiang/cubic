@@ -5,6 +5,79 @@ import type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, Cont
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 4096;
 
+// ─── Per-model metadata (the API does not report any of this) ──────────────────
+// Each provider owns its own tables; an OpenAI provider added later brings its own.
+const DEFAULT_CONTEXT_WINDOW = 200_000; // conservative fallback for an unmapped model id
+const CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-sonnet-4-6': 200_000,
+  'claude-haiku-4-5': 200_000,
+  // add Opus / future models here as they are wired up
+};
+
+/** USD per 1M tokens. cache reads bill at ~0.1× input; cache writes at ~1.25× input. */
+const MODEL_PRICING: Record<string, { inPerM: number; outPerM: number }> = {
+  'claude-sonnet-4-6': { inPerM: 3, outPerM: 15 },
+  'claude-haiku-4-5': { inPerM: 1, outPerM: 5 },
+};
+const DEFAULT_PRICING = { inPerM: 3, outPerM: 15 };
+
+/** Rough USD cost of one call, accounting for the discounted cache tiers. */
+export function estimateCost(model: string | undefined, usage: ChatResponse['usage']): number {
+  const p = (model ? MODEL_PRICING[model] : undefined) ?? DEFAULT_PRICING;
+  const cacheWrite = usage.cacheCreationInputTokens ?? 0;
+  const cacheRead = usage.cacheReadInputTokens ?? 0;
+  return (
+    (usage.inputTokens * p.inPerM +
+      cacheWrite * p.inPerM * 1.25 +
+      cacheRead * p.inPerM * 0.1 +
+      usage.outputTokens * p.outPerM) /
+    1_000_000
+  );
+}
+
+// Running tally of debug-logged calls (only accumulates while CUBIC_LLM_DEBUG is on). Lets the live
+// test scripts print a per-run cost total that includes calls made deep inside the agent loop.
+const _debugTally = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
+export function getDebugCost(): typeof _debugTally { return { ..._debugTally }; }
+
+/**
+ * Pretty-prints one model round-trip to the terminal when CUBIC_LLM_DEBUG is set.
+ * Real calls spend API money (and compaction adds an extra summary call), so this makes
+ * every input, output, and dollar visible. Mirrors the shared tests/lib/format.mjs output.
+ */
+function logCall(
+  model: string,
+  messages: Message[],
+  system: Anthropic.MessageCreateParams['system'],
+  tools: ChatOptions['tools'],
+  response: ChatResponse,
+): void {
+  if (!process.env.CUBIC_LLM_DEBUG) return;
+  const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
+  const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
+  const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
+  const clip = (s: string, n = 600) => (s.length > n ? s.slice(0, n) + dim(` …(+${s.length - n} chars)`) : s);
+  const render = (c: Message['content']): string =>
+    typeof c === 'string'
+      ? clip(c)
+      : c.map(b => (b.type === 'text' ? clip(b.text) : `[${b.type}${'name' in b ? ` ${b.name}` : ''}]`)).join(' ');
+
+  const sysLen = typeof system === 'string' ? system.length : (system ?? []).reduce((n, b) => n + ('text' in b ? b.text.length : 0), 0);
+  console.log(bold(`\n╭─ LLM call · ${model}`));
+  console.log(dim(`│  system: ${sysLen} chars · tools: ${tools?.map(t => t.name).join(', ') || 'none'}`));
+  for (const m of messages) console.log(`│  ${cyan(m.role)}: ${render(m.content)}`);
+  if (response.content) console.log(`│  ${cyan('→ assistant')}: ${clip(response.content)}`);
+  for (const tu of response.toolUses) console.log(`│  ${cyan('→ tool_use')}: ${tu.name} ${dim(clip(JSON.stringify(tu.input), 200))}`);
+  const u = response.usage;
+  console.log(dim(`╰─ ${u.inputTokens} in · ${u.outputTokens} out · ${u.cacheReadInputTokens ?? 0} cache-read · ~$${estimateCost(model, u).toFixed(5)}`));
+
+  _debugTally.calls++;
+  _debugTally.inputTokens += u.inputTokens;
+  _debugTally.outputTokens += u.outputTokens;
+  _debugTally.cacheReadTokens += u.cacheReadInputTokens ?? 0;
+  _debugTally.costUsd += estimateCost(model, u);
+}
+
 /**
  * Converts our SystemPromptInput into the Anthropic `system` param. A split
  * prompt becomes two text blocks: the stable `cached` prefix carries a
@@ -59,6 +132,10 @@ export class AnthropicProvider implements LLMProvider {
     this.client = new Anthropic({ apiKey });
   }
 
+  contextWindow(model?: string): number {
+    return CONTEXT_WINDOWS[model ?? DEFAULT_MODEL] ?? DEFAULT_CONTEXT_WINDOW;
+  }
+
   async chat(messages: Message[], opts: ChatOptions): Promise<ChatResponse> {
     const params: Anthropic.MessageCreateParamsNonStreaming = {
       model: opts.model ?? DEFAULT_MODEL,
@@ -90,7 +167,7 @@ export class AnthropicProvider implements LLMProvider {
       }
     }
 
-    return {
+    const result: ChatResponse = {
       content,
       stopReason: response.stop_reason ?? 'end_turn',
       usage: {
@@ -101,6 +178,9 @@ export class AnthropicProvider implements LLMProvider {
       },
       toolUses,
     };
+
+    logCall(params.model, messages, params.system, opts.tools, result);
+    return result;
   }
 
   async *stream(messages: Message[], opts: ChatOptions): AsyncIterable<StreamChunk> {

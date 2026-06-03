@@ -7,3 +7,4 @@ export { snapshotProject } from './snapshot.js';
 export type { SnapshotResult } from './snapshot.js';
 export { describeToolCall } from './events.js';
 export type { AgentEvent, EmitFn } from './events.js';
+export { compactSession, contextTokensOf, findCompactionCut, buildSummaryMessage, COMPACT_THRESHOLD, HARD_CEILING, KEEP_RECENT_TURNS, SUMMARY_SYSTEM_PROMPT } from './compaction.js';
