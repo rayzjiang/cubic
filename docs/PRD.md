@@ -3,11 +3,11 @@ Product Name: Motion Copilot (Placeholder)
 Document Status: V2 (Refactored)
 Target Platform: Adobe After Effects (via UXP/CEP Panel)
 
-✅ Phase 0 — AE basics (enough to evaluate what you're building)
-✅ Phase 1 — MCP validated
-➡️ Phase 1.5 - **Fixing the MCP + adding all functionality that I need + Organizing it for CRUD for each operation
+Phase 0 — AE basics (enough to evaluate what you're building)
+Phase 1 — MCP validated
+Phase 1.5 - **Fixing the MCP + adding all functionality that I need + Organizing it for CRUD for each operation
 Phase 2 — Build the LLM brain + agent architecture (system prompt + Claude API backend)
-Phase 3 (self-healing/correcting/bug checking loop)
+Phase 2 (3 collapse into 2) (self-healing/correcting/bug checking loop)
 Phase 4 (UXP panel UI)
 
 1. The Vision & Problem Statement
