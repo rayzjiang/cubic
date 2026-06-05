@@ -17,8 +17,6 @@
     - [x] Transport: folded the brain into the MCP process — panel sends `userChat`/`cancel`/`queue` over its socket, loop streams `agentEvent` back (wsBridge.onChat + agentChat.ts). cubic-ai is a `file:../ai` dep of server/mcp.
     - [x] **Live verification done** — `npm run test:agent` passes end-to-end against AE (snapshot → comp → batch solid+fade → done, 2/2 tool calls ok, multi-turn history). Fixed a batch field-name mismatch found here ({script,parameters}→{command,args} translation + BATCH_FAILED code).
 
-- [ ] **Eg. Preset Library?? <-- might be done in phase 2 system prompt (give the system prompt a good understanding)
-
 - [x] **Trim volatile `<live_ae_state>` token weight** — `formatStateForPrompt` now emits compact JSON (dropped the `JSON.stringify(…, null, 2)` pretty-print). This block is re-sent every turn and can't be prompt-cached, so the indentation whitespace was pure wasted tokens. Content was already lean (selectedProperties gated to highlighted props; empty selection → `[]`).
 
 - [x] **Conversation history cap → auto-compaction** (pre-ship must-fix) — `Session.messages` no longer grows unbounded. Chose Claude-Code-style **auto-compaction** (summarize old turns) over silent drop-oldest, since old turns carry intent/decisions and live AE state is re-injected fresh every turn anyway. Implemented in `server/ai/src/agent/compaction.ts`:
