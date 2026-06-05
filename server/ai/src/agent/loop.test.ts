@@ -123,16 +123,50 @@ describe('runAgentTurn', () => {
       textResponse('ok, faster now'),
     ]);
     const session = new Session();
-    const execute = vi.fn(async (t: ToolUse) => { session.pendingMessage = 'make it faster'; return okExec(t); });
+    const execute = vi.fn(async (t: ToolUse) => {
+      session.pendingMessages.push({ id: 'q1', text: 'make it faster' });
+      return okExec(t);
+    });
     const events: AgentEvent[] = [];
 
     await runAgentTurn(session, 'animate it', (e) => events.push(e), baseDeps(provider, { executeTool: execute }));
 
-    expect(events.map((e) => e.type)).toContain('steer');
-    expect(session.pendingMessage).toBeNull();
+    // The steer event now carries the queue item's id alongside its text.
+    const steer = events.find((e) => e.type === 'steer') as { type: 'steer'; id: string; text: string } | undefined;
+    expect(steer).toMatchObject({ type: 'steer', id: 'q1', text: 'make it faster' });
+    expect(session.pendingMessages).toHaveLength(0);
     // The steering text was appended as a text block after the tool_result.
     const userTurn = seen[1][2].content as Array<{ type: string; text?: string }>;
     expect(userTurn.some((b) => b.type === 'text' && b.text === 'make it faster')).toBe(true);
+  });
+
+  it('drains ALL queued steering messages in order (regression: no silent drop)', async () => {
+    // Two messages queued before the tool boundary. The old single-slot pendingMessage
+    // would keep only the last (silently dropping the first); the queue must inject both.
+    const { provider, seen } = mockLLM([
+      toolResponse([runScriptCall('t1', 'createLayer')]),
+      textResponse('ok'),
+    ]);
+    const session = new Session();
+    const execute = vi.fn(async (t: ToolUse) => {
+      session.pendingMessages.push({ id: 'q1', text: 'first steer' });
+      session.pendingMessages.push({ id: 'q2', text: 'second steer' });
+      return okExec(t);
+    });
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'animate it', (e) => events.push(e), baseDeps(provider, { executeTool: execute }));
+
+    // Both fired, in order, each as its own steer event with the right id.
+    const steers = events.filter((e) => e.type === 'steer') as Array<{ type: 'steer'; id: string; text: string }>;
+    expect(steers.map((s) => s.text)).toEqual(['first steer', 'second steer']);
+    expect(steers.map((s) => s.id)).toEqual(['q1', 'q2']);
+    expect(session.pendingMessages).toHaveLength(0);
+
+    // Both rode along as text blocks after the tool_result, in order.
+    const userTurn = seen[1][2].content as Array<{ type: string; text?: string }>;
+    const texts = userTurn.filter((b) => b.type === 'text').map((b) => b.text);
+    expect(texts).toEqual(['first steer', 'second steer']);
   });
 
   it('refuses to start a second concurrent turn', async () => {

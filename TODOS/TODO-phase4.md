@@ -12,10 +12,11 @@
     - [ ] Show the queued/steering message(s) in the UI + allow editing/removing before they fire.
     - [ ] ⚠️ Backend bump needed for FULL parity: today `pendingMessage` is a single slot (last-write-wins). Editing/stacking multiple queued messages needs a queue *list* on Session (small change) — single-message steer works today without it.
 - [ ] **Seamless backup recovery** — the agent loop already saves a pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10), but recovery is currently manual (dig into the hidden folder in Finder). Make it ergonomic:
-    - [ ] Panel "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
+    - [ ] **VERY IMPORTANT:** Panel "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
     - [ ] Agent-driven restore — a "Cubic, undo that / revert the last change" command the model understands, mapping to a restore handler (new MCP command: copy a chosen `.cubic-backups/` file back + reopen project).
     - [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
 
 
 ### Super important
 - [ ] **Motion-quality judgement call (deferred from Phase 2)** — once the UI is done, drive it through real prompts and watch the rendered output. Then decide: does the model's understanding of "juicy/good" motion design actually need improving (recipes already exist + system prompt steers toward them, so the baseline may be enough)? If yes, decide the best way to do it (e.g. tune recipe defaults, adjective→recipe mapping in the system prompt, more composite recipes, or a visual feedback loop) — NOT a separate preset library by default.
+- [ ] Giving the AI an option to view video it just generated (probably have to integrate with Google Gemini?? since gemini has video feature) - BECAUSE no point in having my ai read images, it should be viewing video..
