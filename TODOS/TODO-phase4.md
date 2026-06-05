@@ -18,4 +18,4 @@
 
 
 ### Super important
-- [ ] **Eg. Preset Library?? <-- might be done in phase 2 system prompt (give the system prompt a good understanding)
+- [ ] **Motion-quality judgement call (deferred from Phase 2)** — once the UI is done, drive it through real prompts and watch the rendered output. Then decide: does the model's understanding of "juicy/good" motion design actually need improving (recipes already exist + system prompt steers toward them, so the baseline may be enough)? If yes, decide the best way to do it (e.g. tune recipe defaults, adjective→recipe mapping in the system prompt, more composite recipes, or a visual feedback loop) — NOT a separate preset library by default.
