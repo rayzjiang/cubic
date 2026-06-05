@@ -311,6 +311,27 @@ async function main() {
   await bridge.start(AE_MCP_PORT);
   registerAgentChat();
   const transport = new StdioServerTransport();
+
+  // Exit cleanly when the MCP host (Claude Code) goes away — otherwise a
+  // terminating session leaves this process reparented to launchd, squatting
+  // the WS bridge port forever (every stale instance pushes the next one onto
+  // a fallback port until binds fail). The host signals shutdown by closing our
+  // stdin; StdioServerTransport surfaces that as a transport close. We also
+  // handle the usual termination signals. close() frees the port before exit.
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try { bridge.close(); } catch { /* best-effort */ }
+    process.exit(0);
+  };
+  transport.onclose = shutdown;
+  process.stdin.on("end", shutdown);
+  process.stdin.on("close", shutdown);
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGHUP", shutdown);
+
   await server.connect(transport);
   console.error("After Effects MCP Server running...");
 }

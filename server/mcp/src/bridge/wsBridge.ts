@@ -187,6 +187,23 @@ class AEBridge {
     return this.workerClient !== null && this.workerClient.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Release the WS bridge: reject in-flight commands, drop the worker socket, and
+   * close the listening server so the port is freed immediately. Called from the
+   * process shutdown path so a terminating server never orphans its port.
+   */
+  close(): void {
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(new BridgeError('AE_DISCONNECTED', 'bridge shutting down'));
+    }
+    this.pending.clear();
+    this.workerClient?.close();
+    this.workerClient = null;
+    this.wss?.close();
+    this.wss = null;
+  }
+
   on(event: BridgeEvent, handler: () => void): void {
     const handlers = this.eventHandlers.get(event) ?? [];
     handlers.push(handler);
