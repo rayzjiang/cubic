@@ -26,3 +26,10 @@
 - [x] **Clear / compact commands** — `/clear` (empties history) and `/compact` (compaction on demand) parsed in `agentChat.ts`; same handlers the Phase 4 UI buttons will call. Rejected mid-run (they mutate live history). Showing the context window to users is deferred to the Phase 4 chat UI (no surface yet).
 - [x] **Full model I/O + cost visibility in tests** — every real API call is printed (request → response → tokens → est. $) at the provider chokepoint when `CUBIC_LLM_DEBUG=1`; the three paid live scripts (`test:tools`/`test:chat`/`test:agent`) enable it automatically and print a per-run cost total via shared `tests/lib/format.mjs`. Per-model price table lives with the provider; `agent-live` capped at `maxIterations: 5` for thrift.
     - [ ] Follow-up (deferred, not a blocker): per-block elision of an oversized single recent `tool_result` — currently the hard-ceiling pause covers that edge.
+
+- [x] Hide saveToFramePNG tool -> later in phase4/beyond might implement gemini api to power video viewing.. not sure how good it is tho.. (maybe post-launch feature)
+    - Mechanism: `internal?: boolean` on `CommandSpec`; `saveFrameToPng` marked `internal: true` → stays in the registry (drift-checked, still callable via MCP/diagnostic) but filtered out of the generated `<command_catalog>` (`renderCatalog.ts`), so the model never sees it. Don't delete the entry — drift guard requires the registry key.
+- [x] Full mid-tool call steer + queue functionality
+    - All queued msgs fire at the next tool call boundary (within the current agent call)
+    - `Session.pendingMessage` (single-slot, last-write-wins) → FIFO `pendingMessages: {id,text}[]`; the WHOLE queue drains in order each boundary (no silent drop). Leftover after the final boundary → one combined follow-up turn.
+    - Inbound `editQueue`/`removeQueue` (by id) let the panel revise/cancel a queued steer before it fires; the `steer` event now carries the item `id` so the UI can mark a row "sent". Regression test in `loop.test.ts` proves two queued msgs both fire in order.

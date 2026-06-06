@@ -1,22 +1,22 @@
 ## Phase 4
 - ***Should I make my UI standalone instead of a after effects panel? (like something downloadable that would connect to AE - i think this means that they would have to set up something on after effects)
     - Doing this would also allow me to expand to other platforms in the future (eg. premiere pro, davinci, final cut pro, etc., as opposed to having to recreate a new ui for each part)
-- new ux (similar to claude's spinning progress bar + nice words, etc.)
+
+- good ux (similar to claude's spinning progress bar + nice words, etc.)
 - Cubic undo history viewer + dedicated keybind?
 - [ ] **CEP panel chat UI** — build the panel-side UI that consumes the `agentEvent` protocol (streaming event display, message history); prerequisite for agent-run controls and recovery UI. Optional: token-level streaming.
     - [ ] **Render the new compaction/context events** (backend done in Phase 2 — auto-compaction, `/clear`, `/compact`): show `compaction` (start/done/failed) as a subtle "compacting conversation…" indicator (NOT a scary error), and render `context_full` as a friendly "this chat is too long — start a new one" CTA, not a red error. Optional: a context-usage meter (`Session.lastContextTokens` vs the model's `contextWindow`).
     - [ ] **Manual end-to-end test of compaction (deferred from Phase 2)** — backend logic is unit-tested (free, in `compaction.test.ts`/`loop.test.ts`), but the real-AE feel was left for this UI. Once the chat UI exists: (1) type `/clear` → history empties; (2) type `/compact` → older turns collapse to a `<conversation_summary>` and the next turn continues coherently; (3) trigger auto-compaction by holding a long conversation (or temporarily lower the threshold via the `compactThreshold`/`contextWindowOverride` deps on `runAgentTurn`) and confirm it fires at the turn boundary without losing recent context; (4) force the hard ceiling and confirm the `context_full` pause. Run any real-API check with `CUBIC_LLM_DEBUG=1` to watch I/O + per-call cost.
-- [ ] **Agent-run controls (Claude-Code-style)** — the loop's BACKEND hooks already exist from Phase 2 item 4 (`Session.cancelRequested` + `Session.pendingMessage`, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue` messages to them). Phase 4 wires the panel UI to them:
+- [ ] **Agent-run controls (Claude-Code-style)** — the loop's BACKEND hooks all exist from Phase 2 (`Session.cancelRequested` + the `pendingMessages` FIFO queue, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue`/`editQueue`/`removeQueue`). Phase 4 is pure panel-UI wiring:
     - [ ] Esc / cancel button → sends `{type:'cancel'}` to stop the current run at the next boundary.
-    - [ ] Type-while-running → sends `{type:'queue', text}` to steer the agent (injected at the next tool boundary, or as a fresh follow-up turn).
-    - [ ] Show the queued/steering message(s) in the UI + allow editing/removing before they fire.
-    - [ ] ⚠️ Backend bump needed for FULL parity: today `pendingMessage` is a single slot (last-write-wins). Editing/stacking multiple queued messages needs a queue *list* on Session (small change) — single-message steer works today without it.
+    - [ ] Type-while-running → sends `{type:'queue', id, text}` to steer the agent (injected at the next tool boundary, or as a fresh follow-up turn).
+    - [ ] Show the queued/steering message(s) + allow editing/removing before they fire → send `editQueue`/`removeQueue` by `id`; mark a row "sent" when its `steer` event (carrying that `id`) arrives.
 - [ ] **Seamless backup recovery** — the agent loop already saves a pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10), but recovery is currently manual (dig into the hidden folder in Finder). Make it ergonomic:
     - [ ] **VERY IMPORTANT:** Panel "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
     - [ ] Agent-driven restore — a "Cubic, undo that / revert the last change" command the model understands, mapping to a restore handler (new MCP command: copy a chosen `.cubic-backups/` file back + reopen project).
     - [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
 
-
 ### Super important
+- [ ] **Mid-turn state-staleness guard (Claude-Code-style "modified since read")** — today if the user edits the project *while* a turn runs, only destructive drift is caught (a stale-target tool call fails with `LAYER_NOT_FOUND`/etc. → self-heal re-reads); silent drift (e.g. user nudges a layer's position) is acted on against stale context. AE has no free revision counter (unlike file mtime), so: capture a cheap project-state **fingerprint** at turn start, re-check it before each *mutating* tool call, and on mismatch emit a new `STATE_STALE` error code into the existing self-heal path → model re-reads fresh context before retrying. Post-launch hardening, not a blocker.
 - [ ] **Motion-quality judgement call (deferred from Phase 2)** — once the UI is done, drive it through real prompts and watch the rendered output. Then decide: does the model's understanding of "juicy/good" motion design actually need improving (recipes already exist + system prompt steers toward them, so the baseline may be enough)? If yes, decide the best way to do it (e.g. tune recipe defaults, adjective→recipe mapping in the system prompt, more composite recipes, or a visual feedback loop) — NOT a separate preset library by default.
 - [ ] Giving the AI an option to view video it just generated (probably have to integrate with Google Gemini?? since gemini has video feature) - BECAUSE no point in having my ai read images, it should be viewing video..
