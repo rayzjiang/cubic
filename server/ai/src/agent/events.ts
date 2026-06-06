@@ -13,7 +13,7 @@ export type AgentEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
   | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean }
-  | { type: 'steer'; text: string }
+  | { type: 'steer'; id: string; text: string }
   | { type: 'cancelled' }
   // History compaction: older turns summarized to stay under the context window. 'done' also
   // covers a /clear (reason: 'cleared'). 'failed' is a soft notice — the turn still proceeds.

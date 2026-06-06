@@ -36,7 +36,9 @@ function renderCommand(name: string, spec: CommandSpec): string {
 }
 
 export function renderCommandCatalog(): string {
-  const entries = Object.entries(COMMAND_PARAMS) as [string, CommandSpec][];
+  // Internal commands stay in the registry (drift + MCP surface) but never reach the model.
+  const entries = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
+    .filter(([, spec]) => !spec.internal);
 
   // Group by domain, preserving first-seen domain order from the registry.
   const domains: string[] = [];

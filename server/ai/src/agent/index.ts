@@ -1,6 +1,7 @@
 export { runAgentTurn } from './loop.js';
 export type { AgentDeps } from './loop.js';
-export { Session } from './session.js';
+export { Session, nextQueueId } from './session.js';
+export type { QueuedMessage } from './session.js';
 export { executeTool } from './executeTool.js';
 export type { ToolExecution } from './executeTool.js';
 export { snapshotProject } from './snapshot.js';

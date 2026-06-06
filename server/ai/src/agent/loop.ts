@@ -144,13 +144,16 @@ export async function runAgentTurn(
         toolResults.push(exec.block);
       }
 
-      // A queued steering message rides along in the SAME user turn as the tool results
-      // (the API requires tool_result blocks to immediately follow their tool_use).
+      // Queued steering messages ride along in the SAME user turn as the tool results
+      // (the API requires tool_result blocks to immediately follow their tool_use). Drain
+      // the WHOLE queue in order — never just the last — so no steer is silently dropped.
       const userContent: ContentBlock[] = [...toolResults];
-      if (session.pendingMessage) {
-        emit({ type: 'steer', text: session.pendingMessage });
-        userContent.push({ type: 'text', text: session.pendingMessage });
-        session.pendingMessage = null;
+      if (session.pendingMessages.length) {
+        for (const m of session.pendingMessages) {
+          emit({ type: 'steer', id: m.id, text: m.text });
+          userContent.push({ type: 'text', text: m.text });
+        }
+        session.pendingMessages = [];
       }
       session.messages.push({ role: 'user', content: userContent });
       iter++;

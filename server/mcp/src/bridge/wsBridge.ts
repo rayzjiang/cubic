@@ -23,9 +23,11 @@ type BridgeEvent = 'connect' | 'disconnect';
 
 /** Chat-channel messages the panel sends over its worker socket (Phase 2 agent loop). */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue';
   sessionId?: string;
   text?: string;
+  /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
+  id?: string;
 }
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;

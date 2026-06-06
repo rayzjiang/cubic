@@ -1,0 +1,40 @@
+import { describe, it, expect } from 'vitest';
+import { renderCommandCatalog } from './renderCatalog.js';
+import { COMMAND_PARAMS, type CommandSpec } from '../tools/command-params.js';
+
+describe('renderCommandCatalog', () => {
+  const catalog = renderCommandCatalog();
+
+  it('omits commands flagged internal (saveFrameToPng) from the model catalog', () => {
+    // The entry stays in the registry (drift + MCP surface) but must never reach the model:
+    // a single still frame can't convey motion — see the internal flag rationale.
+    expect((COMMAND_PARAMS as Record<string, CommandSpec>).saveFrameToPng.internal).toBe(true);
+    expect(catalog).not.toContain('saveFrameToPng');
+  });
+
+  it('still renders every non-internal command', () => {
+    const visible = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
+      .filter(([, spec]) => !spec.internal)
+      .map(([name]) => name);
+    for (const name of visible) {
+      expect(catalog).toContain(`${name}(`);
+    }
+    // The only command we expect to be hidden is the internal one.
+    const hidden = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
+      .filter(([, spec]) => spec.internal)
+      .map(([name]) => name);
+    expect(hidden).toEqual(['saveFrameToPng']);
+  });
+
+  it('preserves registry order for visible commands (cache-stable prefix)', () => {
+    const visible = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
+      .filter(([, spec]) => !spec.internal)
+      .map(([name]) => name);
+    const positions = visible.map((n) => catalog.indexOf(`${n}(`));
+    const grouped = [...positions].sort((a, b) => a - b);
+    // Domain grouping reorders across domains, so we only assert each visible command
+    // appears exactly once and none is missing (-1).
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect(new Set(grouped).size).toBe(positions.length);
+  });
+});

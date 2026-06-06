@@ -34,6 +34,10 @@ export interface CommandSpec {
   params: Record<string, string>;
   /** Subset of `params` that are required (rendered without the `?` marker). */
   required?: string[];
+  /** When true, the command stays in the registry (drift-checked, callable via the MCP
+   *  /diagnostic surface) but is omitted from the generated <command_catalog> so the
+   *  model never sees or calls it. */
+  internal?: boolean;
 }
 
 export const COMMAND_PARAMS = {
@@ -325,7 +329,10 @@ export const COMMAND_PARAMS = {
   // ── Project ───────────────────────────────────────────────────────────────
   getProjectPath: { domain: 'Project', summary: 'Get the project file path + dirty flag.', params: {} },
   saveProject: { domain: 'Project', summary: 'Save the project (optionally to a new path).', params: { saveAs: 'string (abs path)' } },
-  saveFrameToPng: { domain: 'Project', summary: 'Render one frame of a comp to a PNG.', params: { timeInSeconds: 'float (default playhead)', outputPath: 'string (abs path)' } },
+  // internal: kept in the registry (drift-checked, callable via MCP/diagnostic) but hidden from
+  // the model's catalog — a single still frame can't convey MOTION, so the loop never views work
+  // this way. Real motion-viewing is deferred to Phase 4 (Gemini video).
+  saveFrameToPng: { domain: 'Project', summary: 'Render one frame of a comp to a PNG.', params: { timeInSeconds: 'float (default playhead)', outputPath: 'string (abs path)' }, internal: true },
 
   // ── Motion recipes & 3D ───────────────────────────────────────────────────
   applyMotionRecipe: {

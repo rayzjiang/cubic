@@ -1,10 +1,10 @@
-import { runAgentTurn, compactSession, Session, type AgentEvent } from "cubic-ai";
+import { runAgentTurn, compactSession, Session, nextQueueId, type AgentEvent } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 
 /**
  * Folds the AI agent loop (cubic-ai) into this MCP server process. The panel talks to
  * the loop over the SAME WebSocket it already uses as the ExtendScript worker:
- *   panel → { type: 'userChat' | 'cancel' | 'queue' }  → here
+ *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' }  → here
  *   here  → { type: 'agentEvent', sessionId, event }     → panel
  *
  * The loop reaches AE through cubic-ai's mcpClient, which connects to this same bridge
@@ -27,8 +27,19 @@ export function registerAgentChat(): void {
       session.cancelRequested = true;
       return;
     }
+    // Queue ops. The loop drains the queue synchronously at iteration boundaries, so
+    // editing/removing between boundaries can't race — allow them regardless of run state.
     if (msg.type === "queue") {
-      if (msg.text) session.pendingMessage = msg.text;
+      if (msg.text) session.pendingMessages.push({ id: msg.id ?? nextQueueId(), text: msg.text });
+      return;
+    }
+    if (msg.type === "editQueue") {
+      const item = session.pendingMessages.find((m) => m.id === msg.id);
+      if (item && msg.text) item.text = msg.text; // no-op if already drained
+      return;
+    }
+    if (msg.type === "removeQueue") {
+      session.pendingMessages = session.pendingMessages.filter((m) => m.id !== msg.id);
       return;
     }
 
@@ -67,17 +78,18 @@ export function registerAgentChat(): void {
     // If a turn is already running, a new message becomes a steer/queue — mirrors
     // Claude Code, where typing mid-run redirects the agent rather than starting a race.
     if (session.running) {
-      session.pendingMessage = msg.text;
+      session.pendingMessages.push({ id: msg.id ?? nextQueueId(), text: msg.text });
       return;
     }
 
     await runAgentTurn(session, msg.text, emit);
-    // Mid-turn steers are consumed inside runAgentTurn. A message that arrived AFTER the
-    // model's last tool boundary is still queued here → run it as a fresh follow-up turn.
-    while (session.pendingMessage && !session.cancelRequested) {
-      const next = session.pendingMessage;
-      session.pendingMessage = null;
-      await runAgentTurn(session, next, emit);
+    // Mid-turn steers are consumed inside runAgentTurn. Messages that arrived AFTER the
+    // model's last tool boundary are still queued here → drain the whole remaining queue
+    // into one combined follow-up turn (consistent with the in-turn drain-all).
+    while (session.pendingMessages.length && !session.cancelRequested) {
+      const combined = session.pendingMessages.map((m) => m.text).join("\n");
+      session.pendingMessages = [];
+      await runAgentTurn(session, combined, emit);
     }
   });
 }
