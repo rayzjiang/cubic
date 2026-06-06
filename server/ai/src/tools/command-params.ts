@@ -12,7 +12,7 @@
  *
  * DRIFT GUARD:
  *   `tests/drift-guard.mjs` asserts (a) the keys here match the canonical command
- *   list in `server/mcp/src/commands.ts`, and (b) every non-targeting param here
+ *   list in `server/ae-bridge/src/commands.ts`, and (b) every non-targeting param here
  *   matches the real `args.X` reads in the `.jsx` handlers. So this file cannot
  *   silently rot out of sync with the runtime.
  *
@@ -361,7 +361,7 @@ export type CommandName = keyof typeof COMMAND_PARAMS;
 
 /**
  * Canonical command-name list, DERIVED from the registry keys. The drift guard
- * asserts this equals `server/mcp/src/commands.ts`. Consumed by the runScript /
+ * asserts this equals `server/ae-bridge/src/commands.ts`. Consumed by the runScript /
  * batch tool enum in `definitions.ts`.
  */
 export const COMMAND_NAMES = Object.keys(COMMAND_PARAMS) as [CommandName, ...CommandName[]];

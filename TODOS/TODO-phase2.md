@@ -14,7 +14,7 @@
     - [x] Autosave project before agent run (easy revert point) — `backupProject` jsx handler filesystem-copies the .aep to `.cubic-backups/`; internal-only (not a model tool)
     - [~] ~~Wrap entire agent's single msgs' calls into a single undo group~~ — DROPPED: infeasible (AE undo groups can't span async LLM round-trips). The pre-turn snapshot IS the turn-level revert; per-command undo groups stay for granular ⌘Z.
     - [x] Execute tool calls via callRunScript → feed tool_result blocks back → loop; snapshot before run; sessionCache.invalidate() after mutations; treat RENDER_FAILED as retryable (retry once)
-    - [x] Transport: folded the brain into the MCP process — panel sends `userChat`/`cancel`/`queue` over its socket, loop streams `agentEvent` back (wsBridge.onChat + agentChat.ts). cubic-ai is a `file:../ai` dep of server/mcp.
+    - [x] Transport: folded the brain into the MCP process — panel sends `userChat`/`cancel`/`queue` over its socket, loop streams `agentEvent` back (wsBridge.onChat + agentChat.ts). cubic-ai is a `file:../ai` dep of server/ae-bridge.
     - [x] **Live verification done** — `npm run test:agent` passes end-to-end against AE (snapshot → comp → batch solid+fade → done, 2/2 tool calls ok, multi-turn history). Fixed a batch field-name mismatch found here ({script,parameters}→{command,args} translation + BATCH_FAILED code).
 
 - [x] **Trim volatile `<live_ae_state>` token weight** — `formatStateForPrompt` now emits compact JSON (dropped the `JSON.stringify(…, null, 2)` pretty-print). This block is re-sent every turn and can't be prompt-cached, so the indentation whitespace was pure wasted tokens. Content was already lean (selectedProperties gated to highlighted props; empty selection → `[]`).

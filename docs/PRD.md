@@ -1,14 +1,14 @@
 Product Requirements Document (PRD): Motion Copilot for After Effects (MVP)
 Product Name: Motion Copilot (Placeholder)
 Document Status: V2 (Refactored)
-Target Platform: Adobe After Effects (via UXP/CEP Panel)
+Target Platform: Adobe After Effects, driven from a standalone Cubic desktop app (Electron) that connects to AE over a thin headless CEP bridge. (Architecture is deliberately host-agnostic to allow Premiere/DaVinci later — see §4 & §6.)
 
 Phase 0 — AE basics (enough to evaluate what you're building)
 Phase 1 — MCP validated
 Phase 1.5 - **Fixing the MCP + adding all functionality that I need + Organizing it for CRUD for each operation
 Phase 2 — Build the LLM brain + agent architecture (system prompt + Claude API backend)
 Phase 2 (3 collapse into 2) (self-healing/correcting/bug checking loop)
-Phase 4 (UXP panel UI)
+Phase 4 (Standalone Electron desktop app + thin headless AE bridge)
 
 1. The Vision & Problem Statement
 The industry standard for high-end SaaS and app launch videos (e.g., Anthropic, Duolingo, Apple) relies on "juicy" motion graphics—smooth easing, clean animations, kinetic typography, and physics-based bounces. Achieving this requires deep technical knowledge of After Effects, specifically the graph editor, JavaScript expressions, etc..
@@ -18,7 +18,7 @@ Primary: General video editors and entry-level motion designers who want a Copil
 Secondary (Post-MVP): Complete beginners (founders, marketers) who want to generate startup-style videos entirely via prompt.
 3. Core Features (The MVP)
 3.1 The Agent Interface & Context System
-The Analogy: The AE Timeline is the "codebase." The Copilot panel is the chat interface.
+The Analogy: The AE Timeline is the "codebase." The Cubic desktop app is the chat interface (a separate window that connects to AE, not a docked panel).
 Layer Targeting (Context Selection): Users can highlight specific layers in AE to give the Copilot immediate context (similar to highlighting a block of code in VSCode). If nothing is selected, the agent reads the active composition and infers the target based on the prompt.
 Project Asset Access (project panel is like the root directory of an AI coding agent’s context): The Copilot can read the user's AE Project Panel, allowing it to pull existing imported assets (like a client logo or app UI screenshot) directly onto the timeline to animate them.
 Small side feature - Auto-Composition: If a user submits a prompt in a completely empty project, the plugin automatically generates a default resolution/fps (decide later). Composition to begin work, removing setup friction.
@@ -29,11 +29,11 @@ The "Juice" System: The LLM is heavily system-prompted with specific style guide
 3.3 Self-Healing Code Loop (Error Handling)
 LLMs will occasionally hallucinate bad interactions/code/Javascript/ExtendScript. If After Effects throws a compilation error or execution failure, the Copilot will invisibly catch the error string and pass it back to the LLM to debug and fix itself in the background before showing the result to the user. If it fails after a set number of retries, it gracefully informs the user.
 3.4 Zero-Friction Installation
-Avoid standard Adobe ZXP installer friction. The product will be packaged in a standard .exe (Windows) and .pkg (Mac) installer that automatically drops the plugin files into the correct hidden Adobe system directories.
+Avoid standard Adobe ZXP installer friction. Users install ONE thing — the Cubic desktop app (signed/notarized .app on Mac, .exe on Windows). On first run / "Connect to After Effects," the app auto-provisions the thin headless CEP bridge into the correct hidden Adobe CEP extensions directory and enables debug mode, so AE auto-connects on next launch. No separate plugin installer, no ZXP. (Analytics/usage instrumentation + feature flags are wanted in the app — vendor TBD; wire the event hooks in as the UI is built.)
 
 4. Technical Architecture
-Frontend: Adobe UXP (or CEP) built with React/HTML/CSS.
-Backend / Middleware: A local node server (adapting logic from the open-source MCP bridge) to pass code securely between the web panel and the AE engine.
+Frontend: Standalone Cubic desktop app — Electron (React/HTML/CSS) renderer. Chosen over native Swift because the backend is all TS/Node (reuse + shared types + hosting the backend as a child process); it's also the industry default for non-terminal AI editors (Cursor/Windsurf/VS Code forks). The chat UI is written once and is host-agnostic — only the per-host bridge adapter changes for future platforms.
+Backend / Middleware: A local Node server (the existing MCP bridge + agent loop) hosted by the Electron main process. It opens the WebSocket bridge on 127.0.0.1:17923; the thin headless CEP extension inside AE connects as the worker client and runs ExtendScript via evalScript. The agent loop reaches AE as just another client on the same bridge. The wire protocol (`{id, command, args}` ↔ `{id, ok, result}`) is the stable contract between app and host.
 MCP logic was written out by someone else, we gotta verify it works as intended: https://github.com/Dakkshin/after-effects-mcp
 LLM Integration: A single, highly capable model (e.g., Claude 3.5 Sonnet) hardcoded for the MVP to ensure stability and simplify development.
 
@@ -50,4 +50,4 @@ Complex 3D Generation: Automating multi-node 3D camera tracking, deep Z-space en
 
 6. Out of Scope
 NLE Trimming: Cutting, trimming, or rearranging raw MP4 video/audio footage.
-Premiere Pro / DaVinci Integration: The tool is strictly native to After Effects
+Premiere Pro / DaVinci Integration: Out of scope for the MVP — After Effects is the only shipped target. NOTE (changed): going standalone was chosen partly so this is no longer a one-way door. The desktop UI is host-agnostic; adding a host later means writing a new bridge adapter that speaks the same wire protocol (Premiere = also CEP, near-free; DaVinci = Python/Lua WS bridge), not rebuilding the app. Final Cut remains unlikely (no real scripting API).

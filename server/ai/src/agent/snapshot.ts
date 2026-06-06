@@ -10,7 +10,7 @@ export interface SnapshotResult {
 
 /**
  * Pre-turn revert point. Asks AE to flush the project to disk and copy the .aep into
- * a `.cubic-backups/` sibling (see `backupProject` in server/mcp project.jsx). This is
+ * a `.cubic-backups/` sibling (see `backupProject` in server/ae-bridge project.jsx). This is
  * an internal turn step — NOT a model-exposed tool, so it is intentionally absent from
  * the command registry/catalog and reached only via the internal mcpClient path.
  *

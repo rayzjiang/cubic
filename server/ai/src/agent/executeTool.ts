@@ -4,7 +4,7 @@ import type { ToolUse, ToolResultBlock } from '../llm/types.js';
 
 /**
  * Commands that only READ AE state — running one does not require a sessionCache
- * invalidation. Mirrors READ_ONLY_COMMANDS in server/mcp/src/scripts/mcp-bridge.jsx.
+ * invalidation. Mirrors READ_ONLY_COMMANDS in server/ae-bridge/src/scripts/mcp-bridge.jsx.
  * Drift here is harmless by design: a missing entry only costs one redundant refetch
  * next turn; a stale entry only serves stale project/comp counts for a single turn
  * (self-heals on the next mutation).

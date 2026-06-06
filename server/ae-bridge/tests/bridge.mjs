@@ -30,7 +30,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Internal-only handlers — present in _dispatchSwitch but deliberately
 // absent from allowedScripts because their work is exposed via the
-// consolidated createLayer({type:...}) dispatcher (server/mcp/CLAUDE.md
+// consolidated createLayer({type:...}) dispatcher (server/ae-bridge/CLAUDE.md
 // "broad parameterized tools" rule).
 const EXPECTED_INTERNAL_ONLY = [
   'createCamera',

@@ -1,7 +1,7 @@
 {
-  "name": "after-effects-mcp",
+  "name": "cubic-ae-bridge",
   "version": "2.0.0",
-  "description": "MCP server for Adobe After Effects (CEP WebSocket bridge)",
+  "description": "Cubic After Effects bridge — WS transport + ExtendScript handlers + CEP extension, with an optional MCP-server dev interface",
   "main": "build/index.js",
   "type": "module",
   "scripts": {

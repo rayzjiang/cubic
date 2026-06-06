@@ -4,7 +4,7 @@ import { COMMAND_NAMES, type CommandName } from './command-params.js';
 
 /**
  * Command names + per-command parameter docs both come from the single registry
- * in `command-params.ts` (whose keys are kept matching `server/mcp/src/commands.ts`
+ * in `command-params.ts` (whose keys are kept matching `server/ae-bridge/src/commands.ts`
  * and whose params are kept matching the `.jsx` handlers by `tests/drift-guard.mjs`).
  * Re-exported here so existing importers keep working.
  */

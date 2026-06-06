@@ -8,10 +8,10 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 cubic/
 ├── docs/PRD.md              # Product vision + phase roadmap (source of truth for scope)
 ├── TODO.md                  # Phase checklist (keep in sync when completing tasks)
-├── extension/               # Phase 4: UXP/CEP panel UI (React) — empty placeholder
+├── app/                     # Phase 4: standalone Electron desktop app (React chat UI + hosts the Node backend) — to build
 ├── server/
-│   ├── ai/                  # Phase 2: Claude API backend / agent brain — empty placeholder
-│   └── mcp/                 # ← YOU ARE HERE (Phase 1.5)
+│   ├── ai/                  # Phase 2 ✅ Claude API backend / agent brain (loop, self-heal, compaction, sessions)
+│   └── ae-bridge/           # AE bridge + ExtendScript handlers + CEP extension + optional MCP-server dev interface (this package)
 │       ├── src/
 │       │   ├── index.ts         # MCP server: tool/resource registration (allowedScripts → COMMANDS from commands.ts)
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
@@ -19,13 +19,14 @@ cubic/
 │       │       ├── mcp-bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
 │       │       ├── compositions.jsx / layers.jsx / animation.jsx
 │       │       ├── effects.jsx / masks.jsx / footage.jsx
-│       ├── cep-extension/src/main.js  # WS client + evalScript dispatch footer
+│       ├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (Phase 4: strip its UI, app auto-installs it)
 │       ├── scripts/build-cep-extension.mjs  # Bundles .jsx files → handlers.bundled.jsx
 │       └── tests/               # Per-domain integration tests (require live AE + panel)
 ```
 
-**Current phase: 1.5** — MCP functional. Active work: finish CRUD coverage, comprehensive tests, undo groups ✅
-**Next: Phase 2** (`server/ai/`) → Claude API backend. **Phase 4** (`extension/`) → Panel UI.
+**What this package is:** the AE bridge — WS transport (`wsBridge.ts`), the ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them. The MCP server (`src/index.ts`, stdio via `@modelcontextprotocol/sdk`) is just *one* entrypoint on top, kept as an optional dev interface (drive handlers from Claude Code). The agent brain it talks to (`server/ai`, `cubic-ai`) is built — loop, self-heal, compaction, sessions. The chat UI is a separate Electron app (`app/`) that hosts this package's bridge + loop in its main process and connects the renderer over the same WS; the `cep-extension/` is being slimmed to a headless `evalScript` dispatcher the app auto-installs into AE. See `TODOS/TODO-phase4.md`.
+
+> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP — a couple of lingering "mcp" names (`mcp-bridge.jsx`, the `com.cubic.ae-mcp-bridge` bundle id, `server/ai/src/mcp/`) are tracked for rename at the bottom of `TODO-phase4.md`.
 
 ---
 
@@ -100,7 +101,7 @@ Read-only allowlist: `getProjectInfo`, `listCompositions`, `getCompositionInfo`,
 Autosave-before-run revert point is now the agent loop's pre-turn `backupProject` snapshot (a filesystem copy to `.cubic-backups/`), NOT a per-turn undo group — AE undo groups can't span the loop's async LLM round-trips. Deferred: undo history panel (Phase 4).
 
 ## Agent loop fold (Phase 2)
-This process now also hosts the AI agent loop: `server/mcp` depends on `cubic-ai` (`file:../ai`) and `agentChat.ts` registers a chat handler on the bridge (`bridge.onChat`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; the loop streams `{type:'agentEvent', event}` back. **Rebuild + `npm install` notes:** after changing `server/ai`, run its `npm run build` (emits `build/` + `build/types/`) so the symlinked `cubic-ai` is current; then rebuild this server. The loop reaches AE via cubic-ai's own loopback bridge client (a second WS connection), so command + agentEvent traffic share the panel socket.
+This process now also hosts the AI agent loop: `server/ae-bridge` depends on `cubic-ai` (`file:../ai`) and `agentChat.ts` registers a chat handler on the bridge (`bridge.onChat`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; the loop streams `{type:'agentEvent', event}` back. **Rebuild + `npm install` notes:** after changing `server/ai`, run its `npm run build` (emits `build/` + `build/types/`) so the symlinked `cubic-ai` is current; then rebuild this server. The loop reaches AE via cubic-ai's own loopback bridge client (a second WS connection), so command + agentEvent traffic share the panel socket.
 
 ## Structured errors (Tier 3)
 All handler `catch` blocks now return `{ status:"error", errorCode, message, line }`. `errorCode` is one of: `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`, `BATCH_FAILED` (any sub-command of a `batch` failed — per-command codes are in `results[]`). The Node bridge uses `BridgeError` (with `.code`) for transport-level errors. `dispatchTool()` in `src/index.ts` parses handler responses and sets MCP `isError:true` + `structuredContent` when `status:"error"` is detected.

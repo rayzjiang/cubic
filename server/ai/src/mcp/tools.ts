@@ -1,6 +1,6 @@
 import { mcpClient } from "./client.js";
 
-// Return shapes mirror the ExtendScript handler output in server/mcp/src/scripts/
+// Return shapes mirror the ExtendScript handler output in server/ae-bridge/src/scripts/
 
 export interface ProjectInfo {
   projectName: string;

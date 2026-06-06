@@ -4,7 +4,7 @@
  * file reads, runs in CI):
  *
  *   1. NAMES  — registry keys (COMMAND_PARAMS) must equal the canonical command
- *               list in server/mcp/src/commands.ts.
+ *               list in server/ae-bridge/src/commands.ts.
  *   2. PARAMS — every non-targeting param in the registry must match the real
  *               `args.X` reads in the .jsx handlers (and vice versa), so the
  *               always-present command catalog can never silently misdescribe a
@@ -29,7 +29,7 @@ const dim   = s => `\x1b[2m${s}\x1b[0m`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..', '..', '..');
-const MCP_SRC = join(REPO, 'server', 'mcp', 'src');
+const MCP_SRC = join(REPO, 'server', 'ae-bridge', 'src');
 const SCRIPTS_DIR = join(MCP_SRC, 'scripts');
 
 // Shared resolver helpers — params they read are targeting/global, exempt below.
@@ -39,7 +39,7 @@ const SCAN_TARGETS = {
   createLayer: ['createLayer', 'createSolidLayer', 'createTextLayer', 'createShapeLayer', 'createCamera', 'createLightLayer', 'createNullLayer'],
 };
 
-console.log(bold('\nDrift Guard — command-params registry vs. server/mcp (names + params)\n'));
+console.log(bold('\nDrift Guard — command-params registry vs. server/ae-bridge (names + params)\n'));
 
 // ── Load handler sources, split into top-level functions ──────────────────────
 const fnBody = {}; // functionName -> source slice (decl → next top-level function)
@@ -81,7 +81,7 @@ const nameOnlyInRegistry = [...registryNames].filter(c => !canonical.has(c));
 const nameOnlyInCanonical = [...canonical].filter(c => !registryNames.has(c));
 if (nameOnlyInRegistry.length || nameOnlyInCanonical.length) {
   passed = false;
-  console.log(red('✗ NAMES drift (registry keys vs server/mcp/commands.ts):'));
+  console.log(red('✗ NAMES drift (registry keys vs server/ae-bridge/commands.ts):'));
   nameOnlyInRegistry.forEach(c => console.log(red(`    + only in registry: ${c}`)));
   nameOnlyInCanonical.forEach(c => console.log(red(`    - missing from registry: ${c}`)));
 } else {
@@ -122,8 +122,8 @@ if (paramFailures === 0) {
 }
 
 if (passed) {
-  console.log(green('\n✓ Registry is in sync with server/mcp.\n'));
+  console.log(green('\n✓ Registry is in sync with server/ae-bridge.\n'));
 } else {
-  console.log(red('\nDrift detected — update server/ai/src/tools/command-params.ts to match server/mcp.\n'));
+  console.log(red('\nDrift detected — update server/ai/src/tools/command-params.ts to match server/ae-bridge.\n'));
   process.exit(1);
 }
