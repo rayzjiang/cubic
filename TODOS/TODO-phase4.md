@@ -17,6 +17,11 @@ The chat UI ships as a **separate Electron desktop app** that connects to After 
 
 ---
 
+### 0. Decide first — gates the whole UI
+- [ ] **Permission/Edit modes like CC (DECIDE BEFORE B/C)** — Rn, everything auto-executes. For a creative AE tool with per-command ⌘Z and pre-turn backups, auto-run is defensible (and faster UX). But CC's whole feel includes accept/reject + a plan step. Decide deliberately: pure auto-run (simplest, recommended for v1) vs. a confirm-destructive / plan-first mode. **It changes the app's layout, so this is a gate — pick before designing B (shell) / C (chat UI), not after.**
+
+---
+
 ### A. Split the CEP panel → headless AE bridge (foundation)
 - [ ] **Demote `cep-extension/` to a headless bridge** — strip the status/port UI down to the bare WS-client + `evalScript` dispatch (Role B only). It should run invisibly/background and auto-connect to the bridge on AE launch. No chat, no logic.
 - [ ] **Lock the wire protocol as the contract** — the app ↔ bridge boundary is `{id, command, args}` ↔ `{id, ok, result}` plus the `userChat`/`queue`/`cancel`/`agentEvent` chat messages. Document it once; everything downstream (and future host adapters) depends only on this.
@@ -33,8 +38,26 @@ The chat UI ships as a **separate Electron desktop app** that connects to After 
 - [ ] **Chat UI** (was "CEP panel chat UI") — build the renderer UI that consumes the `agentEvent` protocol (streaming event display, message history); prerequisite for agent-run controls and recovery UI. Optional: token-level streaming.
     - [ ] **Render the compaction/context events** (backend done in Phase 2 — auto-compaction, `/clear`, `/compact`): show `compaction` (start/done/failed) as a subtle "compacting conversation…" indicator (NOT a scary error), and render `context_full` as a friendly "this chat is too long — start a new one" CTA, not a red error. Optional: a context-usage meter (`Session.lastContextTokens` vs the model's `contextWindow`).
     - [ ] **Manual end-to-end test of compaction (deferred from Phase 2)** — backend logic is unit-tested (free, in `compaction.test.ts`/`loop.test.ts`), but the real-AE feel was left for this UI. Once the chat UI exists: (1) type `/clear` → history empties; (2) type `/compact` → older turns collapse to a `<conversation_summary>` and the next turn continues coherently; (3) trigger auto-compaction by holding a long conversation (or temporarily lower the threshold via the `compactThreshold`/`contextWindowOverride` deps on `runAgentTurn`) and confirm it fires at the turn boundary without losing recent context; (4) force the hard ceiling and confirm the `context_full` pause. Run any real-API check with `CUBIC_LLM_DEBUG=1` to watch I/O + per-call cost.
+    - [ ] **Markdown rendering of assistant text** — render agent narration with `react-markdown` + `remark-gfm` (bold, lists, tables, code fences); raw HTML disabled so model output can't inject markup. Monospace code/expression blocks; syntax highlighting is an easy later add. Renders fine incrementally as tokens stream.
+    - [ ] **Friendly transient-error rendering** (moved from old §F #1) — the loop's `catch` emits an `error` event carrying raw SDK text (e.g. `529 overloaded_error`); render it as a friendly "Claude's busy — try again," NOT the raw string. Same `agentEvent` rendering path, so it belongs with the chat UI. (Backend resilience — `maxRetries` bump + auto-retry the failed iteration — stays in §F.)
+- [ ] **Command surface — consumer-chat feel, NO terminal idioms** — target users are **video editors, not coders**, so it must feel like iMessage/ChatGPT, never a CLI. A slash command reads as "developer tool" — wrong signal. Decide before laying out the chat surface:
+    - (a) **Primary actions = buttons/icons:** New chat (+), send, Stop (Esc maps to it but a visible button leads).
+    - (b) **Per-conversation actions (rename, delete) = row kebab (⋯) / right-click dropdown** — visual, discoverable, the standard friendly sidebar pattern (ChatGPT/Slack/Notion).
+    - (c) **No user-facing slash commands.** `/clear` → the "New chat" button. `/compact` is NOT surfaced at all (it's a technical concept; compaction already auto-fires invisibly — see the compaction-events item above). The backend's existing `/clear`+`/compact` parse in `agentChat.ts` stays only as a hidden dev/power escape hatch, never advertised in the UI.
+    - (d) Any other commands I have should be done with a ui interaction..
 - [ ] **Good UX** (similar to Claude's spinning progress bar + nice words, etc.)
 - [ ] **Instrument events as you build** — fire analytics events at the natural UI seams (turn start/end, tool runs, cancels, restores, errors) behind a thin wrapper so the vendor is swappable. Don't wire a vendor yet; just don't build the UI analytics-blind.
+
+### C2. Conversation history + persistence (CC-style, per-project)
+Backend (`ae-bridge`) holds the canonical `Session.messages` (full `Message[]` incl. tool_result blocks) but **never persists it today** — quit the app and the conversation is gone. Mirror Claude Code's per-project transcript model:
+- [ ] **Per-project conversation list** — show only conversations for the *current* AE project (CC scopes per working dir). AE is single-document → "multiple projects open" can't happen; there's always exactly one current project. Key each conversation by the project file path (`getProjectInfo().path`).
+- [ ] **Unsaved-project handling** — an unsaved project reports `path:""`. Put its conversations in one "Untitled Project" bucket; on the next turn after the user saves (a real path appears), **lazily re-key** the active conversation to that path so it follows the project. Free — rides on the `getProjectInfo` already fetched each turn; no AE save-event hook needed.
+- [ ] **Backend disk store, JSONL per conversation** — persist in the Node backend (it owns the canonical `Message[]`), CC-style: one `.jsonl` transcript per conversation (e.g. `~/.cubic/sessions/<project>/<id>.jsonl`) + a small `index.json` for list metadata (id, title, project path, last-activity ts, `renamed` flag). NOT the renderer — it only has the lossy `agentEvent` view (no raw tool_result blocks → can't resume faithfully).
+- [ ] **Append per turn (crash-safe)** — append each turn's messages as line(s) at the turn boundary (where the in-memory Session already mutates). A crash/force-quit loses at most the in-flight turn, never past history. Reload = read the `.jsonl` back into a `Session`.
+- [ ] **Reload + continue (resume)** — selecting a conversation rehydrates the full `Message[]` into a live `Session`; the user keeps chatting and the model sees full prior context (exactly like CC's resume). Live AE state is re-fetched fresh on the next turn, so nothing is stale.
+- [ ] **Retention: age-based since last activity** — auto-delete a conversation ~30 days after its last message (one configurable knob = CC's `cleanupPeriodDays`); "since last activity" means active projects never expire, only abandoned threads age out. Plus manual delete (row dropdown) anytime.
+- [ ] **Titles: instant placeholder → Haiku summary** — show the first user message truncated immediately (zero latency, no blank rows); after turn 1 completes, fire a tiny `claude-haiku-4-5` call (via the existing `getLLM()` chokepoint) to generate a clean title and swap it into `index.json`. Generated once, not per turn.
+- [ ] **Manual rename** — row dropdown → Rename overrides the auto-title and sets a `renamed` flag so the Haiku title won't clobber it.
 
 ### D. Agent-run controls (Claude-Code-style)
 The loop's BACKEND hooks all exist from Phase 2 (`Session.cancelRequested` + the `pendingMessages` FIFO queue, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue`/`editQueue`/`removeQueue`). Phase 4 is pure app-UI wiring:
@@ -49,16 +72,14 @@ The agent loop already saves a pre-turn `.aep` snapshot to `.cubic-backups/` (ro
 - [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
 - [ ] Cubic undo history viewer + dedicated keybind?
 
-### F. Transient API-error polish (not a blocker)
-When Anthropic has a transient error (429/529/network), the SDK auto-retries (default 2; we can bump). If those also fail, `chat()` throws → the loop's `catch` emits a raw `error` event and the turn ends (process/session fine, history intact, AE changes already applied stay — user just re-sends). Two rough edges to smooth:
-- **#1 (UI):** the `error` event carries the raw SDK text (e.g. `529 overloaded_error`) → render it as a friendly "Claude's busy, try again." Folds into building the chat UI (same `agentEvent` rendering).
-- **#2 (backend):** a mid-turn failure abandons the *whole* turn (e.g. dies on iteration 6/10) → auto-retry the failed iteration so the turn resumes instead of restarting. Post-launch polish.
-- Quick win (backend, anytime): `new Anthropic({ apiKey, maxRetries: 4 })` for a bit more resilience. (eg. if it fails after it made some changes to ur project, it just abandons instead of resuming cleanly) — **make it autoretry the failed iteration instead of killing the turn**
+### F. Transient API-error resilience — backend (not a blocker)
+When Anthropic has a transient error (429/529/network), the SDK auto-retries (default 2; we can bump). If those also fail, `chat()` throws → the loop's `catch` emits an `error` event and the turn ends (process/session fine, history intact, AE changes already applied stay — user just re-sends). The **UI half** (friendly error message) moved to §C. Backend rough edge that remains:
+- **Mid-turn failure abandons the *whole* turn** (e.g. dies on iteration 6/10, after already changing the project) → auto-retry the failed iteration so the turn resumes instead of restarting. Post-launch polish.
+- Quick win (anytime): `new Anthropic({ apiKey, maxRetries: 4 })` for a bit more resilience.
 
 ---
 
 ### Super important
-- [ ] **Permission/Edit modes like CC** — Rn, everything auto executes. For a creative AE tool with per-command ⌘Z and pre-turn backups, auto-run is defensible (and faster UX). But CC's whole feel includes accept/reject + a plan step. Decide deliberately: pure auto-run (simplest, recommended for v1) vs. a confirm-destructive / plan-first mode. **It affects the app's layout, so pick before designing it — not after.**
 - [ ] **Mid-turn state-staleness guard (Claude-Code-style "modified since read")** — today if the user edits the project *while* a turn runs, only destructive drift is caught (a stale-target tool call fails with `LAYER_NOT_FOUND`/etc. → self-heal re-reads); silent drift (e.g. user nudges a layer's position) is acted on against stale context. AE has no free revision counter (unlike file mtime), so: capture a cheap project-state **fingerprint** at turn start, re-check it before each *mutating* tool call, and on mismatch emit a new `STATE_STALE` error code into the existing self-heal path → model re-reads fresh context before retrying. Post-launch hardening, not a blocker.
 - [ ] **Motion-quality judgement call (deferred from Phase 2)** — once the UI is done, drive it through real prompts and watch the rendered output. Then decide: does the model's understanding of "juicy/good" motion design actually need improving (recipes already exist + system prompt steers toward them, so the baseline may be enough)? If yes, decide the best way to do it (e.g. tune recipe defaults, adjective→recipe mapping in the system prompt, more composite recipes, or a visual feedback loop) — NOT a separate preset library by default.
 - [ ] Giving the AI an option to view video it just generated (probably have to integrate with Google Gemini?? since gemini has video feature) — BECAUSE no point in having my ai read images, it should be viewing video..
