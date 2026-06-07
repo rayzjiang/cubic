@@ -29,10 +29,14 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Internal-only handlers — present in _dispatchSwitch but deliberately
-// absent from allowedScripts because their work is exposed via the
-// consolidated createLayer({type:...}) dispatcher (server/ae-bridge/CLAUDE.md
-// "broad parameterized tools" rule).
+// absent from allowedScripts. Two distinct reasons:
+//   • backupProject — the agent loop's pre-turn .aep snapshot / revert point,
+//     called only via mcpClient and never exposed to the model (project.jsx).
+//   • create* layer handlers — their work is exposed through the consolidated
+//     createLayer({type:...}) dispatcher (server/ae-bridge/CLAUDE.md
+//     "broad parameterized tools" rule).
 const EXPECTED_INTERNAL_ONLY = [
+  'backupProject',
   'createCamera',
   'createLightLayer',
   'createNullLayer',

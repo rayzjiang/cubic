@@ -31,16 +31,17 @@ describe('AE_TOOLS', () => {
     }
   });
 
-  it('runScript script field enum equals COMMAND_NAMES', () => {
+  it('runScript script enum is every command EXCEPT batch (batch only via its dedicated tool)', () => {
     const runScript = AE_TOOLS.find(t => t.name === 'runScript')!;
     const schema = zodToJsonSchema(runScript.schema) as {
       properties?: { script?: { enum?: string[] } };
     };
     const enumValues = schema.properties?.script?.enum ?? [];
-    expect(new Set(enumValues)).toEqual(new Set(COMMAND_NAMES));
+    expect(enumValues).not.toContain('batch');
+    expect(new Set(enumValues)).toEqual(new Set(COMMAND_NAMES.filter(n => n !== 'batch')));
   });
 
-  it('batch commands[].script enum equals COMMAND_NAMES', () => {
+  it('batch commands[].script enum excludes batch (no nesting)', () => {
     const batch = AE_TOOLS.find(t => t.name === 'batch')!;
     const schema = zodToJsonSchema(batch.schema) as {
       properties?: {
@@ -50,7 +51,8 @@ describe('AE_TOOLS', () => {
       };
     };
     const enumValues = schema.properties?.commands?.items?.properties?.script?.enum ?? [];
-    expect(new Set(enumValues)).toEqual(new Set(COMMAND_NAMES));
+    expect(enumValues).not.toContain('batch');
+    expect(new Set(enumValues)).toEqual(new Set(COMMAND_NAMES.filter(n => n !== 'batch')));
   });
 
   it('COMMAND_NAMES has no duplicates', () => {

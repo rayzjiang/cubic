@@ -321,7 +321,14 @@ function batch(args) {
     for (var i = 0; i < commands.length; i++) {
         var entry = commands[i];
 
-        if (!entry || typeof entry.command !== "string" || entry.command === "") {
+        // Accept both the wire shape { command, args } and the model-facing { script, parameters }.
+        // The agent's executeTool normally translates, but callers that reach this handler
+        // directly (e.g. an MCP runScript{script:"batch"} from Claude Code, or a bridge test)
+        // may pass the untranslated shape — read whichever key is present.
+        var entryCmd = entry ? (entry.command || entry.script) : null;
+        var entryArgs = entry ? (entry.args || entry.parameters || {}) : {};
+
+        if (typeof entryCmd !== "string" || entryCmd === "") {
             var errEntry = { index: i, command: null, success: false, status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "Missing or invalid 'command' field." };
             results.push(errEntry);
             failed++;
@@ -330,7 +337,7 @@ function batch(args) {
         }
 
         // Block nested batch to prevent infinite recursion
-        if (entry.command === "batch") {
+        if (entryCmd === "batch") {
             var nestedErr = { index: i, command: "batch", success: false, status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "Nested batch commands are not supported." };
             results.push(nestedErr);
             failed++;
@@ -338,11 +345,11 @@ function batch(args) {
             continue;
         }
 
-        var cmdArgs = entry.args || {};
+        var cmdArgs = entryArgs;
         var resultStr, resultObj, cmdSuccess;
 
         try {
-            resultStr = dispatchCommand(entry.command, cmdArgs);
+            resultStr = dispatchCommand(entryCmd, cmdArgs);
         } catch (e) {
             resultStr = JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.HANDLER_UNCAUGHT, message: "Uncaught error: " + e.toString() });
         }
@@ -359,7 +366,7 @@ function batch(args) {
 
         results.push({
             index: i,
-            command: entry.command,
+            command: entryCmd,
             success: cmdSuccess,
             status: cmdSuccess ? "success" : "error",
             result: resultObj

@@ -28,31 +28,56 @@ export interface ToolExecution {
   retried: boolean;
 }
 
+/**
+ * Normalize batch sub-commands to the bridge's { command, args } shape.
+ * Idempotent — accepts the model-facing { script, parameters } OR already-{ command, args },
+ * so it's correct no matter how batch was invoked (the dedicated batch tool OR
+ * runScript{script:'batch'}).
+ */
+function normalizeBatchCommands(raw: unknown): Array<{ command: string; args: Record<string, unknown> }> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c) => {
+    const entry = (c ?? {}) as Record<string, unknown>;
+    return {
+      command: String(entry.command ?? entry.script ?? ''),
+      args: ((entry.args ?? entry.parameters) as Record<string, unknown>) ?? {},
+    };
+  });
+}
+
 /** Maps a model tool call to the (command, args) pair the bridge understands. */
 function toCommandCall(tool: ToolUse): { command: string; args: Record<string, unknown> } {
   const input = (tool.input ?? {}) as Record<string, unknown>;
+  let command: string;
+  let args: Record<string, unknown>;
   switch (tool.name) {
     case 'runScript':
-      return { command: String(input.script ?? ''), args: (input.parameters as Record<string, unknown>) ?? {} };
-    case 'batch': {
-      // Batch sub-commands use the model-facing { script, parameters } shape (same as
-      // runScript); the bridge's batch handler reads { command, args }. Translate each
-      // entry here — the single model→bridge naming boundary — so the model keeps one
-      // uniform command shape everywhere.
-      const rawCommands = Array.isArray(input.commands) ? input.commands : [];
-      const commands = rawCommands.map((c) => {
-        const entry = (c ?? {}) as Record<string, unknown>;
-        return { command: String(entry.script ?? ''), args: (entry.parameters as Record<string, unknown>) ?? {} };
-      });
-      return { command: 'batch', args: { ...input, commands } };
-    }
+      command = String(input.script ?? '');
+      args = (input.parameters as Record<string, unknown>) ?? {};
+      break;
+    case 'batch':
+      command = 'batch';
+      args = input;
+      break;
     case 'createComposition':
-      return { command: 'createComposition', args: input };
+      command = 'createComposition';
+      args = input;
+      break;
     default:
       // Unknown tool name — pass through so AE returns a structured UNKNOWN_COMMAND
       // the model can read and self-correct from.
-      return { command: String(tool.name), args: input };
+      command = String(tool.name);
+      args = input;
+      break;
   }
+  // Single choke point: whenever the resolved command is batch — via the dedicated batch
+  // tool OR runScript{script:'batch'} — normalize its sub-commands to { command, args }.
+  // No entry path can bypass this, so the model's uniform { script, parameters } shape
+  // always reaches the bridge correctly.
+  if (command === 'batch') {
+    args = { ...args, commands: normalizeBatchCommands(args.commands) };
+  }
+  return { command, args };
 }
 
 interface RawOutcome {

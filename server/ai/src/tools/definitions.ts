@@ -13,8 +13,17 @@ export type { CommandName };
 
 // ─── Shared sub-schemas ───────────────────────────────────────────────────────
 
+/**
+ * Commands the model may invoke as a single op — every registry command EXCEPT `batch`.
+ * `batch` is excluded so it's reachable ONLY through the dedicated `batch` tool (which
+ * carries the typed `commands[]` schema), never via `runScript{script:'batch'}` or nested
+ * inside another batch. That removes the ambiguous path whose sub-commands could reach AE
+ * untranslated. `COMMAND_NAMES` itself is left intact (catalog + drift guard unaffected).
+ */
+const RUNSCRIPT_COMMANDS = COMMAND_NAMES.filter((n) => n !== 'batch') as [CommandName, ...CommandName[]];
+
 const CommandCallSchema = z.object({
-  script: z.enum(COMMAND_NAMES).describe("Name of the ExtendScript command to run"),
+  script: z.enum(RUNSCRIPT_COMMANDS).describe("Name of the ExtendScript command to run"),
   parameters: z.record(z.string(), z.unknown()).optional().describe("Arguments for the command"),
 });
 
