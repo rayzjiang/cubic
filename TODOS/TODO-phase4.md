@@ -1,93 +1,87 @@
-## Phase 4 — Standalone Electron app + thin AE bridge
+# Phase 4 — Standalone Electron app + thin AE bridge
 
-### ✅ Decision (resolved): standalone Electron desktop app, NOT an in-AE panel
-The chat UI ships as a **separate Electron desktop app** that connects to After Effects over the existing WebSocket bridge. The CEP extension stays, but is demoted to a **thin, headless bridge** (its only job is `evalScript` dispatch — no UI). Rationale:
-- We're already ~95% decoupled — the CEP panel was only ever a WS client + `evalScript` executor. The agent loop, LLM calls, sessions, and compaction all run in the Node process and reach AE as just another WS client of `127.0.0.1:17923`. The protocol (`{id, command, args}` ↔ `{id, ok, result}`) is the real interface, and it's stable.
-- Electron is the proper **home for the Node backend** post-Phase-5 (no Claude Code to spawn it) — main process spawns the agent loop + bridge server, renderer is the UI. CEP's embedded old Node is a fragile host by comparison.
-- Modern Chromium → the Claude-Code-grade streaming chat UX is *achievable* instead of a fight against CEP's stale CEF.
-- Native FS → the backup-recovery viewer (browse `.cubic-backups/`, native dialogs) becomes easy, not clunky.
-- **Strategic:** one UI, swap the *bridge adapter* per host later (Premiere = also CEP, near-free; DaVinci = Python/Lua WS bridge; FCP = weak scripting, likely never). The UI is written once.
+## Decisions & context
+> Reference, not todos — condensed so they're scannable. Candidates to move to a separate doc later; kept here for now so they're visible while building.
 
-**Why this doesn't blow up the rest of the phase:** almost every item below is host-agnostic — cancel/queue/steer are the same WS messages, compaction/`context_full` rendering is the same `agentEvent` consumption, the chat UI consumes the same protocol. We're changing *where it renders*, not *what we build*. The only net-new work is the "split the panel + connection bootstrap" workstream (A + B).
+**Resolved decisions**
+- **Standalone Electron desktop app, not an in-AE panel.** CEP extension stays but is demoted to a thin, headless `evalScript` bridge (no UI). We're ~95% decoupled already — the agent loop/LLM/sessions/compaction run in Node and reach AE as a WS client of `127.0.0.1:17923`; the `{id,command,args}` ↔ `{id,ok,result}` protocol is the real, stable interface. Electron is the post-Phase-5 home for the Node backend, gives a modern-Chromium streaming UX, and native FS for the backup viewer. Strategic: one UI, swap the bridge adapter per host later (Premiere = CEP near-free; DaVinci = Python/Lua WS; FCP = unlikely).
+- **Pure auto-run for MVP.** Tool calls execute immediately — no accept/reject, no plan step. Safe: every command is ⌘Z-able + pre-turn `.aep` backup; users are video editors, not coders. _Post-MVP:_ plan mode + accept-edits-one-at-a-time like Claude Code.
+- **Sequencing rule: backend before UI.** Build + test the backend half before its UI. Backend-first items: **C2** (JSONL store), **§E** (restore handler). Only **§D** is pure UI wiring.
 
-> **Stack notes** (from architecture discussion):
-> - **Electron over Swift** — backend is all TS/Node; Electron reuses it, shares types, and hosts the Node backend as a child process. Native-feel (vibrancy, traffic-light styling, native menus/dialogs) is good enough for a chat-beside-AE app. Swift's payoff (raw render perf) isn't our bottleneck. Industry default for non-terminal AI editors is Electron (Cursor/Windsurf/VS Code forks); Zed is the lone native outlier (Rust, perf-driven — not us).
-> - **Notarization + auto-update** are deferrable: run unsigned locally; turn on `electron-builder` signing/notarization (Apple Dev acct, $99/yr) + `electron-updater` (staged rollouts, beta channel) when packaging for real users in/around Phase 5. This is also the "push updates to my users" item from TODO.md Phase 5.
-> - **Analytics (later, not now):** want usage analytics + feature flags / A-B testing in the app — works in Electron's renderer; manage a per-install `distinct_id` ourselves; ship variants dark and flip flags server-side (flags = our substitute for staging). Pick the vendor + wire it in a later pass; just leaving the hook here so the UI is built with event instrumentation in mind.
+**Stack notes**
+- **Electron over Swift** — backend is TS/Node; Electron reuses it + shares types. Native-feel (vibrancy/traffic-lights/native menus) is good enough; render perf isn't the bottleneck.
+- **Signing/notarization + auto-update → ~Phase 5.** `electron-builder` sign+notarize (Apple Dev, $99/yr) + `electron-updater` staged rollouts. Run unsigned locally until then.
+- **Analytics → later.** Instrument event seams now behind a swappable wrapper; pick the vendor + per-install `distinct_id` + flags in a later pass.
 
 ---
 
-### 0. Decide first — gates the whole UI
-- [ ] **Permission/Edit modes like CC (DECIDE BEFORE B/C)** — Rn, everything auto-executes. For a creative AE tool with per-command ⌘Z and pre-turn backups, auto-run is defensible (and faster UX). But CC's whole feel includes accept/reject + a plan step. Decide deliberately: pure auto-run (simplest, recommended for v1) vs. a confirm-destructive / plan-first mode. **It changes the app's layout, so this is a gate — pick before designing B (shell) / C (chat UI), not after.**
+## §0. Decide first — gates the UI
+- [ ] **Renderer ↔ backend transport (OPEN — decide before §B).** How the renderer reaches the spawned Node backend:
+    - **(a) Direct WebSocket** to `127.0.0.1:17923` — simplest, reuses the existing protocol verbatim (same as the CEP bridge + `cubic-ai` client).
+    - **(b) Electron IPC** via the main process — main relays to/from the backend; port stays private to main.
+    - Either way, the answer **must define how the UI re-attaches to an in-flight turn by `sessionId`** on renderer reload — the `agentEvent` view is lossy and can't rebuild mid-turn state alone.
 
 ---
 
-### A. Split the CEP panel → headless AE bridge (foundation)
-- [ ] **Demote `cep-extension/` to a headless bridge** — strip the status/port UI down to the bare WS-client + `evalScript` dispatch (Role B only). It should run invisibly/background and auto-connect to the bridge on AE launch. No chat, no logic.
-- [ ] **Lock the wire protocol as the contract** — the app ↔ bridge boundary is `{id, command, args}` ↔ `{id, ok, result}` plus the `userChat`/`queue`/`cancel`/`agentEvent` chat messages. Document it once; everything downstream (and future host adapters) depends only on this.
-- [ ] **Decide where the Node backend lives** — Electron main process spawns `server/ae-bridge` (bridge + agent loop) as a child; renderer (UI) talks to it. Confirm the bridge still opens `127.0.0.1:17923` and the headless AE extension connects as the worker client exactly as today.
+## §A. Split CEP panel → headless AE bridge (foundation)
+- [ ] **Demote `cep-extension/` to a headless bridge** — strip the status/port UI to bare WS-client + `evalScript` dispatch (Role B only). Runs invisibly, auto-connects on AE launch. No chat, no logic.
+- [ ] **Fix headless port discovery (latent bug).** Bridge binds `17923` (fallback scan → `17927`) and writes the chosen port to `~/.ae-mcp-bridge/port`, but the panel never reads it — it uses the manual port box (default `17923`). Once the UI is stripped, a fallback port silently fails to connect. **Fix:** bridge reads `~/.ae-mcp-bridge/port` on connect **+ re-reads on reconnect**. (Alt: drop the fallback scan, hard-fail on a `17923` conflict.)
+- [ ] **Lock the wire protocol contract** — `{id,command,args}` ↔ `{id,ok,result}` + `userChat`/`queue`/`cancel`/`agentEvent`. Document once; future host adapters depend only on this.
+- [ ] **Backend lives in Electron main** — main spawns `server/ae-bridge` (bridge + agent loop) as a child. Confirm it still opens `127.0.0.1:17923` and the headless extension connects as the worker client as today.
 
-### B. Electron app shell + auto-provisioning
-- [ ] **App shell** — new top-level dir (e.g. `app/`): Electron main + renderer (React), native window (vibrancy/traffic-lights), menus, single-instance.
-- [ ] **Auto-install the AE bridge** — on first run / "Connect to After Effects", the app writes the headless bridge extension into the CEP extensions folder (`~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-mcp-bridge/`) and enables PlayerDebugMode. One app install → it provisions the bridge → AE auto-connects on next launch. (This replaces the old ZXP/`install-plugin` friction.)
-- [ ] **Connection state UX** — clear "connected to AE / open After Effects / reconnecting" status in the app; handle AE not running, bridge not installed, port in use.
-- [ ] **Env-switchable backend** — config/env to point the app at `localhost` vs the prod proxy (needed once Phase 5's proxy exists).
-- [ ] (Deferred to ~Phase 5) **Signing/notarization + auto-update** — `electron-builder` sign+notarize, `electron-updater` feed + staged rollouts. Run unsigned for local dev until then.
+## §B. Electron app shell + auto-provisioning
+- [ ] **FIRST — `mcp` → `bridge` naming pass + final-name audit** ⚠️ hard gate before ship; do it while building the install flow so the install path is written with final names:
+    - `server/ai/src/mcp/` → `src/bridge/`, `McpClient` → `BridgeClient` (~5 imports + the `vi.mock('../mcp/client.js')` mock).
+    - `mcp-bridge.jsx` → `bridge.jsx` (update `domainFiles` in `scripts/build-cep-extension.mjs`, the "handlers must not live in mcp-bridge.jsx" rule, doc refs in `server/ae-bridge/CLAUDE.md`).
+    - Bundle id `com.cubic.ae-mcp-bridge` → `com.cubic.ae-bridge` (`cep-extension/CSXS/manifest.xml` + install path). Forces a one-time reinstall — fine, install flow is being rebuilt here.
+    - Audit final package names (`cubic-ae-bridge`, `cubic-ai`, anything user-facing) before ship.
+    - Keep `mcp` ONLY on the real MCP entrypoint (`src/index.ts` + `.mcp.json` + `@modelcontextprotocol/sdk` dev dep).
+- [ ] **App shell** — new `app/` dir: Electron main + React renderer, native window (vibrancy/traffic-lights), menus, single-instance.
+- [ ] **Auto-install the AE bridge** — on first run / "Connect to After Effects", write the headless bridge into `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/` + enable PlayerDebugMode. One app install → provisions the bridge → AE auto-connects next launch. (Replaces ZXP/`install-plugin` friction. Use the NEW bundle id.)
+- [ ] **Connection state UX** — "connected / open AE / reconnecting"; handle AE-not-running, bridge-not-installed, port-in-use.
+- [ ] **Env-switchable backend** — config to point at `localhost` vs prod proxy (needed once Phase 5's proxy exists).
 
-### C. Chat UI on the `agentEvent` protocol
-- [ ] **Chat UI** (was "CEP panel chat UI") — build the renderer UI that consumes the `agentEvent` protocol (streaming event display, message history); prerequisite for agent-run controls and recovery UI. Optional: token-level streaming.
-    - [ ] **Render the compaction/context events** (backend done in Phase 2 — auto-compaction, `/clear`, `/compact`): show `compaction` (start/done/failed) as a subtle "compacting conversation…" indicator (NOT a scary error), and render `context_full` as a friendly "this chat is too long — start a new one" CTA, not a red error. Optional: a context-usage meter (`Session.lastContextTokens` vs the model's `contextWindow`).
-    - [ ] **Manual end-to-end test of compaction (deferred from Phase 2)** — backend logic is unit-tested (free, in `compaction.test.ts`/`loop.test.ts`), but the real-AE feel was left for this UI. Once the chat UI exists: (1) type `/clear` → history empties; (2) type `/compact` → older turns collapse to a `<conversation_summary>` and the next turn continues coherently; (3) trigger auto-compaction by holding a long conversation (or temporarily lower the threshold via the `compactThreshold`/`contextWindowOverride` deps on `runAgentTurn`) and confirm it fires at the turn boundary without losing recent context; (4) force the hard ceiling and confirm the `context_full` pause. Run any real-API check with `CUBIC_LLM_DEBUG=1` to watch I/O + per-call cost.
-    - [ ] **Markdown rendering of assistant text** — render agent narration with `react-markdown` + `remark-gfm` (bold, lists, tables, code fences); raw HTML disabled so model output can't inject markup. Monospace code/expression blocks; syntax highlighting is an easy later add. Renders fine incrementally as tokens stream.
-    - [ ] **Friendly transient-error rendering** (moved from old §F #1) — the loop's `catch` emits an `error` event carrying raw SDK text (e.g. `529 overloaded_error`); render it as a friendly "Claude's busy — try again," NOT the raw string. Same `agentEvent` rendering path, so it belongs with the chat UI. (Backend resilience — `maxRetries` bump + auto-retry the failed iteration — stays in §F.)
-- [ ] **Command surface — consumer-chat feel, NO terminal idioms** — target users are **video editors, not coders**, so it must feel like iMessage/ChatGPT, never a CLI. A slash command reads as "developer tool" — wrong signal. Decide before laying out the chat surface:
-    - (a) **Primary actions = buttons/icons:** New chat (+), send, Stop (Esc maps to it but a visible button leads).
-    - (b) **Per-conversation actions (rename, delete) = row kebab (⋯) / right-click dropdown** — visual, discoverable, the standard friendly sidebar pattern (ChatGPT/Slack/Notion).
-    - (c) **No user-facing slash commands.** `/clear` → the "New chat" button. `/compact` is NOT surfaced at all (it's a technical concept; compaction already auto-fires invisibly — see the compaction-events item above). The backend's existing `/clear`+`/compact` parse in `agentChat.ts` stays only as a hidden dev/power escape hatch, never advertised in the UI.
-    - (d) Any other commands I have should be done with a ui interaction..
-- [ ] **Good UX** (similar to Claude's spinning progress bar + nice words, etc.)
-- [ ] **Instrument events as you build** — fire analytics events at the natural UI seams (turn start/end, tool runs, cancels, restores, errors) behind a thin wrapper so the vendor is swappable. Don't wire a vendor yet; just don't build the UI analytics-blind.
+## §C. Chat UI on the `agentEvent` protocol
+- [ ] **Chat UI** — renderer consuming `agentEvent` (streaming display + message history); prereq for §D/§E. Optional: token-level streaming.
+    - [ ] **Render compaction/context events** (backend done Phase 2) — `compaction` (start/done/failed) = subtle "compacting…" indicator, NOT an error; `context_full` = friendly "this chat is too long — start a new one" CTA. Optional: context-usage meter (`Session.lastContextTokens` vs model `contextWindow`).
+    - [ ] **Manual E2E compaction test** (deferred from Phase 2; logic is unit-tested) — `/clear` empties; `/compact` collapses old turns to `<conversation_summary>`; auto-compaction fires at turn boundary (lower `compactThreshold`/`contextWindowOverride` deps to trigger) without losing recent context; hard ceiling → `context_full` pause. Run with `CUBIC_LLM_DEBUG=1`.
+    - [ ] **Markdown rendering** — `react-markdown` + `remark-gfm`, raw HTML disabled. Monospace code/expression blocks; syntax highlighting is a later add. Streams fine incrementally.
+    - [ ] **Friendly transient-error rendering** — the `error` event carries raw SDK text (e.g. `529 overloaded_error`); render "Claude's busy — try again," not the raw string. (Backend resilience → Post-launch.)
+- [ ] **Command surface — consumer-chat feel, NO terminal idioms** (users are video editors):
+    - Primary actions = buttons/icons: New chat (+), send, Stop (Esc maps to it, button leads).
+    - Per-conversation actions (rename/delete) = row kebab (⋯) / right-click.
+    - No user-facing slash commands: `/clear` → "New chat" button; `/compact` not surfaced (auto-fires). Backend `/clear`+`/compact` parse in `agentChat.ts` stays as a hidden dev escape hatch only.
+    - Any other commands → UI interaction.
+- [ ] **Good UX** — spinner + nice progress words, Claude-style.
+- [ ] **Instrument events as you build** — turn start/end, tool runs, cancels, restores, errors, behind the swappable wrapper. No vendor yet.
 
-### C2. Conversation history + persistence (CC-style, per-project)
-Backend (`ae-bridge`) holds the canonical `Session.messages` (full `Message[]` incl. tool_result blocks) but **never persists it today** — quit the app and the conversation is gone. Mirror Claude Code's per-project transcript model:
-- [ ] **Per-project conversation list** — show only conversations for the *current* AE project (CC scopes per working dir). AE is single-document → "multiple projects open" can't happen; there's always exactly one current project. Key each conversation by the project file path (`getProjectInfo().path`).
-- [ ] **Unsaved-project handling** — an unsaved project reports `path:""`. Put its conversations in one "Untitled Project" bucket; on the next turn after the user saves (a real path appears), **lazily re-key** the active conversation to that path so it follows the project. Free — rides on the `getProjectInfo` already fetched each turn; no AE save-event hook needed.
-- [ ] **Backend disk store, JSONL per conversation** — persist in the Node backend (it owns the canonical `Message[]`), CC-style: one `.jsonl` transcript per conversation (e.g. `~/.cubic/sessions/<project>/<id>.jsonl`) + a small `index.json` for list metadata (id, title, project path, last-activity ts, `renamed` flag). NOT the renderer — it only has the lossy `agentEvent` view (no raw tool_result blocks → can't resume faithfully).
-- [ ] **Append per turn (crash-safe)** — append each turn's messages as line(s) at the turn boundary (where the in-memory Session already mutates). A crash/force-quit loses at most the in-flight turn, never past history. Reload = read the `.jsonl` back into a `Session`.
-- [ ] **Reload + continue (resume)** — selecting a conversation rehydrates the full `Message[]` into a live `Session`; the user keeps chatting and the model sees full prior context (exactly like CC's resume). Live AE state is re-fetched fresh on the next turn, so nothing is stale.
-- [ ] **Retention: age-based since last activity** — auto-delete a conversation ~30 days after its last message (one configurable knob = CC's `cleanupPeriodDays`); "since last activity" means active projects never expire, only abandoned threads age out. Plus manual delete (row dropdown) anytime.
-- [ ] **Titles: instant placeholder → Haiku summary** — show the first user message truncated immediately (zero latency, no blank rows); after turn 1 completes, fire a tiny `claude-haiku-4-5` call (via the existing `getLLM()` chokepoint) to generate a clean title and swap it into `index.json`. Generated once, not per turn.
-- [ ] **Manual rename** — row dropdown → Rename overrides the auto-title and sets a `renamed` flag so the Haiku title won't clobber it.
+## §C2. Conversation history + persistence (CC-style, per-project)
+> Backend owns canonical `Session.messages` but never persists today — quit = gone. Mirror CC's per-project transcripts.
+- [ ] **Per-project conversation list** — keyed by `getProjectInfo().path` (AE is single-document → always exactly one current project).
+- [ ] **Unsaved-project handling** — `path:""` → "Untitled Project" bucket; after save, lazily re-key the active conversation to the real path (rides on the per-turn `getProjectInfo`; no AE save-event hook).
+- [ ] **Backend JSONL store** _(backend-first)_ — one `.jsonl` per conversation (`~/.cubic/sessions/<project>/<id>.jsonl`) + `index.json` (id, title, project path, last-activity, `renamed`). In the backend (owns canonical `Message[]`), not the renderer (lossy `agentEvent` view can't resume faithfully).
+- [ ] **Append per turn (crash-safe)** — append at the turn boundary; crash loses at most the in-flight turn. Reload = read `.jsonl` back into a `Session`.
+- [ ] **Reload + continue (resume)** — rehydrate full `Message[]` into a live `Session`; live AE state re-fetched fresh next turn.
+- [ ] **Retention** — auto-delete ~30d since last activity (one knob = CC's `cleanupPeriodDays`) + manual delete (row dropdown).
+- [ ] **Titles** — instant truncated first-message placeholder → after turn 1, a `claude-haiku-4-5` call via `getLLM()` generates a clean title into `index.json`. Once, not per turn.
+- [ ] **Manual rename** — overrides the auto-title, sets `renamed` so Haiku won't clobber it.
 
-### D. Agent-run controls (Claude-Code-style)
-The loop's BACKEND hooks all exist from Phase 2 (`Session.cancelRequested` + the `pendingMessages` FIFO queue, checked at iteration boundaries; agentChat.ts maps `cancel`/`queue`/`editQueue`/`removeQueue`). Phase 4 is pure app-UI wiring:
-- [ ] Esc / cancel button → sends `{type:'cancel'}` to stop the current run at the next boundary.
-- [ ] Type-while-running → sends `{type:'queue', id, text}` to steer the agent (injected at the next tool boundary, or as a fresh follow-up turn).
-- [ ] Show the queued/steering message(s) + allow editing/removing before they fire → send `editQueue`/`removeQueue` by `id`; mark a row "sent" when its `steer` event (carrying that `id`) arrives.
+## §D. Agent-run controls (pure UI wiring; backend hooks done Phase 2)
+- [ ] Esc / cancel button → `{type:'cancel'}` (stops at next boundary).
+- [ ] Type-while-running → `{type:'queue', id, text}` (injected at next tool boundary / as a follow-up turn).
+- [ ] Show queued/steering messages + edit/remove before they fire → `editQueue`/`removeQueue` by `id`; mark a row "sent" when its `steer` event (carrying that `id`) arrives.
 
-### E. Seamless backup recovery
-The agent loop already saves a pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10), but recovery is currently manual (dig into the hidden folder in Finder). Make it ergonomic (Electron's native FS makes this easy now):
-- [ ] **VERY IMPORTANT:** App "restore to before this request" button — list recent snapshots (per turn, with timestamp/summary) and restore the chosen one over the working file (then reopen).
-- [ ] Agent-driven restore — a "Cubic, undo that / revert the last change" command the model understands, mapping to a restore handler (new MCP command: copy a chosen `.cubic-backups/` file back + reopen project).
-- [ ] Confirm-before-overwrite (restoring replaces current working state — guard it).
-- [ ] Cubic undo history viewer + dedicated keybind?
-
-### F. Transient API-error resilience — backend (not a blocker)
-When Anthropic has a transient error (429/529/network), the SDK auto-retries (default 2; we can bump). If those also fail, `chat()` throws → the loop's `catch` emits an `error` event and the turn ends (process/session fine, history intact, AE changes already applied stay — user just re-sends). The **UI half** (friendly error message) moved to §C. Backend rough edge that remains:
-- **Mid-turn failure abandons the *whole* turn** (e.g. dies on iteration 6/10, after already changing the project) → auto-retry the failed iteration so the turn resumes instead of restarting. Post-launch polish.
-- Quick win (anytime): `new Anthropic({ apiKey, maxRetries: 4 })` for a bit more resilience.
-
----
-
-### Super important
-- [ ] **Mid-turn state-staleness guard (Claude-Code-style "modified since read")** — today if the user edits the project *while* a turn runs, only destructive drift is caught (a stale-target tool call fails with `LAYER_NOT_FOUND`/etc. → self-heal re-reads); silent drift (e.g. user nudges a layer's position) is acted on against stale context. AE has no free revision counter (unlike file mtime), so: capture a cheap project-state **fingerprint** at turn start, re-check it before each *mutating* tool call, and on mismatch emit a new `STATE_STALE` error code into the existing self-heal path → model re-reads fresh context before retrying. Post-launch hardening, not a blocker.
-- [ ] **Motion-quality judgement call (deferred from Phase 2)** — once the UI is done, drive it through real prompts and watch the rendered output. Then decide: does the model's understanding of "juicy/good" motion design actually need improving (recipes already exist + system prompt steers toward them, so the baseline may be enough)? If yes, decide the best way to do it (e.g. tune recipe defaults, adjective→recipe mapping in the system prompt, more composite recipes, or a visual feedback loop) — NOT a separate preset library by default.
-- [ ] Giving the AI an option to view video it just generated (probably have to integrate with Google Gemini?? since gemini has video feature) — BECAUSE no point in having my ai read images, it should be viewing video..
+## §E. Seamless backup recovery
+> Pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10) exists; recovery is currently manual (dig in Finder).
+- [ ] ⚠️ **"Restore to before this request" button** — list recent snapshots (timestamp/summary), restore the chosen one over the working file + reopen.
+- [ ] **Agent-driven restore** _(backend-first — handler must exist before the button above)_ — "Cubic, undo that / revert the last change" → restore handler (new bridge command: copy a chosen `.cubic-backups/` file back + reopen project).
+- [ ] **Confirm-before-overwrite** — restoring replaces current working state; guard it.
+- [ ] Undo-history viewer + dedicated keybind?
 
 ---
 
-### Deferred cleanup: finish the `mcp` → `bridge` rename
-Done already: `server/mcp` → `server/ae-bridge` (folder + package name `cubic-ae-bridge`), `.mcp.json` path, all `server/mcp` doc/comment path refs. **Principle:** only the genuine MCP server entrypoint (`src/index.ts` + `.mcp.json` + the `@modelcontextprotocol/sdk` dep, kept as a dev interface) should keep the `mcp` name — everything else is *bridge*. These lingering misnomers were left for a focused follow-up (low-value churn / runtime-identity risk, not worth bundling into the folder move):
-- [ ] **`server/ai/src/mcp/`** (the `McpClient` + `tools.ts` that talk to the bridge over WS) → rename to `src/bridge/` + `McpClient` → `BridgeClient`. Touches ~5 import paths in `server/ai` + the `vi.mock('../mcp/client.js')` test mock. It's a bridge client, not MCP.
-- [ ] **`mcp-bridge.jsx`** (the ExtendScript dispatch/batch/undo file — pure bridge infra, no MCP) → rename to `bridge.jsx`. Update the `domainFiles` array in `scripts/build-cep-extension.mjs` + the "handlers must not live in mcp-bridge.jsx" rule + doc refs in `server/ae-bridge/CLAUDE.md`.
-- [ ] **CEP bundle id `com.cubic.ae-mcp-bridge`** (in `cep-extension/CSXS/manifest.xml` + the AE install path) → `com.cubic.ae-bridge`. ⚠️ Changes the install-path folder, so it forces a one-time reinstall of the AE extension — do it when you're already touching the install flow (workstream A/B), not standalone.
+## Post-launch / backlog (not blocking Phase 4 ship)
+- [ ] **§F — transient API-error resilience (backend).** SDK auto-retries transient 429/529/network; quick win: `new Anthropic({ apiKey, maxRetries: 4 })`. Remaining: a mid-turn failure (dies iter 6/10 after already changing the project) abandons the whole turn → auto-retry the failed iteration so the turn resumes instead of restarting.
+- [ ] **Mid-turn state-staleness guard** ("modified since read"). Destructive drift is already caught (stale-target tool call → `LAYER_NOT_FOUND` → self-heal re-reads); silent drift (user nudges a layer mid-turn) is not. AE has no free revision counter → capture a cheap project-state **fingerprint** at turn start, re-check before each *mutating* tool call, mismatch → emit `STATE_STALE` into the self-heal path → model re-reads fresh.
+- [ ] **Motion-quality judgement call** (deferred from Phase 2). Once the UI exists, drive real prompts + watch output. Decide if the model's "juicy" motion understanding needs improving (recipes + system prompt may already suffice). If yes: tune recipe defaults / adjective→recipe mapping / composite recipes / visual feedback loop — NOT a preset library.
+- [ ] **Let the AI view generated video** (not images) — likely via Gemini's video capability.

@@ -60,4 +60,20 @@ Usage model: Cursor's "monthly credit pool where heavier models drain faster" is
 time-based limits (Claude Code style). Power users who use Opus pay effectively more — fair.
 Route simple tasks to Haiku, complex to Sonnet. Soft-cap heavy usage.
 
+⚠️ DECIDE THE PAYMENT PLAN (not worked out yet): free trial or not? what are sane usage limits /
+   credit-pool sizing? is it actually OK that every user's requests bill directly to my one API key
+   (cost/abuse exposure)? pricing tiers? — all TBD, work it out before shipping billing.
+
+# Phase 5 — user auth / identity / paid-status gating (NEW — was only implied)
+Prerequisite of BOTH the hosted proxy (must authenticate callers before spending the single API
+key) and Stripe billing (no subscription without an account). Currently not its own line item —
+called out here so it isn't lost inside "Stripe billing".
+- [ ] Account identity + sign-in (how a user creates/links an account)
+- [ ] Session persistence on-device — "user stays signed in on their computer" (token storage,
+      refresh, device binding); how the Electron app holds + renews credentials
+- [ ] Paid-status verification — proxy entitlement check gating API access (is this user paid?),
+      tied to the Stripe subscription state
+⚠️ NOT YET DECIDED — must run `grill-me` to fully work out the implementation approach (auth
+   provider vs. roll-own, token model, device binding, proxy↔Stripe entitlement flow) before building.
+
 For MVP: single API key, no billing, no limits. Build billing in Phase 5 (right before i ship)
