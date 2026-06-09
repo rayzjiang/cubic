@@ -20,18 +20,6 @@
     #status.connected { color: #4caf50; }
     #status.disconnected { color: #f44336; }
     #status.connecting { color: #ff9800; }
-    button {
-      background: #555;
-      color: #eee;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 11px;
-      margin-right: 6px;
-      margin-bottom: 6px;
-    }
-    button:hover { background: #666; }
     #error-box {
       margin-top: 8px;
       padding: 6px 8px;
@@ -42,24 +30,13 @@
       display: none;
       word-break: break-word;
     }
-    label { font-size: 11px; color: #999; }
-    input[type=text] {
-      width: 60px;
-      background: #3a3a3a;
-      color: #eee;
-      border: 1px solid #555;
-      padding: 3px 5px;
-      border-radius: 3px;
-      font-size: 11px;
-    }
   </style>
 </head>
 <body>
+  <!-- Headless AE bridge worker (Role B): no controls — port is hardcoded (17923) and
+       reconnect is automatic. This status line is a dev-only "is the worker alive?" glance;
+       it disappears entirely once §B makes the extension invisible. -->
   <div id="status" class="disconnected">Disconnected</div>
-  <div>
-    <button id="reconnect-btn">Reconnect</button>
-    <label>Port: <input type="text" id="port-input" value="17923" /></label>
-  </div>
   <div id="error-box"></div>
   <script src="src/CSInterface.js"></script>
   <script src="src/main.js"></script>

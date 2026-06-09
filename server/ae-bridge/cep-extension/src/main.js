@@ -6,10 +6,13 @@
 (function () {
   "use strict";
 
+  // Headless worker: single hardcoded port. One backend + one connection at a time —
+  // any other port would mean a duplicate/orphaned bridge, which the backend now
+  // fails loudly on rather than papering over with a fallback scan (see wsBridge.ts).
+  const PORT = 17923;
+
   const statusEl = document.getElementById("status");
   const errorEl = document.getElementById("error-box");
-  const reconnectBtn = document.getElementById("reconnect-btn");
-  const portInput = document.getElementById("port-input");
 
   const cs = (typeof CSInterface !== "undefined") ? new CSInterface() : null;
 
@@ -30,11 +33,6 @@
   function clearError() {
     errorEl.style.display = "none";
     errorEl.textContent = "";
-  }
-
-  function getPort() {
-    const v = parseInt(portInput.value, 10);
-    return isNaN(v) ? 17923 : v;
   }
 
   // Wrap CSInterface.evalScript in a Promise.
@@ -59,7 +57,7 @@
     }
     clearError();
     setStatus("Connecting…", "connecting");
-    const url = "ws://127.0.0.1:" + getPort();
+    const url = "ws://127.0.0.1:" + PORT;
     try {
       ws = new WebSocket(url);
     } catch (e) {
@@ -134,13 +132,6 @@
       : { id: id, ok: false, error: error };
     ws.send(JSON.stringify(msg));
   }
-
-  reconnectBtn.addEventListener("click", function () {
-    if (ws) { ws.onclose = null; ws.close(); ws = null; }
-    if (backoffTimer) { clearTimeout(backoffTimer); backoffTimer = null; }
-    backoffMs = 1000;
-    connect();
-  });
 
   connect();
 })();

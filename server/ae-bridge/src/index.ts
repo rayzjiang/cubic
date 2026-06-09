@@ -314,10 +314,12 @@ async function main() {
 
   // Exit cleanly when the MCP host (Claude Code) goes away — otherwise a
   // terminating session leaves this process reparented to launchd, squatting
-  // the WS bridge port forever (every stale instance pushes the next one onto
-  // a fallback port until binds fail). The host signals shutdown by closing our
-  // stdin; StdioServerTransport surfaces that as a transport close. We also
-  // handle the usual termination signals. close() frees the port before exit.
+  // the WS bridge port forever. Since the bridge now binds 17923 with no fallback
+  // and hard-fails on conflict, a squatting stale instance would block every future
+  // backend from starting — so freeing the port on exit is load-bearing. The host
+  // signals shutdown by closing our stdin; StdioServerTransport surfaces that as a
+  // transport close. We also handle the usual termination signals. close() frees
+  // the port before exit.
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;

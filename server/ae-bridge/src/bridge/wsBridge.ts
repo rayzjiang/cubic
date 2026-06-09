@@ -30,6 +30,11 @@ export interface ChatInbound {
   id?: string;
 }
 
+/** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
+const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue',
+]);
+
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;
 
 class AEBridge {
@@ -41,43 +46,41 @@ class AEBridge {
   private chatHandler: ChatHandler | null = null;
   public lastResult: string = '';
 
+  /**
+   * Bind the single canonical port (17923) — no fallback scan. One backend + one CEP
+   * worker connection at a time is the invariant; a port conflict means another Cubic
+   * backend is already running (or one was orphaned), so we fail loudly instead of
+   * silently binding a neighbour port where the new bridge sits blind (no panel
+   * connected). The headless panel always dials this same port (cep-extension/src/main.js).
+   */
   async start(port: number): Promise<void> {
-    const actualPort = await this.bindWithFallback(port, 5);
-    // Only the bridge that binds the requested primary port owns the shared port
-    // file. A fallback instance (primary port already taken by a still-running
-    // bridge) must NOT overwrite it — doing so points clients (server/ai) at a
-    // duplicate bridge that has no CEP panel connected, silently yielding empty
-    // AE state. See the PORT_FILE note in server/ai/src/mcp/client.ts.
-    if (actualPort === port) {
-      const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
-      try {
-        fs.mkdirSync(bridgeDir, { recursive: true });
-        fs.writeFileSync(path.join(bridgeDir, 'port'), String(actualPort), 'utf8');
-      } catch { /* non-fatal */ }
-    } else {
-      console.error(`WS bridge on fallback port ${actualPort} (primary ${port} in use) — not claiming shared port file`);
-    }
-    console.error(`WS bridge listening on 127.0.0.1:${actualPort}`);
+    await this.bind(port);
+    const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
+    try {
+      fs.mkdirSync(bridgeDir, { recursive: true });
+      fs.writeFileSync(path.join(bridgeDir, 'port'), String(port), 'utf8');
+    } catch { /* non-fatal */ }
+    console.error(`WS bridge listening on 127.0.0.1:${port}`);
   }
 
-  private bindWithFallback(port: number, retries: number): Promise<number> {
+  private bind(port: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const tryBind = (p: number, remaining: number) => {
-        const wss = new WebSocketServer({ host: '127.0.0.1', port: p });
-        wss.once('listening', () => {
-          this.wss = wss;
-          this.setupConnectionHandler();
-          resolve(p);
-        });
-        wss.once('error', (err: NodeJS.ErrnoException) => {
-          if (err.code === 'EADDRINUSE' && remaining > 0) {
-            tryBind(p + 1, remaining - 1);
-          } else {
-            reject(err);
-          }
-        });
-      };
-      tryBind(port, retries);
+      const wss = new WebSocketServer({ host: '127.0.0.1', port });
+      wss.once('listening', () => {
+        this.wss = wss;
+        this.setupConnectionHandler();
+        resolve();
+      });
+      wss.once('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          reject(new Error(
+            `A Cubic backend is already running on 127.0.0.1:${port} — close it first. ` +
+            `Only one backend may run at a time (it owns the single AE bridge connection).`
+          ));
+        } else {
+          reject(err);
+        }
+      });
     });
   }
 
@@ -96,9 +99,10 @@ class AEBridge {
           for (const w of this.connectWaiters) w();
           this.connectWaiters = [];
           this.emit('connect');
-        } else if (msg.type === 'userChat' || msg.type === 'cancel' || msg.type === 'queue') {
-          // Agent-chat channel: panel → loop. The handler streams agentEvent messages
-          // back over this same socket (see registerAgentChat in agentChat.ts).
+        } else if (CHAT_INBOUND_TYPES.has(msg.type)) {
+          // Agent-chat channel: panel → loop (the full ChatInbound union — userChat/
+          // cancel/queue/editQueue/removeQueue). The handler streams agentEvent
+          // messages back over this same socket (see registerAgentChat in agentChat.ts).
           this.chatHandler?.(ws, msg as ChatInbound);
         } else if ('ok' in msg) {
           // Response from UXP plugin to a pending command

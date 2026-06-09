@@ -51,6 +51,8 @@ CEP panel reloads handlers on each command — no AE restart needed for `.jsx` c
 ## Architecture
 Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on `127.0.0.1:17923`, receives tool calls, forwards `{ id, command, args }` to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` needed.
 
+> **Wire protocol contract:** the full WS message contract (both channels + `AgentEvent` + error codes) is locked in [`PROTOCOL.md`](./PROTOCOL.md) — the single source future host adapters depend on.
+
 **Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
 ```
 compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
