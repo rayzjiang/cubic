@@ -11,6 +11,7 @@
 - [ ] **Haiku auto-titles** — after turn 1, fire a tiny `claude-haiku-4-5` call (via `getLLM()`) to generate a clean conversation title, swap it into `index.json`. v1 ships with the truncated-first-message placeholder instead.
 - [ ] **Retention (age-based auto-delete)** — auto-delete a conversation ~30 days after its last activity (one knob = CC's `cleanupPeriodDays`). v1 keeps everything + manual delete only.
 - [ ] **Manual rename** — row dropdown → Rename; overrides the auto-title and sets the `renamed` flag so a future Haiku title won't clobber it.
+- [ ] ensure my application doesn't break + allows users to cleanly resume work if they cmdQ/exit the app fully
 
 ## From §D — Agent-run controls
 > Backend already supports all of this (Phase 2: `pendingMessages` FIFO + `queue`/`editQueue`/`removeQueue` handlers). Deferred work is **UI-only**.
