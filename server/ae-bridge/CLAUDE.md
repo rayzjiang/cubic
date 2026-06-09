@@ -13,7 +13,9 @@ cubic/
 │   ├── ai/                  # Phase 2 ✅ Claude API backend / agent brain (loop, self-heal, compaction, sessions)
 │   └── ae-bridge/           # AE bridge + ExtendScript handlers + CEP extension + optional MCP-server dev interface (this package)
 │       ├── src/
-│       │   ├── index.ts         # MCP server: tool/resource registration (allowedScripts → COMMANDS from commands.ts)
+│       │   ├── index.ts         # MCP server entrypoint (dev): tool/resource registration + stdio transport for Claude Code
+│       │   ├── serve.ts         # Standalone backend entrypoint: bridge + agent loop only, no MCP/stdio — the app spawns this (§B)
+│       │   ├── startBackend.ts  # Shared boot helper: bridge.start() + registerAgentChat() + signal shutdown (used by both entrypoints)
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
 │       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
 │       │       ├── mcp-bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
@@ -37,6 +39,8 @@ npm run build:plugin   # Bundle CEP extension → cep-extension/dist/
 npm run build          # Both of the above
 npm run install-plugin # Copy extension to Adobe CEP folder + enable PlayerDebugMode
 npm start              # Run the MCP server standalone (not needed — Claude Code already spawns it)
+npm run serve          # Run the backend standalone (bridge + agent loop, no MCP) — the path Electron main spawns in §B
+npm run build:serve    # Compile src/serve.ts → build/serve.js
 ```
 
 ## When to restart what

@@ -6,14 +6,12 @@ import * as path from "path";
 import { z } from "zod";
 import { bridge, BridgeError } from "./bridge/wsBridge.js";
 import { COMMANDS } from "./commands.js";
-import { registerAgentChat } from "./agentChat.js";
+import { startBackend, installShutdown, AE_MCP_PORT } from "./startBackend.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
   version: "2.0.0"
 });
-
-const AE_MCP_PORT = parseInt(process.env.AE_MCP_PORT ?? "17923", 10);
 
 const FRAMES_DIR = path.join(os.homedir(), '.cubic', 'frames');
 function defaultFramePath(): string {
@@ -308,31 +306,18 @@ server.registerTool(
 
 async function main() {
   console.error("After Effects MCP Server starting...");
-  await bridge.start(AE_MCP_PORT);
-  registerAgentChat();
+  await startBackend(AE_MCP_PORT);
   const transport = new StdioServerTransport();
 
   // Exit cleanly when the MCP host (Claude Code) goes away — otherwise a
   // terminating session leaves this process reparented to launchd, squatting
-  // the WS bridge port forever. Since the bridge now binds 17923 with no fallback
-  // and hard-fails on conflict, a squatting stale instance would block every future
-  // backend from starting — so freeing the port on exit is load-bearing. The host
-  // signals shutdown by closing our stdin; StdioServerTransport surfaces that as a
-  // transport close. We also handle the usual termination signals. close() frees
-  // the port before exit.
-  let shuttingDown = false;
-  const shutdown = () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    try { bridge.close(); } catch { /* best-effort */ }
-    process.exit(0);
-  };
+  // the WS bridge port forever. The host signals shutdown by closing our stdin;
+  // StdioServerTransport surfaces that as a transport close. installShutdown()
+  // also handles the usual termination signals + frees the port before exit.
+  const shutdown = installShutdown();
   transport.onclose = shutdown;
   process.stdin.on("end", shutdown);
   process.stdin.on("close", shutdown);
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
-  process.on("SIGHUP", shutdown);
 
   await server.connect(transport);
   console.error("After Effects MCP Server running...");
