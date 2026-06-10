@@ -36,6 +36,8 @@
 - **if doing 2 parallel:** run ② ∥ ③, slot ④ (smallest, backend-only) right after ③ in the same slot.
 
 ---
+
+
 # somewhat post mvp, maybe during (billing/usage limiting)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
 - Take inspo from good looking after effects youtube video tutorials
