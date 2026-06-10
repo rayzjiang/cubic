@@ -6,7 +6,7 @@ import * as path from "path";
 import { z } from "zod";
 import { bridge, BridgeError } from "./bridge/wsBridge.js";
 import { COMMANDS } from "./commands.js";
-import { startBackend, installShutdown, AE_MCP_PORT } from "./startBackend.js";
+import { startBackend, installShutdown, AE_BRIDGE_PORT } from "./startBackend.js";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
@@ -211,7 +211,7 @@ server.registerTool(
       text: `# After Effects MCP Integration (UXP WebSocket Bridge)
 
 ## Workflow
-1. Run \`npm start\` to start the MCP server (hosts WS bridge on 127.0.0.1:${AE_MCP_PORT}).
+1. Run \`npm start\` to start the MCP server (hosts WS bridge on 127.0.0.1:${AE_BRIDGE_PORT}).
 2. Open After Effects and open the **MCP Bridge** CEP panel (Window → Extensions → MCP Bridge).
 3. Call any tool — results are returned synchronously, no \`getResults\` needed.
 4. Use \`runScript\` with \`batch\` to run multiple commands in one call.
@@ -306,7 +306,7 @@ server.registerTool(
 
 async function main() {
   console.error("After Effects MCP Server starting...");
-  await startBackend(AE_MCP_PORT);
+  await startBackend(AE_BRIDGE_PORT);
   const transport = new StdioServerTransport();
 
   // Exit cleanly when the MCP host (Claude Code) goes away — otherwise a

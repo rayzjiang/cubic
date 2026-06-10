@@ -1,7 +1,7 @@
 // errors.mjs — validates the structured error channel across handler categories.
 //
 // Confirms every error path returns { status:'error', errorCode, message }
-// with a recognized errorCode drawn from the ERROR_CODES table in mcp-bridge.jsx.
+// with a recognized errorCode drawn from the ERROR_CODES table in bridge.jsx.
 //
 // Read-only tests (always run): UNKNOWN_COMMAND, COMP_NOT_FOUND, INVALID_ARGS via batch.
 // Write-gated tests (--write): LAYER_NOT_FOUND, LAYER_INDEX_OOB, TIME_OUT_OF_RANGE,

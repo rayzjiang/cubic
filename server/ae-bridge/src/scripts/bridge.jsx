@@ -1,4 +1,4 @@
-// mcp-bridge.jsx
+// bridge.jsx
 // Pure-function dispatch module — no UI, no file I/O, no polling.
 // Concatenated with domain files by build-uxp-plugin.mjs at build time.
 // Called by the UXP plugin via app.executeScript.
@@ -284,7 +284,7 @@ function _dispatchSwitch(command, args) {
         case "importAssetToComp":        return importAssetToComp(args);
         case "deleteProjectItem":         return deleteProjectItem(args);
         case "deleteUnusedSolids":       return deleteUnusedSolids();
-        // mcp-bridge.jsx
+        // bridge.jsx
         case "batch":                    return batch(args);
         default:                         return JSON.stringify({ status: "error", errorCode: ERROR_CODES.UNKNOWN_COMMAND, message: "Unknown command: " + command });
     }

@@ -1,9 +1,9 @@
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
-// The WS bridge port. Override via AE_MCP_PORT for tests; defaults to the
+// The WS bridge port. Override via AE_BRIDGE_PORT for tests; defaults to the
 // canonical 17923 (the bridge hard-binds this with no fallback — see wsBridge.ts).
-export const AE_MCP_PORT = parseInt(process.env.AE_MCP_PORT ?? "17923", 10);
+export const AE_BRIDGE_PORT = parseInt(process.env.AE_BRIDGE_PORT ?? "17923", 10);
 
 /**
  * Boot the backend: open the WS bridge and fold in the agent loop. Shared by
@@ -11,7 +11,7 @@ export const AE_MCP_PORT = parseInt(process.env.AE_MCP_PORT ?? "17923", 10);
  * server the app spawns (`serve.ts`). The open WS server keeps the event loop
  * alive, so no stdio transport is needed to stay running.
  */
-export async function startBackend(port: number = AE_MCP_PORT): Promise<void> {
+export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void> {
   await bridge.start(port);
   registerAgentChat();
 }

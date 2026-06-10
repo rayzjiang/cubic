@@ -28,7 +28,7 @@ const domainFiles = [
   'footage.jsx',
   'markers.jsx',
   'project.jsx',
-  'mcp-bridge.jsx',   // JSON polyfill + dispatchCommand + batch
+  'bridge.jsx',       // JSON polyfill + dispatchCommand + batch
 ];
 
 // ─── Step 1: Concatenate handlers ─────────────────────────────────────────────

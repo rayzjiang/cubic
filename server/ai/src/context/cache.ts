@@ -1,4 +1,4 @@
-import { getProjectInfo, listCompositions, ProjectInfo, CompositionsList } from "../mcp/tools.js";
+import { getProjectInfo, listCompositions, ProjectInfo, CompositionsList } from "../bridge/tools.js";
 
 interface CacheEntry<T> {
   value: T;

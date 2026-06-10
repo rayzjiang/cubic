@@ -1,10 +1,10 @@
-import { mcpClient } from '../mcp/client.js';
+import { bridgeClient } from '../bridge/client.js';
 import { sessionCache } from '../context/cache.js';
 import type { ToolUse, ToolResultBlock } from '../llm/types.js';
 
 /**
  * Commands that only READ AE state — running one does not require a sessionCache
- * invalidation. Mirrors READ_ONLY_COMMANDS in server/ae-bridge/src/scripts/mcp-bridge.jsx.
+ * invalidation. Mirrors READ_ONLY_COMMANDS in server/ae-bridge/src/scripts/bridge.jsx.
  * Drift here is harmless by design: a missing entry only costs one redundant refetch
  * next turn; a stale entry only serves stale project/comp counts for a single turn
  * (self-heals on the next mutation).
@@ -88,7 +88,7 @@ interface RawOutcome {
 
 async function runOnce(command: string, args: Record<string, unknown>): Promise<RawOutcome> {
   try {
-    const result = await mcpClient.callRunScript(command, args);
+    const result = await bridgeClient.callRunScript(command, args);
     // Handler-level errors come back as a successful bridge response whose JSON has
     // status:"error" — surface them as an error tool_result, not a thrown turn.
     if (result && typeof result === 'object' && (result as { status?: string }).status === 'error') {

@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const WS_URL    = `ws://127.0.0.1:${process.env.AE_MCP_PORT ?? 17923}`;
+export const WS_URL    = `ws://127.0.0.1:${process.env.AE_BRIDGE_PORT ?? 17923}`;
 export const TIMEOUT_MS = 30_000;
 
 // ─── ANSI ─────────────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ export function assertStructuredError(r, expectedCode) {
   assertField(r, 'errorCode', 'string');
   assertField(r, 'message', 'string');
   if (!KNOWN_ERROR_CODES.has(r.errorCode)) {
-    throw new Error(`unrecognized errorCode "${r.errorCode}" — add it to ERROR_CODES in mcp-bridge.jsx`);
+    throw new Error(`unrecognized errorCode "${r.errorCode}" — add it to ERROR_CODES in bridge.jsx`);
   }
   if (expectedCode && r.errorCode !== expectedCode) {
     throw new Error(`expected errorCode "${expectedCode}", got "${r.errorCode}"`);

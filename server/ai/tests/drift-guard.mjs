@@ -29,8 +29,8 @@ const dim   = s => `\x1b[2m${s}\x1b[0m`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..', '..', '..');
-const MCP_SRC = join(REPO, 'server', 'ae-bridge', 'src');
-const SCRIPTS_DIR = join(MCP_SRC, 'scripts');
+const AE_BRIDGE_SRC = join(REPO, 'server', 'ae-bridge', 'src');
+const SCRIPTS_DIR = join(AE_BRIDGE_SRC, 'scripts');
 
 // Shared resolver helpers — params they read are targeting/global, exempt below.
 const HELPER_FNS = ['_resolveComp', '_resolveCompAndLayer', '_resolveAnimProp', '_resolveMarkerProp', '_findMarkerKey'];
@@ -71,7 +71,7 @@ const EXEMPT = new Set();
 for (const h of HELPER_FNS) for (const p of argsIn(fnBody[h])) EXEMPT.add(p);
 
 // ── Axis 1: NAMES (registry keys vs commands.ts) ──────────────────────────────
-const commandsSrc = readFileSync(join(MCP_SRC, 'commands.ts'), 'utf8');
+const commandsSrc = readFileSync(join(AE_BRIDGE_SRC, 'commands.ts'), 'utf8');
 const canonical = new Set([...commandsSrc.matchAll(/"([A-Za-z][A-Za-z0-9]*)"/g)].map(m => m[1]));
 const registryNames = new Set(COMMAND_NAMES);
 

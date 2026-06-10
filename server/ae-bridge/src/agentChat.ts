@@ -2,12 +2,13 @@ import { runAgentTurn, compactSession, Session, nextQueueId, type AgentEvent } f
 import { bridge } from "./bridge/wsBridge.js";
 
 /**
- * Folds the AI agent loop (cubic-ai) into this MCP server process. The panel talks to
+ * Folds the AI agent loop (cubic-ai) into this backend process (the MCP server under
+ * index.ts, or the standalone serve.ts backend). The panel talks to
  * the loop over the SAME WebSocket it already uses as the ExtendScript worker:
  *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' }  → here
  *   here  → { type: 'agentEvent', sessionId, event }     → panel
  *
- * The loop reaches AE through cubic-ai's mcpClient, which connects to this same bridge
+ * The loop reaches AE through cubic-ai's bridgeClient, which connects to this same bridge
  * as a second (loopback) client — its commands route back to the panel worker. Keeping
  * the brain a separate package means its Anthropic dep stays isolated; we only consume
  * its public surface here.

@@ -1,4 +1,4 @@
-import { startBackend, installShutdown, AE_MCP_PORT } from "./startBackend.js";
+import { startBackend, installShutdown, AE_BRIDGE_PORT } from "./startBackend.js";
 
 // Standalone backend entrypoint — boots ONLY the WS bridge + agent loop, no MCP
 // server / stdio transport. This is the process the standalone app (Phase 4 §B)
@@ -9,7 +9,7 @@ async function main() {
   console.error("Cubic backend (standalone) starting...");
   installShutdown();
   await startBackend();
-  console.error(`Cubic backend listening on 127.0.0.1:${AE_MCP_PORT} — awaiting AE worker + chat clients...`);
+  console.error(`Cubic backend listening on 127.0.0.1:${AE_BRIDGE_PORT} — awaiting AE worker + chat clients...`);
 }
 
 main().catch(error => {

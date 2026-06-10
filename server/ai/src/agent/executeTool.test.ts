@@ -6,7 +6,7 @@ const { callRunScript, invalidate } = vi.hoisted(() => ({
   callRunScript: vi.fn(),
   invalidate: vi.fn(),
 }));
-vi.mock('../mcp/client.js', () => ({ mcpClient: { callRunScript } }));
+vi.mock('../bridge/client.js', () => ({ bridgeClient: { callRunScript } }));
 vi.mock('../context/cache.js', () => ({ sessionCache: { invalidate } }));
 
 import { executeTool } from './executeTool.js';

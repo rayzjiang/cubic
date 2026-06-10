@@ -3,7 +3,7 @@
 // Requires: After Effects open + MCP Bridge CEP panel connected
 // Run: npm run test:live   (or: node tests/context-live.mjs)
 
-import { buildContext, formatStateForPrompt, mcpClient } from '../build/index.js';
+import { buildContext, formatStateForPrompt, bridgeClient } from '../build/index.js';
 
 // ─── Minimal test harness ─────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ await test('formatStateForPrompt produces valid XML + JSON from live state', asy
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
-await mcpClient.disconnect();
+await bridgeClient.disconnect();
 
 const passed = results.filter(r => r.ok).length;
 const failed = results.filter(r => !r.ok).length;

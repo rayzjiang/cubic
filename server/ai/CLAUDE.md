@@ -2,8 +2,8 @@
 Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
 > **Scope:** Claude API backend + agent brain. Talks to AE by connecting to the
-> live MCP WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
-> client. Does NOT modify any MCP or CEP code.
+> live WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
+> client. Does NOT modify any bridge or CEP code.
 
 ## Phase 2 build order (this module)
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call
@@ -17,7 +17,7 @@ See `../../TODOS/TODO-phase2.md` for the full checklist.
 ```
 User message
     ↓
-buildContext()          ← reads live AE state via the WS bridge (McpClient)
+buildContext()          ← reads live AE state via the WS bridge (BridgeClient)
     ↓
 formatStateForPrompt()  ← wraps state in <live_ae_state>...</live_ae_state> XML block
     ↓
@@ -30,8 +30,8 @@ getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_cont
 ```
 
 ## Module map (`src/`)
-- `mcp/client.ts` — `McpClient` / `mcpClient` singleton: WS connection + `callRunScript(command, args)`.
-- `mcp/tools.ts` — typed read wrappers + return types: `getProjectInfo`, `listCompositions`, `getCurrentTime`, `getSelectedLayers`.
+- `bridge/client.ts` — `BridgeClient` / `bridgeClient` singleton: WS connection + `callRunScript(command, args)`.
+- `bridge/tools.ts` — typed read wrappers + return types: `getProjectInfo`, `listCompositions`, `getCurrentTime`, `getSelectedLayers`.
 - `context/buildContext.ts` — assembles `LiveAEState` per turn.
 - `context/cache.ts` — `SessionCache` / `sessionCache`: caches `getProjectInfo` + `getCompositionsList`; `invalidate()`.
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
@@ -46,13 +46,13 @@ getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_cont
 ## Agent loop (`src/agent/`)
 - **Shape:** bounded while-loop (`MAX_ITERATIONS = 15`), not a formal state machine. One model call per iteration; tools execute in order; their `tool_result` blocks become the next user message.
 - **Self-healing:** tool errors return as `tool_result(is_error)` so the model reasons + retries forward, bounded by the iteration budget. `RENDER_FAILED` retries once (transient flush race). Transport failures surface as a `BRIDGE_ERROR` result, never a thrown turn.
-- **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `mcpClient`). A failed snapshot warns and proceeds.
+- **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `bridgeClient`). A failed snapshot warns and proceeds.
 - **Narration:** per-iteration `AgentEvent` push (assistant text, then `tool_start`/`tool_end`). Token-level streaming is a later swap (`chat()`→`stream()`) with no change to the loop.
 - **Concurrency:** single in-flight run per `Session`; `cancelRequested` and the `pendingMessages` queue (FIFO `{id,text}[]` steer queue) are checked at iteration boundaries — mirrors Claude Code. The whole queue drains in order at each tool-result boundary (never just the last → no silent drop); `editQueue`/`removeQueue` (by id) let the panel revise a queued steer before it fires. Messages left after the final boundary run as one combined follow-up turn.
-- **Transport (folded into MCP process):** `server/ae-bridge` depends on `cubic-ai` (`file:../ai`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; `wsBridge.onChat` → `agentChat.ts` runs the loop and streams `{type:'agentEvent', event}` back. The loop reaches AE through `mcpClient` (a second loopback bridge client). Rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
+- **Transport (folded into MCP process):** `server/ae-bridge` depends on `cubic-ai` (`file:../ai`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; `wsBridge.onChat` → `agentChat.ts` runs the loop and streams `{type:'agentEvent', event}` back. The loop reaches AE through `bridgeClient` (a second loopback bridge client). Rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
 
-## Bridge transport (McpClient)
-- **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `McpClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
+## Bridge transport (BridgeClient)
+- **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `BridgeClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
 - **`npm start` is NOT needed** when Claude Code is running — the bridge is already up. Run `npm start` only when running `server/ai` standalone outside Claude Code.
 - Port discovery: read `~/.ae-mcp-bridge/port`, then fall back to scanning `17923–17927`. `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
 - Requires AE open **with the MCP Bridge panel connected**; a bare bridge with no panel replies with empty/blank state.
