@@ -22,6 +22,11 @@ implement what's on this page** — nothing else in the codebase is part of the 
   | `server/ai` loopback (`mcpClient`) | the agent loop fetching live state / running tool calls | sends `{id,command,args}` |
   | Electron renderer (Phase 4) | the chat UI | sends chat-channel messages (`userChat`…) |
 
+  > The Electron renderer learns the port from the app's main process via a
+  > `getBackendPort()` IPC (main owns the port and passes it to the spawned backend) —
+  > it does **not** read `~/.ae-mcp-bridge/port`. That file is for the independently
+  > launched CEP worker + loopback client.
+
 ## Routing (how the backend tells messages apart)
 
 In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
