@@ -2,8 +2,8 @@
 Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
 > **Scope:** Claude API backend + agent brain. Talks to AE by connecting to the
-> live MCP WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
-> client. Does NOT modify any MCP or CEP code.
+> live WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
+> client. Does NOT modify any bridge or CEP code.
 
 ## Phase 2 build order (this module)
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call

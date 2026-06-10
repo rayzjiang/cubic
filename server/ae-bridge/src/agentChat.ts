@@ -2,7 +2,8 @@ import { runAgentTurn, compactSession, Session, nextQueueId, type AgentEvent } f
 import { bridge } from "./bridge/wsBridge.js";
 
 /**
- * Folds the AI agent loop (cubic-ai) into this MCP server process. The panel talks to
+ * Folds the AI agent loop (cubic-ai) into this backend process (the MCP server under
+ * index.ts, or the standalone serve.ts backend). The panel talks to
  * the loop over the SAME WebSocket it already uses as the ExtendScript worker:
  *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' }  → here
  *   here  → { type: 'agentEvent', sessionId, event }     → panel

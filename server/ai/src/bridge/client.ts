@@ -33,7 +33,7 @@ async function findBridge(): Promise<WebSocket> {
   }
   throw new Error(
     `Could not connect to AE WS bridge on any of ${PORT_SCAN_RANGE.join(', ')} — ` +
-    'is Claude Code running with the MCP server enabled?'
+    'is the AE bridge running? (the standalone backend, or the MCP server under Claude Code)'
   );
 }
 
