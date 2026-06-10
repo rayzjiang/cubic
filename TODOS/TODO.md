@@ -37,6 +37,7 @@
 
 ---
 
+**6/9/26: eventually shift the stuff below to a separate todo for post mvp stuff (maybe call it phase 6?)
 
 # somewhat post mvp, maybe during (billing/usage limiting)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
