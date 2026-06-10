@@ -80,6 +80,12 @@
 
 **6/9/26: eventually shift the stuff below to a separate todo for post mvp stuff (maybe call it phase 6?)
 
+# postmvp
+Resume cost of huge chats: on reopen we load full history; the first turn
+ auto-compacts
+ (≥90%) or hits the existing context_full CTA (≥97%) — same safety net §C
+ renders. **A friendlier pre-warning is a later refinement, not built here.**
+
 # somewhat post mvp, maybe during (billing/usage limiting)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
 - Take inspo from good looking after effects youtube video tutorials
