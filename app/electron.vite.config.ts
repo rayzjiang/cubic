@@ -15,7 +15,12 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/preload/index.ts') } },
+      rollupOptions: {
+        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        // sandbox:true requires a CommonJS preload — Electron can't load an ESM (.mjs)
+        // preload in a sandbox. Force CJS + a .cjs extension (the package is "type":"module").
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
+      },
     },
   },
   renderer: {

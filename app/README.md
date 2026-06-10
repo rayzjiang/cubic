@@ -7,13 +7,18 @@ connection-state UX, persistence, and run controls land in later worktrees.
 
 ## Prerequisite — build the backend first
 
-The app spawns `server/ae-bridge/build/serve.js`. Build it once before running:
+The app spawns `server/ae-bridge/build/serve.js`, which imports the `cubic-ai` brain
+(`server/ai`). Build **both** once before running — `cubic-ai` first (the bridge bundle
+resolves it at runtime), then the bridge:
 
 ```bash
-cd ../server/ae-bridge && npm install && npm run build:serve
+cd ../server/ai        && npm install && npm run build        # emits build/index.js (+ types)
+cd ../server/ae-bridge && npm install && npm run build:serve  # emits build/serve.js
 ```
 
-If the bundle is missing, the app logs a loud error with this exact command.
+If the `serve.js` bundle is missing, the app logs a loud error with the build command.
+(If `cubic-ai` isn't built, `serve.js` spawns but exits with `ERR_MODULE_NOT_FOUND`; the
+app surfaces this via its `[backend] exited UNEXPECTEDLY` log.)
 
 ## Develop
 
