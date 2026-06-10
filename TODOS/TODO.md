@@ -7,6 +7,35 @@
 ⬜ Phase 5 — Pre-ship gate (nothing ships to anyone until ALL of these): hosted LLM proxy that holds the API key + injects the system prompt server-side, code obfuscation + binary packaging, and Stripe billing. **Push updates to users** = `electron-updater` (auto-update feed + staged rollouts/beta channel) now that the UI is an Electron app; this is also when app signing/notarization gets turned on. Full checklist → **`TODO-phase5.md`**.
 
 ---
+
+## Phase 4 — Worktree execution plan (grouping · order · parallelization)
+
+> Detailed checklist → `TODO-phase4.md`. This is the build order: which TODO items get grouped into each worktree, what each depends on, and what can run in parallel. Numbers = worktrees / Claude sessions.
+
+**Key constraint:** §B2/§B3/§B4 + §C + §D all live in the new `app/` dir → they can't be parallel worktrees against each other (they'd collide). Real parallelism = backend tracks running *alongside* a serial frontend chain.
+
+### Overall:
+- **①** solo → merge. Then **② ∥ ③ ∥ ④** (the 3-at-once wave; merge ② first, ③/④ whenever). Then **⑤ → ⑥ → ⑦** serial. <br>
+
+### Wave 0 — serialize (do alone, merge first)
+1. **WT-NAMING — §B1** — `mcp`→`bridge` rename + whole-codebase name audit + bundle-id change. Cross-cutting (renames files §E/§B3 depend on). **Merge before forking anything.**
+
+### Wave 1 — 3 parallel worktrees (after ① merges; these share zero files)
+2. **WT-FE-FOUNDATION — §B2 + §B5 + port IPC** — new `app/`: Electron main + React renderer skeleton, native window, menus, single-instance; env-switchable backend; `getBackendPort()` IPC. **← critical path: blocks all of Wave 2; merge this first.**
+3. **WT-PERSISTENCE — §C2 + §0 re-attach (backend half)** — JSONL store, per-turn append, resume, per-project list, unsaved-project re-key, placeholder titles, manual-delete (backend); `emit` fan-out `Map` + `attach`/`attached` wire + live-turn buffer. Files: `agentChat.ts`, `session.ts`, new store.
+4. **WT-RESTORE — §E restore handler (backend) + agent-driven undo** — new bridge command (copy `.cubic-backups/` back + reopen project), exposed as agent tool ("Cubic, undo that"). Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
+
+### Wave 2 — frontend chain (after ② merges; TO BE DONE SEQUEUNTIALLY — all share `app/`)
+5. **WT-CHAT-UI — §C core + §C2 sidebar** — `agentEvent` reducer + streaming + history → markdown → friendly error render → command surface (buttons, no slash) → spinner/UX → compaction-event render → instrument seams; + conversation-list sidebar + delete kebab (consume §C2 `index.json`). Needs ② merged (sidebar needs ③).
+6. **WT-CONTROLS — §D + §C re-attach (renderer half) + §E restore button** — Stop/cancel (+Esc); re-attach-on-reload renderer half; "Restore to before this request" button. Needs ⑤ + ③'s wire + ④'s handler.
+7. **WT-CONNECT — §B3 + §B4** — auto-install headless bridge (new bundle id) + PlayerDebugMode; connection-state UX (connected / open AE / reconnecting / not-installed / port-in-use). Needs ② + ①'s bundle id.
+
+### other notes
+- ⑤/⑥/⑦ depend on the prior + on already-merged Wave-1 backend, so their cross-wave deps (③ sidebar/wire, ④ handler) are auto-satisfied by the time you reach them.
+- **Within a worktree:** plan all its items as one design, implement in *dependency order, not doc-bullet order*.
+- **if doing 2 parallel:** run ② ∥ ③, slot ④ (smallest, backend-only) right after ③ in the same slot.
+
+---
 # somewhat post mvp, maybe during (billing/usage limiting)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
 - Take inspo from good looking after effects youtube video tutorials
