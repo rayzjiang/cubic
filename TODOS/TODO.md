@@ -17,23 +17,64 @@
 ### Overall:
 - **①** solo → merge. Then **② ∥ ③ ∥ ④** (the 3-at-once wave; merge ② first, ③/④ whenever). Then **⑤ → ⑥ → ⑦** serial. <br>
 
-### ✅ DONE (except deferred §B2) - Wave 0 — serialize (do alone, merge first)
-1. **WT-NAMING — §B1 + §B3** — `mcp`→`bridge` code-identifier rename + whole-codebase name audit. ✅ DONE + merged. Cross-cutting (renames files §E / §B5 depend on). **The §B2 bundle-id/path rename was deferred out of here → folded into ⑦ WT-CONNECT** (it forces a one-time reinstall, so it rides with the new install flow being built there). **Merge before forking anything.**
+> **How to read this:** each worktree lists the **exact `TODO-phase4.md` checklist items** it owns, by §ref. To kick one off, tell Claude e.g. *"plan + execute worktree ③ (the items listed under WT-PERSISTENCE)."* Two sections are **split across worktrees** — §E (handler/undo in ④, button in ⑥) and §C2 (backend in ③, sidebar UI in ⑤); splits are flagged inline. §0 is a **decision** (already `[x]`), built across ②/③/⑥ — see note at bottom.
 
-### Wave 1 — 3 parallel worktrees (after ① merges; these share zero files)
-2. **WT-FE-FOUNDATION — §B4 + §B7 + port IPC** — new `app/`: Electron main + React renderer skeleton, native window, menus, single-instance; env-switchable backend; `getBackendPort()` IPC. **← critical path: blocks all of Wave 2; merge this first.**
-3. **WT-PERSISTENCE — §C2 + §0 re-attach (backend half)** — JSONL store, per-turn append, resume, per-project list, unsaved-project re-key, placeholder titles, manual-delete (backend); `emit` fan-out `Map` + `attach`/`attached` wire + live-turn buffer. Files: `agentChat.ts`, `session.ts`, new store.
-4. **WT-RESTORE — §E restore handler (backend) + agent-driven undo** — new bridge command (copy `.cubic-backups/` back + reopen project), exposed as agent tool ("Cubic, undo that"). Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
+### ✅ DONE — Wave 0 — serialize (do alone, merge first)
+**① WT-NAMING** — `mcp`→`bridge` rename + whole-codebase name audit. ✅ DONE + merged.
+- [x] §B1 — `mcp`→`bridge` code-identifier naming pass
+- [x] §B3 — whole-codebase naming audit
+- ↳ §B2 (bundle-id/path rename) was **deferred out of here → ⑦ WT-CONNECT** (forces a one-time reinstall; rides with the new install flow). No longer blocks anything.
 
-### Wave 2 — frontend chain (after ② merges; TO BE DONE SEQUEUNTIALLY — all share `app/`)
-5. **WT-CHAT-UI — §C core + §C2 sidebar** — `agentEvent` reducer + streaming + history → markdown → friendly error render → command surface (buttons, no slash) → spinner/UX → compaction-event render → instrument seams; + conversation-list sidebar + delete kebab (consume §C2 `index.json`). Needs ② merged (sidebar needs ③).
-6. **WT-CONTROLS — §D + §C re-attach (renderer half) + §E restore button** — Stop/cancel (+Esc); re-attach-on-reload renderer half; "Restore to before this request" button. Needs ⑤ + ③'s wire + ④'s handler.
-7. **WT-CONNECT — §B2 + §B5 + §B6** — **first do the deferred §B2 bundle/path rename here** (write the install path with the final `com.cubic.ae-bridge` bundle id; rename the `~/.ae-mcp-bridge` port dir — writer `wsBridge.ts` + reader `bridge/client.ts` together; update the "MCP Bridge" CEP panel display name in `manifest.xml`), then auto-install the headless bridge + PlayerDebugMode; connection-state UX (connected / open AE / reconnecting / not-installed / port-in-use). Needs ②. (§B2 is self-contained in this worktree — the one-time forced reinstall is free because the install flow is being rebuilt here; no longer a dep on ①.)
+### Wave 1 — 3 parallel worktrees (after ① merged; these share zero files)
+**② WT-FE-FOUNDATION** — new `app/` dir (Electron + renderer skeleton). **← critical path: blocks all of Wave 2; merge this first.**
+- [ ] §B4 — App shell (Electron main + React renderer, native window, menus, single-instance)
+- [ ] §B7 — Env-switchable backend (localhost vs prod proxy)
+- [ ] §0 (build) — `getBackendPort()` IPC: main answers the one port-discovery IPC, renderer opens its WS to that port
 
-### other notes
-- ⑤/⑥/⑦ depend on the prior + on already-merged Wave-1 backend, so their cross-wave deps (③ sidebar/wire, ④ handler) are auto-satisfied by the time you reach them.
+**③ WT-PERSISTENCE** — conversation persistence + in-flight re-attach. **Backend only.** Files: `agentChat.ts`, `session.ts`, new store.
+- [ ] §C2 — Backend JSONL store (`~/.cubic/sessions/<project>/<id>.jsonl` + `index.json`)
+- [ ] §C2 — Append per turn (crash-safe)
+- [ ] §C2 — Reload + continue (resume)
+- [ ] §C2 — Re-attach backend, in-flight turn (`emit` fan-out `Map` + `attach`/`attached` wire + live-turn buffer) ← **this is the §0 re-attach backend half**
+- [ ] §C2 — Per-project conversation list (keyed by project path)
+- [ ] §C2 — Unsaved-project handling (`path:""` → "Untitled", lazy re-key on save)
+- [ ] §C2 — Instant placeholder titles (truncated first message)
+- [ ] §C2 — Manual delete (backend delete; the row-kebab **UI** lives in ⑤)
+
+**④ WT-RESTORE** — backup recovery, backend pieces. Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
+- [ ] §E — Restore handler (new bridge command: copy `.cubic-backups/` back + reopen project)
+- [ ] §E — Agent-driven restore ("Cubic, undo that" maps to the handler)
+- ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥.
+
+### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
+**⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged.
+- [ ] §C — Chat UI (agentEvent reducer + streaming per-iteration + message history)
+- [ ] §C — Render compaction/context events ("compacting…" indicator + `context_full` CTA)
+- [ ] §C — Markdown rendering (`react-markdown` + `remark-gfm`)
+- [ ] §C — Friendly transient-error rendering
+- [ ] §C — Command surface (buttons/icons, no slash commands)
+- [ ] §C — Good UX (spinner + progress words)
+- [ ] §C — Instrument event seams (no-op `track(...)`)
+- [ ] §C — Manual E2E compaction test (deferred from Phase 2)
+- [ ] §C2 (UI) — Conversation-list sidebar + delete kebab (consume ③'s `index.json`)
+- ↳ §C "Re-attach on reload (renderer half)" is **NOT here** — it's in ⑥.
+
+**⑥ WT-CONTROLS** — run controls + the renderer halves that need ⑤'s reducer. Needs ⑤ + ③'s wire + ④'s handler.
+- [ ] §D — Stop/cancel button (+ Esc) → `{type:'cancel'}`
+- [ ] §C — Re-attach on reload (renderer half): on (re)connect send `{type:'attach',sessionId}`, feed buffered `events` through the reducer
+- [ ] §E — "Restore to before this request" button (snapshot list + confirm-before-overwrite)
+
+**⑦ WT-CONNECT** — provisioning + connection. Needs ② merged.
+- [ ] §B2 (deferred rename — **do FIRST in this worktree**): bundle id `com.cubic.ae-mcp-bridge`→`com.cubic.ae-bridge`; rename `~/.ae-mcp-bridge` port dir (writer `wsBridge.ts` + reader `bridge/client.ts` **together**); "MCP Bridge" CEP panel display name in `manifest.xml`
+- [ ] §B5 — Auto-install the AE bridge (write into CEP extensions dir under the NEW bundle id + enable PlayerDebugMode)
+- [ ] §B6 — Connection-state UX (connected / open AE / reconnecting / not-installed / port-in-use)
+- ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
+
+### notes
+- **§0 is a decision, not code.** Its `[x]` means the transport is *decided* (direct WS + one `getBackendPort()` IPC + re-attach-by-`sessionId`). The code gets built later: IPC → ②, re-attach backend half → ③, re-attach renderer half → ⑥.
 - **Within a worktree:** plan all its items as one design, implement in *dependency order, not doc-bullet order*.
-- **if doing 2 parallel:** run ② ∥ ③, slot ④ (smallest, backend-only) right after ③ in the same slot.
+- ⑤/⑥/⑦ cross-wave deps (③'s sidebar/wire, ④'s handler) are auto-satisfied — Wave-1 is merged before you reach them.
+- **If only running 2 parallel:** run ② ∥ ③, slot ④ (smallest, backend-only) right after ③ in the same slot.
 
 ---
 
