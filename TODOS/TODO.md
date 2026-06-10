@@ -26,10 +26,10 @@
 - ↳ §B2 (bundle-id/path rename) was **deferred out of here → ⑦ WT-CONNECT** (forces a one-time reinstall; rides with the new install flow). No longer blocks anything.
 
 ### Wave 1 — 3 parallel worktrees (after ① merged; these share zero files)
-**② WT-FE-FOUNDATION** — new `app/` dir (Electron + renderer skeleton). **← critical path: blocks all of Wave 2; merge this first.**
-- [ ] §B4 — App shell (Electron main + React renderer, native window, menus, single-instance)
-- [ ] §B7 — Env-switchable backend (localhost vs prod proxy)
-- [ ] §0 (build) — `getBackendPort()` IPC: main answers the one port-discovery IPC, renderer opens its WS to that port
+**② WT-FE-FOUNDATION** — new `app/` dir (Electron + renderer skeleton). **← critical path: blocks all of Wave 2; merge this first.** ✅ BUILT (electron-vite scaffold).
+- [x] §B4 — App shell (Electron main + React renderer, native window, menus, single-instance)
+- [x] §B7 — Env-switchable backend (localhost vs prod proxy) — `CUBIC_ENV` flag → spawned child; `prod` stubbed until Phase-5 proxy
+- [x] §0 (build) — `getBackendPort()` IPC: main is the single source of truth for the port (passes it to the child + answers the IPC; no file read), renderer opens its WS to that port
 
 **③ WT-PERSISTENCE** — conversation persistence + in-flight re-attach. **Backend only.** Files: `agentChat.ts`, `session.ts`, new store.
 - [ ] §C2 — Backend JSONL store (`~/.cubic/sessions/<project>/<id>.jsonl` + `index.json`)

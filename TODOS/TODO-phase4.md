@@ -9,6 +9,7 @@
 
 ## §0. Renderer ↔ backend transport — ✅ DECIDED (gates §B/§C) → [NOTES](./NOTES-phase4.md#d0)
 - [x] **Direct WebSocket** + one `getBackendPort()` IPC for port discovery. (Rejected: IPC relay.) Re-attach-by-`sessionId` also decided → **built** under §C2 (backend half) + §C (renderer half).
+  - [x] **`getBackendPort()` IPC built** (WT-FE-FOUNDATION) — `main` is the single source of truth for the port (passes it to the spawned child + answers the IPC; no file read — corrected from the original "main reads the file", see NOTES d0). Renderer opens its WS to the returned port.
 
 ---
 
@@ -25,10 +26,10 @@
     - [x] Keep `mcp` ONLY on the real MCP entrypoint (`src/index.ts` + `.mcp.json` + `@modelcontextprotocol/sdk` dev dep) — left untouched.
 - [ ] **Path/bundle renames — DEFERRED to the auto-install item below** (force a reinstall/migration, so they land *with* the new install flow): bundle id `com.cubic.ae-mcp-bridge` → `com.cubic.ae-bridge`; `~/.ae-mcp-bridge/port` home dir (paired writer `wsBridge.ts` + reader `bridge/client.ts`); AE CEP panel display name "MCP Bridge".
 - [x] **Whole-codebase audit — done** — beyond `mcp`→`bridge`, named-for-actual-scope review. Applied (user-approved): `AE_MCP_PORT` → `AE_BRIDGE_PORT` (it's the WS bridge port, not MCP-specific; no external setter), `MCP_SRC` → `AE_BRIDGE_SRC` in `drift-guard.mjs`, and reworded the `client.ts` connect-error message + `agentChat.ts` process comment + the "live WebSocket bridge" scope prose in `server/ai/CLAUDE.md` (they mislabelled the bridge as MCP). Kept as-is (user-approved): `__MCP_TEST_*` test-comp prefixes + "After Effects MCP" suite labels (test-only, never shipped, high churn / low value). Deferred to the install/config plan: the `~/.cubic-backups` (sibling) vs `~/.cubic/{frames,sessions}` (child) path inconsistency.
-- [ ] **App shell** — new `app/` dir: Electron main + React renderer, native window (vibrancy/traffic-lights), menus, single-instance.
+- [x] **App shell** — new `app/` dir: Electron main + React renderer, native window (vibrancy/traffic-lights), menus, single-instance. ✅ WT-FE-FOUNDATION (electron-vite; main spawns + supervises `serve.js`, logs + `died` signal on crash, no auto-restart → §B6/⑦; renderer = thin WS connection proof, chat UI → §C/⑤).
 - [ ] **Auto-install the AE bridge** — on first run / "Connect to After Effects", write the headless bridge into `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/` + enable PlayerDebugMode. One app install → provisions the bridge → AE auto-connects next launch. (Replaces ZXP/`install-plugin` friction. Use the NEW bundle id. **Mandatory for v1** — non-technical users can't run install scripts.)
 - [ ] **Connection state UX** — "connected / open AE / reconnecting"; handle AE-not-running, bridge-not-installed, port-in-use.
-- [ ] **Env-switchable backend** — config to point at `localhost` vs the prod proxy (the Phase-5 proxy the shipped app points at).
+- [x] **Env-switchable backend** — config to point at `localhost` vs the prod proxy (the Phase-5 proxy the shipped app points at). ✅ WT-FE-FOUNDATION (`CUBIC_ENV=local|prod` in `app/src/main/config.ts`, forwarded to the spawned child; switches where the *agent loop* sends Claude calls — `local`=Anthropic direct, `prod`=forward `ANTHROPIC_BASE_URL` to the proxy. `prod` is an inert stub until the Phase-5 proxy exists).
 
 ## §C. Chat UI on the `agentEvent` protocol
 - [ ] **Chat UI** — renderer consuming `agentEvent` (streaming per-iteration display + message history); prereq for §D/§E.
