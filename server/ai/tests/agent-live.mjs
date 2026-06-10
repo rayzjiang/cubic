@@ -10,7 +10,7 @@
 //     comp + a layer. Delete that comp afterwards (or undo). Uses Haiku to stay cheap.
 
 import 'dotenv/config';
-import { runAgentTurn, Session, mcpClient, sessionCache } from '../build/index.js';
+import { runAgentTurn, Session, bridgeClient, sessionCache } from '../build/index.js';
 import { green, red, dim, bold, cyan, enableLlmIO, printCostTotal } from './lib/format.mjs';
 
 // Real Haiku calls below (incl. the agent loop's internal ones) — show every request/response/cost.
@@ -53,14 +53,14 @@ console.log(bold('\nAgent Live — full loop against AE (requires ANTHROPIC_API_
 // Preflight: fail loudly if there is no panel-connected bridge (see chat-live.mjs).
 await test('AE bridge is connected (panel attached)', async () => {
   let info;
-  try { info = await mcpClient.callRunScript('getProjectInfo'); }
+  try { info = await bridgeClient.callRunScript('getProjectInfo'); }
   catch (e) { throw new Error(`cannot reach a panel-connected AE bridge: ${e.message}`); }
   assert(info && typeof info.projectName === 'string', 'bridge replied but without a project — panel not attached');
   return `project "${info.projectName}"`;
 });
 if (!results[results.length - 1].ok) {
   console.log(red('\nBridge preflight failed — skipping agent loop test.\n'));
-  await mcpClient.disconnect();
+  await bridgeClient.disconnect();
   process.exit(1);
 }
 
@@ -107,5 +107,5 @@ const failed = results.filter(r => !r.ok).length;
 console.log(`\n${bold('Results:')} ${green(`${passed} passed`)}, ${failed > 0 ? red(`${failed} failed`) : `${failed} failed`}`);
 printCostTotal();
 console.log(dim('\n  Remember to delete the "__CUBIC_AGENT_TEST" comp from your project.\n'));
-await mcpClient.disconnect();
+await bridgeClient.disconnect();
 process.exit(failed > 0 ? 1 : 0);

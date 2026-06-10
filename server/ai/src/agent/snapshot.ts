@@ -1,4 +1,4 @@
-import { mcpClient } from '../mcp/client.js';
+import { bridgeClient } from '../bridge/client.js';
 
 export interface SnapshotResult {
   ok: boolean;
@@ -12,14 +12,14 @@ export interface SnapshotResult {
  * Pre-turn revert point. Asks AE to flush the project to disk and copy the .aep into
  * a `.cubic-backups/` sibling (see `backupProject` in server/ae-bridge project.jsx). This is
  * an internal turn step — NOT a model-exposed tool, so it is intentionally absent from
- * the command registry/catalog and reached only via the internal mcpClient path.
+ * the command registry/catalog and reached only via the internal bridgeClient path.
  *
  * Never throws: a failed snapshot (e.g. an unsaved project) is reported so the loop
  * can warn and proceed — the user still has per-command ⌘Z.
  */
 export async function snapshotProject(turnId: string): Promise<SnapshotResult> {
   try {
-    const result = await mcpClient.callRunScript('backupProject', { turnId });
+    const result = await bridgeClient.callRunScript('backupProject', { turnId });
     if (result && typeof result === 'object' && (result as { status?: string }).status === 'error') {
       const r = result as { message?: string; errorCode?: string };
       return { ok: false, reason: r.message ?? r.errorCode ?? 'snapshot failed' };

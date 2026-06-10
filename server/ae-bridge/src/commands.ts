@@ -8,8 +8,8 @@
  *
  * When you add a new ExtendScript handler:
  *   1. Add its name here.
- *   2. Add a `case` in `_dispatchSwitch()` in `src/scripts/mcp-bridge.jsx`.
- *   3. If read-only, add to `READ_ONLY_COMMANDS` in `mcp-bridge.jsx`.
+ *   2. Add a `case` in `_dispatchSwitch()` in `src/scripts/bridge.jsx`.
+ *   3. If read-only, add to `READ_ONLY_COMMANDS` in `bridge.jsx`.
  *   4. Update `server/ai/src/tools/definitions.ts` COMMAND_NAMES to match.
  *   (The drift-guard test will fail CI until step 4 is done.)
  */

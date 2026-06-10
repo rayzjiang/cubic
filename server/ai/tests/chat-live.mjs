@@ -13,7 +13,7 @@
 //   5. Click a keyframe diamond  → test shows selectedKeys array
 
 import 'dotenv/config';
-import { buildContext, buildSystemPrompt, formatStateForPrompt, getLLM, mcpClient, getSelectionDetails } from '../build/index.js';
+import { buildContext, buildSystemPrompt, formatStateForPrompt, getLLM, bridgeClient, getSelectionDetails } from '../build/index.js';
 import { green, red, dim, bold, enableLlmIO, printCostTotal } from './lib/format.mjs';
 
 // Real Haiku calls below — show every request/response/token/cost (no flag to remember).
@@ -50,7 +50,7 @@ let state;
 await test('AE bridge is connected (panel attached)', async () => {
   let info;
   try {
-    info = await mcpClient.callRunScript('getProjectInfo');
+    info = await bridgeClient.callRunScript('getProjectInfo');
   } catch (e) {
     throw new Error(
       `cannot reach a panel-connected AE bridge: ${e.message}\n` +
@@ -66,7 +66,7 @@ await test('AE bridge is connected (panel attached)', async () => {
 // Everything below is meaningless without a live bridge — bail loudly if preflight failed.
 if (!results[results.length - 1].ok) {
   console.log(red('\nBridge preflight failed — skipping LLM round-trip tests.\n'));
-  await mcpClient.disconnect();
+  await bridgeClient.disconnect();
   process.exit(1);
 }
 

@@ -1,4 +1,4 @@
-import { mcpClient } from "./client.js";
+import { bridgeClient } from "./client.js";
 
 // Return shapes mirror the ExtendScript handler output in server/ae-bridge/src/scripts/
 
@@ -90,21 +90,21 @@ export interface SelectedLayersResult {
 }
 
 export async function getProjectInfo(): Promise<ProjectInfo> {
-  return mcpClient.callRunScript("getProjectInfo") as Promise<ProjectInfo>;
+  return bridgeClient.callRunScript("getProjectInfo") as Promise<ProjectInfo>;
 }
 
 export async function listCompositions(): Promise<CompositionsList> {
-  return mcpClient.callRunScript("listCompositions") as Promise<CompositionsList>;
+  return bridgeClient.callRunScript("listCompositions") as Promise<CompositionsList>;
 }
 
 export async function getCurrentTime(): Promise<CurrentTimeResult> {
-  return mcpClient.callRunScript("getCurrentTime") as Promise<CurrentTimeResult>;
+  return bridgeClient.callRunScript("getCurrentTime") as Promise<CurrentTimeResult>;
 }
 
 export async function getSelectedLayers(): Promise<SelectedLayersResult> {
-  return mcpClient.callRunScript("getSelectedLayers") as Promise<SelectedLayersResult>;
+  return bridgeClient.callRunScript("getSelectedLayers") as Promise<SelectedLayersResult>;
 }
 
 export async function getSelectionDetails(): Promise<SelectionDetailsResult> {
-  return mcpClient.callRunScript("getSelectionDetails") as Promise<SelectionDetailsResult>;
+  return bridgeClient.callRunScript("getSelectionDetails") as Promise<SelectionDetailsResult>;
 }

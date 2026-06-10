@@ -1,4 +1,4 @@
-import { getCurrentTime, getSelectedLayers, getSelectionDetails, SelectedLayer, CompositionSummary } from "../mcp/tools.js";
+import { getCurrentTime, getSelectedLayers, getSelectionDetails, SelectedLayer, CompositionSummary } from "../bridge/tools.js";
 import { sessionCache } from "./cache.js";
 
 export interface ActiveComp {

@@ -7,7 +7,7 @@ import { bridge } from "./bridge/wsBridge.js";
  *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' }  → here
  *   here  → { type: 'agentEvent', sessionId, event }     → panel
  *
- * The loop reaches AE through cubic-ai's mcpClient, which connects to this same bridge
+ * The loop reaches AE through cubic-ai's bridgeClient, which connects to this same bridge
  * as a second (loopback) client — its commands route back to the panel worker. Keeping
  * the brain a separate package means its Anthropic dep stays isolated; we only consume
  * its public surface here.

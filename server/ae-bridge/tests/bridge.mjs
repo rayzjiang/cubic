@@ -5,7 +5,7 @@
 //      (getProjectInfo, listCompositions). Verifies the Node ↔ CEP ↔ AE chain.
 //   2. Static-file diff between the `COMMANDS` allowlist (src/commands.ts —
 //      the single source `src/index.ts` derives its allowlist from) and the
-//      `_dispatchSwitch` cases (src/scripts/mcp-bridge.jsx). Catches new
+//      `_dispatchSwitch` cases (src/scripts/bridge.jsx). Catches new
 //      handlers added without an allowlist entry, and stale allowlist
 //      entries that no longer match a dispatch case.
 //
@@ -31,7 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Internal-only handlers — present in _dispatchSwitch but deliberately
 // absent from allowedScripts. Two distinct reasons:
 //   • backupProject — the agent loop's pre-turn .aep snapshot / revert point,
-//     called only via mcpClient and never exposed to the model (project.jsx).
+//     called only via bridgeClient and never exposed to the model (project.jsx).
 //   • create* layer handlers — their work is exposed through the consolidated
 //     createLayer({type:...}) dispatcher (server/ae-bridge/CLAUDE.md
 //     "broad parameterized tools" rule).
@@ -59,7 +59,7 @@ function _extractAllowedScripts(src) {
 
 function _extractDispatchCases(src) {
   const m = src.match(/function _dispatchSwitch\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-  if (!m) throw new Error('Could not locate `_dispatchSwitch` in src/scripts/mcp-bridge.jsx');
+  if (!m) throw new Error('Could not locate `_dispatchSwitch` in src/scripts/bridge.jsx');
   const out = [];
   const re = /case\s+"([^"]+)"\s*:/g;
   let hit;
@@ -92,7 +92,7 @@ export async function run(ctx, opts) {
 
   await test('drift — allowedScripts and _dispatchSwitch agree (minus internal-only)', async () => {
     const commandsTs = await readFile(path.resolve(__dirname, '../src/commands.ts'), 'utf8');
-    const bridgeJsx  = await readFile(path.resolve(__dirname, '../src/scripts/mcp-bridge.jsx'), 'utf8');
+    const bridgeJsx  = await readFile(path.resolve(__dirname, '../src/scripts/bridge.jsx'), 'utf8');
 
     const allowed    = _extractAllowedScripts(commandsTs);
     const dispatched = _extractDispatchCases(bridgeJsx);

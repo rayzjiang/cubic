@@ -1,4 +1,4 @@
-// batch.mjs — tests for the batch command in mcp-bridge-auto.jsx
+// batch.mjs — tests for the batch command in bridge.jsx
 // batch collapses N sub-commands into a single 2-tool round-trip.
 //
 // Tests:

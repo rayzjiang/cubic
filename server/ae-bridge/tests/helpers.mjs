@@ -158,7 +158,7 @@ export function assertStructuredError(r, expectedCode) {
   assertField(r, 'errorCode', 'string');
   assertField(r, 'message', 'string');
   if (!KNOWN_ERROR_CODES.has(r.errorCode)) {
-    throw new Error(`unrecognized errorCode "${r.errorCode}" — add it to ERROR_CODES in mcp-bridge.jsx`);
+    throw new Error(`unrecognized errorCode "${r.errorCode}" — add it to ERROR_CODES in bridge.jsx`);
   }
   if (expectedCode && r.errorCode !== expectedCode) {
     throw new Error(`expected errorCode "${expectedCode}", got "${r.errorCode}"`);

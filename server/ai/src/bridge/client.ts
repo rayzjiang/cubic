@@ -43,7 +43,7 @@ interface PendingEntry {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export class McpClient {
+export class BridgeClient {
   private ws: WebSocket | null = null;
   private connecting: Promise<void> | null = null;
   private pending = new Map<string, PendingEntry>();
@@ -100,4 +100,4 @@ export class McpClient {
   }
 }
 
-export const mcpClient = new McpClient();
+export const bridgeClient = new BridgeClient();

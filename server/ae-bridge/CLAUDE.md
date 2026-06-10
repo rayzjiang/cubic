@@ -18,7 +18,7 @@ cubic/
 │       │   ├── startBackend.ts  # Shared boot helper: bridge.start() + registerAgentChat() + signal shutdown (used by both entrypoints)
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
 │       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
-│       │       ├── mcp-bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
+│       │       ├── bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
 │       │       ├── compositions.jsx / layers.jsx / animation.jsx
 │       │       ├── effects.jsx / masks.jsx / footage.jsx
 │       ├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (Phase 4: strip its UI, app auto-installs it)
@@ -28,7 +28,7 @@ cubic/
 
 **What this package is:** the AE bridge — WS transport (`wsBridge.ts`), the ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them. The MCP server (`src/index.ts`, stdio via `@modelcontextprotocol/sdk`) is just *one* entrypoint on top, kept as an optional dev interface (drive handlers from Claude Code). The agent brain it talks to (`server/ai`, `cubic-ai`) is built — loop, self-heal, compaction, sessions. The chat UI is a separate Electron app (`app/`) that hosts this package's bridge + loop in its main process and connects the renderer over the same WS; the `cep-extension/` is being slimmed to a headless `evalScript` dispatcher the app auto-installs into AE. See `TODOS/TODO-phase4.md`.
 
-> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP — a couple of lingering "mcp" names (`mcp-bridge.jsx`, the `com.cubic.ae-mcp-bridge` bundle id, `server/ai/src/mcp/`) are tracked for rename at the bottom of `TODO-phase4.md`.
+> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. The code-identifier rename is done (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`). Two **path/bundle** names still say "mcp" and are deferred to the §B install-flow item (they force a reinstall/migration): the `com.cubic.ae-mcp-bridge` bundle id and the `~/.ae-mcp-bridge/port` home dir.
 
 ---
 
@@ -57,7 +57,7 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 
 > **Wire protocol contract:** the full WS message contract (both channels + `AgentEvent` + error codes) is locked in [`PROTOCOL.md`](./PROTOCOL.md) — the single source future host adapters depend on.
 
-**Handler bundle** (concatenated by build script, domain files first, `mcp-bridge.jsx` last):
+**Handler bundle** (concatenated by build script, domain files first, `bridge.jsx` last):
 ```
 compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
                      setCompositionProperties, deleteComposition, duplicateComposition,
@@ -82,20 +82,20 @@ footage.jsx       ← listProjectItems, importFootage, addFootageToComp, importA
                      deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
 project.jsx       ← getProjectPath, saveProject, backupProject (internal: filesystem-copies the .aep to .cubic-backups/ — NOT in COMMANDS/registry, called only by the agent loop)
-mcp-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +
+bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +
                      _resolvePropertyByPath() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
 ```
 
 ## Adding a new command
 1. Add handler to the appropriate domain file in `src/scripts/`
-2. Add a `case` in `_dispatchSwitch()` in `mcp-bridge.jsx`
-3. If read-only (getter), add to `READ_ONLY_COMMANDS` in `mcp-bridge.jsx`
+2. Add a `case` in `_dispatchSwitch()` in `bridge.jsx`
+3. If read-only (getter), add to `READ_ONLY_COMMANDS` in `bridge.jsx`
 4. Add name to `allowedScripts` in `src/index.ts`
 5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
 
 Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface (`runScript`, `batch`, `getHelp`, `createComposition`, `runBridgeTest`, `testAnimation`, `getResults`). All handler commands are called via `runScript` — no per-command typed tool needed.
 
-**New domain file:** also add to `domainFiles` array in `scripts/build-cep-extension.mjs`. Handler functions must live in domain files only — never in `mcp-bridge.jsx`.
+**New domain file:** also add to `domainFiles` array in `scripts/build-cep-extension.mjs`. Handler functions must live in domain files only — never in `bridge.jsx`.
 
 ## Undo groups (Cubic undo)
 Every mutating command is wrapped in `app.beginUndoGroup("Cubic: <command>") / endUndoGroup()` via `try/finally` in `dispatchCommand()` — so one Cmd+Z reverts a full Cubic operation. Read-only commands (in `READ_ONLY_COMMANDS`) skip the wrapper. `batch` gets its own outer group wrapping the entire loop — all sub-commands collapse into one undo entry. Callers may pass `groupLabel` to set a human-readable label (`"Cubic: <groupLabel>"`); when omitted, falls back to `"Cubic: batch (N commands)"`.

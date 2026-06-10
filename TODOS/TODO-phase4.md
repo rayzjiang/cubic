@@ -19,12 +19,12 @@
 - [x] **Backend lives in Electron main** — main spawns `server/ae-bridge` (bridge + agent loop) as a child. Confirm it still opens `127.0.0.1:17923` and the headless extension connects as the worker client as today.
 
 ## §B. Electron app shell + auto-provisioning
-- [ ] **FIRST — `mcp` → `bridge` naming pass + whole-codebase name audit** ⚠️ hard gate before ship; do it while building the install flow so the install path is written with final names:
-    - `server/ai/src/mcp/` → `src/bridge/`, `McpClient` → `BridgeClient` (~5 imports + the `vi.mock('../mcp/client.js')` mock).
-    - `mcp-bridge.jsx` → `bridge.jsx` (update `domainFiles` in `scripts/build-cep-extension.mjs`, the "handlers must not live in mcp-bridge.jsx" rule, doc refs in `server/ae-bridge/CLAUDE.md`).
-    - Bundle id `com.cubic.ae-mcp-bridge` → `com.cubic.ae-bridge` (`cep-extension/CSXS/manifest.xml` + install path). Forces a one-time reinstall — fine, install flow is being rebuilt here.
-    - Keep `mcp` ONLY on the real MCP entrypoint (`src/index.ts` + `.mcp.json` + `@modelcontextprotocol/sdk` dev dep).
-    - **Then broaden to a whole-codebase audit** — beyond `mcp`→`bridge`, confirm every module/package/identifier is named for its actual scope (`cubic-ae-bridge`, `cubic-ai`, anything user-facing) and is easy to maintain before ship.
+- [x] **`mcp` → `bridge` code-identifier naming pass** ⚠️ hard gate before ship — DONE (code identifiers only; verified by full build + unit + drift + bundle-content check):
+    - [x] `server/ai/src/mcp/` → `src/bridge/`, `McpClient`/`mcpClient` → `BridgeClient`/`bridgeClient` (importers + the `vi.mock` mock + the 3 live `tests/*.mjs` that import the singleton).
+    - [x] `mcp-bridge.jsx` → `bridge.jsx` (`domainFiles` in `scripts/build-cep-extension.mjs`, the "handlers must not live in …" rule + doc refs in both `CLAUDE.md`, `commands.ts` + test comments, and the real `readFile` path in `tests/bridge.mjs`).
+    - [x] Keep `mcp` ONLY on the real MCP entrypoint (`src/index.ts` + `.mcp.json` + `@modelcontextprotocol/sdk` dev dep) — left untouched.
+- [ ] **Path/bundle renames — DEFERRED to the auto-install item below** (force a reinstall/migration, so they land *with* the new install flow): bundle id `com.cubic.ae-mcp-bridge` → `com.cubic.ae-bridge`; `~/.ae-mcp-bridge/port` home dir (paired writer `wsBridge.ts` + reader `bridge/client.ts`); AE CEP panel display name "MCP Bridge".
+- [ ] **Whole-codebase audit — report produced; decisions pending** — beyond `mcp`→`bridge`, named-for-actual-scope review. Auto-applied only the certain `mcp`→`bridge` strays above. Flagged for a decision (NOT yet changed): `AE_MCP_PORT` env var, `MCP_SRC` var in `drift-guard.mjs`, `__MCP_TEST_*` test-comp prefixes + "After Effects MCP" suite naming, the `client.ts` connect-error message + `agentChat.ts` "MCP server process" comment, the "live MCP WebSocket bridge" prose in `server/ai/CLAUDE.md`, and the `~/.cubic-backups` (sibling) vs `~/.cubic/{frames,sessions}` (child) path inconsistency → route to the deferred install/config plan.
 - [ ] **App shell** — new `app/` dir: Electron main + React renderer, native window (vibrancy/traffic-lights), menus, single-instance.
 - [ ] **Auto-install the AE bridge** — on first run / "Connect to After Effects", write the headless bridge into `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/` + enable PlayerDebugMode. One app install → provisions the bridge → AE auto-connects next launch. (Replaces ZXP/`install-plugin` friction. Use the NEW bundle id. **Mandatory for v1** — non-technical users can't run install scripts.)
 - [ ] **Connection state UX** — "connected / open AE / reconnecting"; handle AE-not-running, bridge-not-installed, port-in-use.
