@@ -7,7 +7,7 @@ import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snaps
 import { describeToolCall, type EmitFn } from './events.js';
 import { compactSession, contextTokensOf, COMPACT_THRESHOLD, HARD_CEILING } from './compaction.js';
 import type { Session } from './session.js';
-import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput } from '../llm/types.js';
+import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput, Message } from '../llm/types.js';
 import type { LiveAEState } from '../context/buildContext.js';
 
 const DEFAULT_MAX_ITERATIONS = 15;
@@ -32,6 +32,11 @@ export interface AgentDeps {
   compactThreshold?: number;
   /** Override the model's context window (tokens). Same purpose as compactThreshold for tests. */
   contextWindowOverride?: number;
+  /** Called once per REAL message committed to history (user prompt, assistant reply, tool-result
+   *  user message) — in push order, as it happens. The host uses this to persist the canonical
+   *  conversation append-only. Deliberately NOT fired by compaction (which rewrites `messages` in
+   *  place for the model context only) so persisted/display history keeps the full conversation. */
+  onCommit?: (msg: Message) => void;
 }
 
 /** Reconstructs the assistant message (narration text + tool_use blocks) for history. */
@@ -76,6 +81,13 @@ export async function runAgentTurn(
   const model = deps.model;
   const compactThreshold = deps.compactThreshold ?? COMPACT_THRESHOLD;
   const window = deps.contextWindowOverride ?? llm.contextWindow(model);
+  const onCommit = deps.onCommit;
+
+  /** Push a real message to history and notify the host's persistence hook in the same step. */
+  const commit = (msg: Message): void => {
+    session.messages.push(msg);
+    onCommit?.(msg);
+  };
 
   session.running = true;
   session.cancelRequested = false;
@@ -97,7 +109,7 @@ export async function runAgentTurn(
     }
 
     emit({ type: 'turn_start' });
-    session.messages.push({ role: 'user', content: userText });
+    commit({ role: 'user', content: userText });
 
     // Pre-turn revert point. A failed snapshot warns but never blocks the turn —
     // the user still has per-command ⌘Z.
@@ -127,7 +139,7 @@ export async function runAgentTurn(
         return;
       }
 
-      session.messages.push({ role: 'assistant', content: assistantContent(response.content, response.toolUses) });
+      commit({ role: 'assistant', content: assistantContent(response.content, response.toolUses) });
 
       if (response.content) emit({ type: 'text', text: response.content });
 
@@ -155,7 +167,7 @@ export async function runAgentTurn(
         }
         session.pendingMessages = [];
       }
-      session.messages.push({ role: 'user', content: userContent });
+      commit({ role: 'user', content: userContent });
       iter++;
     }
 

@@ -4,7 +4,7 @@ export { buildContext } from "./context/buildContext.js";
 export { formatStateForPrompt } from "./context/format.js";
 export type { LiveAEState, ActiveComp } from "./context/buildContext.js";
 export type { ProjectInfo, CompositionsList, CompositionSummary, SelectedLayer, SelectedProperty } from "./bridge/tools.js";
-export { getSelectionDetails } from "./bridge/tools.js";
+export { getSelectionDetails, getProjectInfo } from "./bridge/tools.js";
 
 export { getLLM, AnthropicProvider, estimateCost, getDebugCost } from "./llm/index.js";
 export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolUse, ToolDefinition } from "./llm/index.js";

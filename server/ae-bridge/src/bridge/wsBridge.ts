@@ -21,9 +21,11 @@ interface PendingCommand {
 
 type BridgeEvent = 'connect' | 'disconnect';
 
-/** Chat-channel messages the panel sends over its worker socket (Phase 2 agent loop). */
+/** Chat-channel messages the panel/renderer sends over its socket (Phase 2 agent loop + Phase 4
+ *  re-attach/persistence). `attach` rejoins a running turn by sessionId; `delete` removes a stored
+ *  conversation (fired from the sidebar list, so it targets any sessionId, not just the open one). */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete';
   sessionId?: string;
   text?: string;
   /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
@@ -32,7 +34,7 @@ export interface ChatInbound {
 
 /** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
 const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
-  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue',
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete',
 ]);
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;
@@ -44,6 +46,7 @@ class AEBridge {
   private eventHandlers: Map<BridgeEvent, Array<() => void>> = new Map();
   private connectWaiters: Array<() => void> = [];
   private chatHandler: ChatHandler | null = null;
+  private chatCloseHandler: ((ws: WebSocket) => void) | null = null;
   public lastResult: string = '';
 
   /**
@@ -123,6 +126,9 @@ class AEBridge {
       });
 
       ws.on('close', () => {
+        // Notify the chat layer so it can drop this socket from the re-attach fan-out set
+        // (harmless for non-chat sockets — agentChat just won't find it in any set).
+        this.chatCloseHandler?.(ws);
         if (this.workerClient === ws) {
           this.workerClient = null;
           this.emit('disconnect');
@@ -223,6 +229,12 @@ class AEBridge {
    */
   onChat(handler: ChatHandler): void {
     this.chatHandler = handler;
+  }
+
+  /** Register a callback fired when ANY socket closes, so the chat layer can remove it from its
+   *  re-attach fan-out set. Only one handler is supported (the agent loop owns it). */
+  onChatClose(handler: (ws: WebSocket) => void): void {
+    this.chatCloseHandler = handler;
   }
 
   private emit(event: BridgeEvent): void {
