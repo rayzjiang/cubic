@@ -25,7 +25,7 @@
 - [x] §B3 — whole-codebase naming audit
 - ↳ §B2 (bundle-id/path rename) was **deferred out of here → ⑦ WT-CONNECT** (forces a one-time reinstall; rides with the new install flow). No longer blocks anything.
 
-### Wave 1 — 3 parallel worktrees (after ① merged; these share zero files)
+### ✅ DONE — Wave 1 — 3 parallel worktrees (after ① merged; these share zero files) — all three merged
 **② WT-FE-FOUNDATION** — new `app/` dir (Electron + renderer skeleton). **← critical path: blocks all of Wave 2; merge this first.** ✅ BUILT (electron-vite scaffold).
 - [x] §B4 — App shell (Electron main + React renderer, native window, menus, single-instance)
 - [x] §B7 — Env-switchable backend (localhost vs prod proxy) — `CUBIC_ENV` flag → spawned child; `prod` stubbed until Phase-5 proxy
@@ -41,11 +41,11 @@
 - [x] §C2 — Instant placeholder titles (truncated first message, in `index.json`)
 - [x] §C2 — Manual delete (backend `delete` ChatInbound; refuses mid-turn; the row-kebab **UI** lives in ⑤)
 
-**④ WT-RESTORE** — backup recovery, backend pieces. Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
-- [ ] §E — Restore handler (new bridge command: copy `.cubic-backups/` back + reopen project)
-- [ ] §E — Agent-driven restore ("Cubic, undo that" maps to the handler)
-- [ ] §E — **⚠️ GRILL FIRST: kill/reduce the pre-turn snapshot save popup** (`project.jsx:58` `project.save()` → AE save-progress window every turn). Decide save-vs-popup trade-off before coding — full options in `TODO-phase4.md` §E. **Belongs here** because it touches `project.jsx`/`snapshot.ts` (④'s files) → no overlap with ③ (done) or ②/⑤/⑥/⑦.
-- ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥.
+**④ WT-RESTORE** — backup recovery, backend pieces. ✅ DONE. Files: `ae-bridge/src/{commands.ts, scripts/bridge.jsx, scripts/project.jsx}` + `ai/src/{prompt/rules.ts, tools/command-params.ts}` (the model-visible spec → auto-flows into the `runScript` enum/catalog; footprint was 5 files, not the planned 3 — `bridge.jsx` for dispatch + undo-group bypass, the two `ai/` files for agent guidance + tool surface). Live-AE verified (`restoreProject` smoke test: throwaway comp vanished, path preserved, no save dialog).
+- [x] §E — Restore handler (new bridge command: copy `.cubic-backups/` back + reopen via `close(DO_NOT_SAVE_CHANGES)` + `app.open` — reloads at the original path, no "save changes?" dialog; resolves target by `backupPath` → `turnId` → most-recent)
+- [x] §E — Agent-driven restore ("Cubic, undo that" maps to the handler via `rules.ts` #4 — explicit user revert only, never as a self-heal step; no params = most recent)
+- [x] §E — **pre-turn snapshot save popup — RESOLVED (option b, dirty-guard):** `backupProject` is now `if (project.dirty) project.save()` — clean project copies the on-disk `.aep` as-is (no popup, disk == memory), dirty saves first as before. Zero correctness loss, popup only fires when there are genuinely unsaved edits.
+- ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥ (will call this same handler).
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged.

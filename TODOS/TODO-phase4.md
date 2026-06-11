@@ -64,10 +64,10 @@
 
 ## §E. Seamless backup recovery (restore handler is backend-first)
 > Pre-turn `.aep` snapshot to `.cubic-backups/` (rolling last-10) already exists; recovery is currently manual (dig in Finder).
-- [ ] **Restore handler** _(backend-first — both the button and the agent command depend on it)_ — new bridge command: copy a chosen `.cubic-backups/` file back over the working file + reopen project.
+- [x] **Restore handler** _(backend-first — both the button and the agent command depend on it)_ — new bridge command: copy a chosen `.cubic-backups/` file back over the working file + reopen project.
 - [ ] **"Restore to before this request" button** — list recent snapshots (timestamp + turn summary), restore the chosen one, with a **confirm-before-overwrite** guard.
-- [ ] **Agent-driven restore** — "Cubic, undo that / revert the last change" → the model maps to the restore handler above.
-- [ ] **⚠️ GRILL FIRST — pre-turn snapshot save popup.** `backupProject` (`project.jsx:58`) calls `project.save()` before copying the `.aep`, which fires AE's native save-progress window **every turn** (a ~0.5s centered loading popup — confirmed annoying in live use). AE has no silent-save flag, so the lever is whether/how often we `save()`. Options to grill: (a) drop the pre-copy `save()` and copy the on-disk `.aep` as-is — no popup, but the backup misses *unsaved manual edits* since the last Cmd+S; (b) save only when the project is dirty / once per session; (c) keep as-is (correctness over annoyance). Touches `project.jsx` (+ maybe `snapshot.ts`) — both ④'s files, so it belongs here. _Modifies the existing Phase-2 snapshot._
+- [x] **Agent-driven restore** — "Cubic, undo that / revert the last change" → the model maps to the restore handler above.
+- [x] **⚠️ GRILL FIRST — pre-turn snapshot save popup.** `backupProject` (`project.jsx:58`) calls `project.save()` before copying the `.aep`, which fires AE's native save-progress window **every turn** (a ~0.5s centered loading popup — confirmed annoying in live use). AE has no silent-save flag, so the lever is whether/how often we `save()`. Options to grill: (a) drop the pre-copy `save()` and copy the on-disk `.aep` as-is — no popup, but the backup misses *unsaved manual edits* since the last Cmd+S; (b) save only when the project is dirty / once per session; (c) keep as-is (correctness over annoyance). Touches `project.jsx` (+ maybe `snapshot.ts`) — both ④'s files, so it belongs here. _Modifies the existing Phase-2 snapshot._
 
 ---
 
