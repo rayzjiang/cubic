@@ -271,3 +271,44 @@ describe('runAgentTurn — context-window management', () => {
     expect(events.some((e) => e.type === 'compaction' && e.status === 'start')).toBe(true);
   });
 });
+
+// ─── onCommit persistence hook ────────────────────────────────────────────────────
+
+describe('runAgentTurn — onCommit persistence hook', () => {
+  it('fires once per real message, in push order, matching the committed history', async () => {
+    const { provider } = mockLLM([
+      toolResponse([runScriptCall('t1', 'createLayer')], 'Adding a layer.'),
+      textResponse('Done.'),
+    ]);
+    const session = new Session();
+    const committed: Message[] = [];
+
+    await runAgentTurn(session, 'add a layer', () => {},
+      baseDeps(provider, { onCommit: (m) => committed.push(m) }));
+
+    // user → assistant(tool_use) → user(tool_result) → assistant(text)
+    expect(committed).toHaveLength(4);
+    expect(committed).toEqual(session.messages); // exactly the real messages, same order
+  });
+
+  it('does NOT fire for the compaction summary — only the turn\'s real messages', async () => {
+    const { provider } = mockLLM([
+      textResponse('## Goal\nbouncy logo'), // consumed by the summary call
+      textResponse('on it'),                // the actual turn
+    ]);
+    const session = new Session();
+    session.messages = chatHistory(4);          // gives compaction something to collapse
+    session.lastContextTokens = 200_000 * 0.95; // over 90% → compaction fires at turn start
+    const committed: Message[] = [];
+
+    await runAgentTurn(session, 'next', () => {},
+      baseDeps(provider, { onCommit: (m) => committed.push(m) }));
+
+    // Only this turn's two real messages were handed to onCommit…
+    expect(committed).toHaveLength(2);
+    expect(committed[0]).toEqual({ role: 'user', content: 'next' });
+    expect(committed[1]).toEqual({ role: 'assistant', content: 'on it' });
+    // …the synthetic <conversation_summary> message (a session.messages rewrite, not a push) never was.
+    expect(committed.some((m) => typeof m.content === 'string' && m.content.includes('<conversation_summary>'))).toBe(false);
+  });
+});

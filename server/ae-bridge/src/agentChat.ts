@@ -1,27 +1,95 @@
-import { runAgentTurn, compactSession, Session, nextQueueId, type AgentEvent } from "cubic-ai";
+import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
+import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath } from "./persist.js";
+import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
 /**
  * Folds the AI agent loop (cubic-ai) into this backend process (the MCP server under
  * index.ts, or the standalone serve.ts backend). The panel talks to
  * the loop over the SAME WebSocket it already uses as the ExtendScript worker:
- *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' }  → here
- *   here  → { type: 'agentEvent', sessionId, event }     → panel
+ *   panel → { type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' }  → here
+ *   here  → { type: 'agentEvent', sessionId, event } | { type: 'attached', sessionId, running, events }  → panel
  *
  * The loop reaches AE through cubic-ai's bridgeClient, which connects to this same bridge
  * as a second (loopback) client — its commands route back to the panel worker. Keeping
  * the brain a separate package means its Anthropic dep stays isolated; we only consume
  * its public surface here.
+ *
+ * Conversations are persisted to disk via `persist.ts` (append-only JSONL per turn). The live
+ * `sessions` Map is lazily hydrated: a Session is read back from disk only when a message arrives
+ * for an id that isn't already in memory (resume), and committed turns are appended after each
+ * `runAgentTurn` (re-keying the file if the project was saved/renamed mid-conversation).
+ *
+ * Re-attach (§0): emit fans out to a SET of sockets per session (not one captured socket), and the
+ * current turn's events are buffered so a renderer that reloaded mid-turn can replay what it missed
+ * via `{type:'attach'}` → `{type:'attached', running, events}`. That machinery lives in `reattach.ts`.
  */
 const sessions = new Map<string, Session>();
 
+/** Current AE project path for keying the conversation on disk. Falls back to "" (the Untitled
+ *  bucket) when AE/the bridge is unreachable — keeps persistence working headless. */
+async function resolveProjectPath(): Promise<string> {
+  try {
+    return (await sessionCache.getProjectInfo()).path ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Run one agent turn and persist it. `onCommit` accumulates exactly the real messages the loop
+ * commits this turn (never the compaction summary); after the turn we resolve the project path,
+ * re-key the file if it changed (unsaved → saved), then append the turn's messages. Per-turn
+ * append is the crash-safe unit — a crash loses at most this in-flight turn.
+ */
+async function runTurnAndPersist(session: Session, text: string, emit: (e: AgentEvent) => void): Promise<void> {
+  resetBuffer(session.id); // fresh buffer for this turn (drops any stale between-turn events)
+  const committed: Message[] = [];
+  await runAgentTurn(session, text, emit, { onCommit: (m) => committed.push(m) });
+  if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)
+  const projectPath = await resolveProjectPath();
+  const stored = getConversation(session.id);
+  if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
+    rekey(session.id, stored.projectPath, projectPath);
+  }
+  appendTurn(session.id, projectPath, committed);
+  clearBuffer(session.id); // committed → now in history; clear so a later attach sees no dup
+}
+
 export function registerAgentChat(): void {
+  bridge.onChatClose(dropSocket);
   bridge.onChat(async (ws, msg) => {
     const id = msg.sessionId ?? "default";
     let session = sessions.get(id);
     if (!session) {
-      session = new Session();
+      // Resume: rehydrate the full history from disk if this conversation was persisted before;
+      // otherwise start a fresh Session that knows its own id.
+      const meta = getConversation(id);
+      session = (meta && loadSession(id, meta.projectPath)) || new Session(id);
       sessions.set(id, session);
+    }
+
+    // Any message from this socket means it wants this session's events → join the fan-out set.
+    attachSocket(id, ws);
+    const emit = emitFor(id);
+
+    // Re-attach: a reloaded renderer rejoins a still-running turn. Reply with the run state + the
+    // live-turn events it missed (committed history loads separately via the resume path above).
+    if (msg.type === "attach") {
+      ws.send(JSON.stringify({ type: "attached", sessionId: id, running: session.running, events: bufferFor(id) }));
+      return;
+    }
+
+    // Manual delete (fired from the sidebar list → may target any conversation, not just the open
+    // one). Refuse while a turn is in flight; otherwise wipe disk + drop the live session.
+    if (msg.type === "delete") {
+      if (session.running) {
+        emit({ type: "error", message: "Can't delete a conversation while it's running — stop it first." });
+        return;
+      }
+      deleteConversation(id);
+      sessions.delete(id);
+      return;
     }
 
     if (msg.type === "cancel") {
@@ -47,14 +115,6 @@ export function registerAgentChat(): void {
     // userChat
     if (!msg.text) return;
 
-    const emit = (event: AgentEvent) => {
-      try {
-        ws.send(JSON.stringify({ type: "agentEvent", sessionId: id, event }));
-      } catch {
-        /* panel disconnected mid-turn — drop the event */
-      }
-    };
-
     // Slash commands — the same handlers the Phase 4 UI buttons will call. Exact-match only so
     // a normal message that merely mentions "/clear" isn't swallowed. Both mutate session.messages,
     // so they're rejected mid-run (the loop is reading that array) — finish or cancel the turn first.
@@ -67,6 +127,7 @@ export function registerAgentChat(): void {
       if (text === "/clear") {
         session.messages = [];
         session.lastContextTokens = 0;
+        deleteConversation(id); // explicit wipe — drop the persisted transcript too (dev escape hatch)
         emit({ type: "compaction", status: "done", reason: "cleared" });
         return;
       }
@@ -83,14 +144,14 @@ export function registerAgentChat(): void {
       return;
     }
 
-    await runAgentTurn(session, msg.text, emit);
+    await runTurnAndPersist(session, msg.text, emit);
     // Mid-turn steers are consumed inside runAgentTurn. Messages that arrived AFTER the
     // model's last tool boundary are still queued here → drain the whole remaining queue
     // into one combined follow-up turn (consistent with the in-turn drain-all).
     while (session.pendingMessages.length && !session.cancelRequested) {
       const combined = session.pendingMessages.map((m) => m.text).join("\n");
       session.pendingMessages = [];
-      await runAgentTurn(session, combined, emit);
+      await runTurnAndPersist(session, combined, emit);
     }
   });
 }

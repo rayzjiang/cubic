@@ -26,7 +26,7 @@ implement what's on this page** — nothing else in the codebase is part of the 
 
 In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
 1. `type === "hello"` → register/replace the single **worker** client.
-2. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`) → agent **chat channel**.
+2. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`) → agent **chat channel**.
 3. has an `ok` field → a **command response** from the worker (correlated by `id`).
 4. has a `command` field → a **command request** from an external caller.
 
@@ -69,17 +69,30 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "queue",       "sessionId": "<uuid>", "text": "...", "id": "<queue-item-id>" }
 { "type": "editQueue",   "sessionId": "<uuid>", "text": "...", "id": "<queue-item-id>" }
 { "type": "removeQueue", "sessionId": "<uuid>", "id": "<queue-item-id>" }
+{ "type": "attach",      "sessionId": "<uuid>" }
+{ "type": "delete",      "sessionId": "<uuid>" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
-  session-map key. Omitted → `"default"`.
+  session-map key AND the persisted JSONL filename. Omitted → `"default"`.
 - A `userChat` arriving mid-run is treated as a steer (queued, drained at the next
   iteration boundary) — mirrors Claude Code. `cancel` stops at the next boundary.
 - `editQueue`/`removeQueue` revise a queued steer by `id` before it fires (no-op once drained).
+- `attach` (re-attach after a renderer reload): the backend replies with one `attached` envelope
+  (below) — the run state + the in-flight turn's events so far — so the renderer rejoins a live
+  turn. Committed history loads separately from the JSONL store, so `attach` covers only the live
+  turn. A cold conversation is rehydrated from disk on the first message for its `sessionId`.
+- `delete`: removes a stored conversation (its JSONL + index entry) and drops it from memory.
+  Fired from the sidebar list, so it may target **any** `sessionId`, not just the open one.
+  **Refused while that conversation has a turn in flight** (replied as an `error` agentEvent).
 
-Outbound (backend → UI) — one envelope, streamed per iteration as the turn runs:
+Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot reply to `attach`:
 ```json
 { "type": "agentEvent", "sessionId": "<uuid>", "event": <AgentEvent> }
+{ "type": "attached",   "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ] }
 ```
+`agentEvent` fans out to every socket attached to the session (the original sender + any reloaded
+renderer). `attached` is the direct reply to an `attach`: `running` drives the spinner/Stop button,
+`events` replays the in-flight turn so the renderer catches up with no gap and no dup.
 `AgentEvent` (`server/ai/src/agent/events.ts`) is a tagged union:
 | `event.type` | meaning / key fields |
 |---|---|
@@ -95,14 +108,13 @@ Outbound (backend → UI) — one envelope, streamed per iteration as the turn r
 | `error` | `message` (raw SDK text; the UI renders it friendly) |
 | `done` | turn finished — `stopReason` |
 
-## Reserved (declared, not yet implemented)
+## Persistence (backend-side, not part of the wire contract)
 
-Re-attach to an in-flight turn after a renderer reload (§0/§C2 in `TODOS/`). Planned shapes:
-```json
-{ "type": "attach",   "sessionId": "<uuid>" }
-{ "type": "attached", "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ] }
-```
-Not routed today — listed so adapter authors know the namespace is taken.
+Conversations are stored as append-only JSONL (one `Message`/line, full history — compaction trims
+only the model context, never disk) at `~/.cubic/sessions/<encoded-project-path>/<sessionId>.jsonl`,
+with a global `~/.cubic/sessions/index.json` (id, title, projectPath, lastActivity, renamed). This
+is internal to the backend (`src/persist.ts`); UI clients never read these files — they drive the
+list via `attach`/`delete` + (future) a list query, and receive history through the loaded session.
 
 ## Who sends what (adapter checklist)
 

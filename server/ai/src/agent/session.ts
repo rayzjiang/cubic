@@ -21,6 +21,11 @@ export function nextQueueId(): string {
  * a turn can be cancelled, redirected, or steered with a queued message).
  */
 export class Session {
+  /** Stable conversation id — the persistence key (JSONL filename) and the `sessions`
+   *  Map key. Renderer-minted in Phase 4; defaults to "default" for the legacy CEP path
+   *  and existing callers/tests. The session knows its own id; all other shelf metadata
+   *  (title, project path, timestamps) lives in the host's persistence store, not here. */
+  readonly id: string;
   /** Full conversation history (user + assistant + tool_result blocks). */
   messages: Message[] = [];
   /** True while a turn is executing — enforces a single in-flight run. */
@@ -37,4 +42,8 @@ export class Session {
    * and reset to 0 after a compaction or /clear (the next real call re-measures it).
    */
   lastContextTokens = 0;
+
+  constructor(id: string = 'default') {
+    this.id = id;
+  }
 }
