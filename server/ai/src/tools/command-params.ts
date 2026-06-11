@@ -329,6 +329,7 @@ export const COMMAND_PARAMS = {
   // ── Project ───────────────────────────────────────────────────────────────
   getProjectPath: { domain: 'Project', summary: 'Get the project file path + dirty flag.', params: {} },
   saveProject: { domain: 'Project', summary: 'Save the project (optionally to a new path).', params: { saveAs: 'string (abs path)' } },
+  restoreProject: { domain: 'Project', summary: 'Revert the whole project to a pre-turn backup (undo the last change). Reopens the project from disk. Omit args to restore the most recent backup.', params: { turnId: 'string (ms timestamp; omit for most recent)', backupPath: 'string (abs path; usually omit)' } },
   // internal: kept in the registry (drift-checked, callable via MCP/diagnostic) but hidden from
   // the model's catalog — a single still frame can't convey MOTION, so the loop never views work
   // this way. Real motion-viewing is deferred to Phase 4 (Gemini video).

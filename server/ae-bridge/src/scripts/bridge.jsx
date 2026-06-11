@@ -182,8 +182,9 @@ var READ_ONLY_COMMANDS = {
 // Routes a command name + args to the correct handler function.
 // Domain handler functions are defined in the files concatenated above this one.
 function dispatchCommand(command, args) {
-    // Read-only commands and batch (which owns its own outer group) skip the wrapper.
-    if (READ_ONLY_COMMANDS[command] === 1 || command === "batch") {
+    // Read-only commands, batch (owns its own outer group), and restoreProject (closes +
+    // reopens the project, so it can't live inside an undo group) skip the wrapper.
+    if (READ_ONLY_COMMANDS[command] === 1 || command === "batch" || command === "restoreProject") {
         return _dispatchSwitch(command, args);
     }
     app.beginUndoGroup("Cubic: " + command);
@@ -257,6 +258,7 @@ function _dispatchSwitch(command, args) {
         case "getProjectPath":           return getProjectPath();
         case "saveProject":              return saveProject(args);
         case "backupProject":            return backupProject(args);
+        case "restoreProject":           return restoreProject(args);
         // animation.jsx
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);

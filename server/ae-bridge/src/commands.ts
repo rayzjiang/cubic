@@ -100,6 +100,7 @@ export const COMMANDS: readonly string[] = [
   "getProjectPath",
   "saveProject",
   "saveFrameToPng",
+  "restoreProject",
   // Motion recipes & 3D
   "applyMotionRecipe",
   "distributeLayers3D",
