@@ -47,14 +47,15 @@
 
 ## §C2. Conversation history + persistence (backend-first)
 > Backend owns canonical `Session.messages` but never persists today — quit = gone. Mirror CC's per-project transcripts. **v1 = full list + resume, minus the frills** (no auto-titles, no retention, no rename).
-- [ ] **Backend JSONL store** _(backend-first)_ — one `.jsonl` per conversation (`~/.cubic/sessions/<project>/<id>.jsonl`) + `index.json` (id, title, project path, last-activity, `renamed`). In the backend (owns canonical `Message[]`), not the renderer (lossy `agentEvent` view can't resume faithfully).
-- [ ] **Append per turn (crash-safe)** — append at the turn boundary; crash loses at most the in-flight turn. Reload = read `.jsonl` back into a `Session`.
-- [ ] **Reload + continue (resume)** — rehydrate full `Message[]` into a live `Session`; live AE state re-fetched fresh next turn.
-- [ ] **Re-attach backend (in-flight turn)** _(→ [NOTES](./NOTES-phase4.md#d0))_ — `emit` fan-out `Map<sessionId, Set<ws>>` + live-turn `agentEvent` buffer cleared **after** the per-turn JSONL append above + `attach`/`attached` wire. Lets a reloaded renderer rejoin a still-running turn (resume handles committed turns; this handles the live one). Renderer half = §C.
-- [ ] **Per-project conversation list** — keyed by `getProjectInfo().path` (AE is single-document → always exactly one current project).
-- [ ] **Unsaved-project handling** — `path:""` → "Untitled Project" bucket; after save, lazily re-key the active conversation to the real path (rides on the per-turn `getProjectInfo`; no AE save-event hook).
-- [ ] **Instant placeholder titles** — truncated first user message, shown immediately (zero latency, no blank rows). _(No Haiku auto-title in v1 — deferred.)_
-- [ ] **Manual delete** — row dropdown → delete a conversation anytime.
+> **Backend DONE (worktree ③):** all 8 bullets below shipped — `ae-bridge/src/persist.ts` (store) + `reattach.ts` (fan-out/buffer) + `agentChat.ts` wiring, fed by a new `onCommit` hook in the loop. Append-only full history (compaction trims model context only, never disk → CC-style scrollback survives reopen). Unit-tested (persist round-trip/index/rekey/delete + fan-out/buffer + attach/delete-refuse). The renderer halves (sidebar list, delete kebab, re-attach renderer side) remain → §C / ⑤·⑥.
+- [x] **Backend JSONL store** _(backend-first)_ — one `.jsonl` per conversation (`~/.cubic/sessions/<encoded-project>/<id>.jsonl`) + global `index.json` (id, title, project path, last-activity, `renamed`). In the backend (owns canonical `Message[]`), not the renderer (lossy `agentEvent` view can't resume faithfully).
+- [x] **Append per turn (crash-safe)** — append at the turn boundary (via the loop's `onCommit` hook); crash loses at most the in-flight turn. Reload = read `.jsonl` back into a `Session`.
+- [x] **Reload + continue (resume)** — lazily rehydrate full `Message[]` into a live `Session` on the first message for an id; live AE state re-fetched fresh next turn.
+- [x] **Re-attach backend (in-flight turn)** _(→ [NOTES](./NOTES-phase4.md#d0))_ — `emit` fan-out `Map<sessionId, Set<ws>>` + live-turn `agentEvent` buffer cleared **after** the per-turn JSONL append above + `attach`/`attached` wire. Lets a reloaded renderer rejoin a still-running turn (resume handles committed turns; this handles the live one). Renderer half = §C.
+- [x] **Per-project conversation list** — keyed by `getProjectInfo().path` (AE is single-document → always exactly one current project).
+- [x] **Unsaved-project handling** — `path:""` → `_untitled` bucket; after save, lazily re-key the active conversation to the real path (rides on the per-turn `getProjectInfo`; no AE save-event hook).
+- [x] **Instant placeholder titles** — truncated first user message, stored in `index.json`. _(No Haiku auto-title in v1 — deferred.)_
+- [x] **Manual delete** — `delete` ChatInbound (refuses mid-turn); the row dropdown **UI** is ⑤.
 
 ## §D. Agent-run controls (pure UI wiring; backend hooks done Phase 2)
 - [ ] **Stop / cancel button** → sends `{type:'cancel'}` (stops at next boundary). Esc maps to it. _(Queue/steer/edit-queue UI deferred — backend already supports it.)_

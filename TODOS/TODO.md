@@ -31,15 +31,15 @@
 - [ ] §B7 — Env-switchable backend (localhost vs prod proxy)
 - [ ] §0 (build) — `getBackendPort()` IPC: main answers the one port-discovery IPC, renderer opens its WS to that port
 
-**③ WT-PERSISTENCE** — conversation persistence + in-flight re-attach. **Backend only.** Files: `agentChat.ts`, `session.ts`, new store.
-- [ ] §C2 — Backend JSONL store (`~/.cubic/sessions/<project>/<id>.jsonl` + `index.json`)
-- [ ] §C2 — Append per turn (crash-safe)
-- [ ] §C2 — Reload + continue (resume)
-- [ ] §C2 — Re-attach backend, in-flight turn (`emit` fan-out `Map` + `attach`/`attached` wire + live-turn buffer) ← **this is the §0 re-attach backend half**
-- [ ] §C2 — Per-project conversation list (keyed by project path)
-- [ ] §C2 — Unsaved-project handling (`path:""` → "Untitled", lazy re-key on save)
-- [ ] §C2 — Instant placeholder titles (truncated first message)
-- [ ] §C2 — Manual delete (backend delete; the row-kebab **UI** lives in ⑤)
+**③ WT-PERSISTENCE** — conversation persistence + in-flight re-attach. **Backend only.** ✅ DONE. Files: `ae-bridge/src/{agentChat.ts, persist.ts (new store), reattach.ts (new fan-out/buffer), bridge/wsBridge.ts}` + `ai/src/agent/{session.ts, loop.ts, events.ts}` + `ai/src/index.ts` (footprint expanded beyond the original 3 — `loop.ts`/`events.ts` for the `onCommit` hook, `wsBridge.ts` for the `attach`/`delete` types + ws-close hook; verified no overlap with ②/④).
+- [x] §C2 — Backend JSONL store (`~/.cubic/sessions/<encoded-project>/<id>.jsonl` + global `index.json`; CC-style append-only, full history)
+- [x] §C2 — Append per turn (crash-safe; fed by the loop's `onCommit` hook)
+- [x] §C2 — Reload + continue (resume — lazy rehydrate from JSONL on first message for an id)
+- [x] §C2 — Re-attach backend, in-flight turn (`emit` fan-out `Map<sessionId,Set<ws>>` + `attach`/`attached` wire + live-turn buffer in `reattach.ts`) ← **this is the §0 re-attach backend half**
+- [x] §C2 — Per-project conversation list (keyed by project path; `listConversations`)
+- [x] §C2 — Unsaved-project handling (`path:""` → `_untitled` bucket, lazy `rekey` on save)
+- [x] §C2 — Instant placeholder titles (truncated first message, in `index.json`)
+- [x] §C2 — Manual delete (backend `delete` ChatInbound; refuses mid-turn; the row-kebab **UI** lives in ⑤)
 
 **④ WT-RESTORE** — backup recovery, backend pieces. Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
 - [ ] §E — Restore handler (new bridge command: copy `.cubic-backups/` back + reopen project)
