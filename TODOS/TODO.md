@@ -44,6 +44,7 @@
 **④ WT-RESTORE** — backup recovery, backend pieces. Files: `commands.ts`, `project.jsx`, `snapshot.ts`.
 - [ ] §E — Restore handler (new bridge command: copy `.cubic-backups/` back + reopen project)
 - [ ] §E — Agent-driven restore ("Cubic, undo that" maps to the handler)
+- [ ] §E — **⚠️ GRILL FIRST: kill/reduce the pre-turn snapshot save popup** (`project.jsx:58` `project.save()` → AE save-progress window every turn). Decide save-vs-popup trade-off before coding — full options in `TODO-phase4.md` §E. **Belongs here** because it touches `project.jsx`/`snapshot.ts` (④'s files) → no overlap with ③ (done) or ②/⑤/⑥/⑦.
 - ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥.
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
