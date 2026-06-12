@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultModel } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
@@ -32,6 +33,9 @@ function loadLocalEnv(): void {
  */
 export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void> {
   loadLocalEnv();
+  // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in .env is reflected (sonnet|haiku|opus or a
+  // full model id). Defaults to Sonnet. Lets you flip models for cheap dev without a rebuild.
+  console.error(`Cubic model: ${defaultModel()}${process.env.CUBIC_MODEL ? ` (CUBIC_MODEL=${process.env.CUBIC_MODEL})` : " (default)"}`);
   await bridge.start(port);
   registerAgentChat();
 }
