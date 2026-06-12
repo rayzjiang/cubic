@@ -144,10 +144,29 @@ export async function runAgentTurn(
       if (response.content) emit({ type: 'text', text: response.content });
 
       if (response.toolUses.length === 0) {
+        // The model reached a natural stopping point for its current objective (its report was just
+        // emitted above). If the user interjected while it was working, fold the queued message in
+        // NOW — as its own user turn, AFTER the current task's output — and continue the same turn,
+        // so the original task is always finished and reported before the new message is addressed
+        // (never cut off / hijacked). Drain the WHOLE queue in order. Otherwise the turn is done.
+        if (session.pendingMessages.length) {
+          const steerContent: ContentBlock[] = [];
+          for (const m of session.pendingMessages) {
+            emit({ type: 'steer', id: m.id, text: m.text });
+            steerContent.push({ type: 'text', text: m.text });
+          }
+          session.pendingMessages = [];
+          commit({ role: 'user', content: steerContent });
+          iter++;
+          continue;
+        }
         emit({ type: 'done', stopReason: response.stopReason });
         return;
       }
 
+      // Tool calls — execute and feed the results straight back (the API requires tool_result blocks
+      // to immediately follow their tool_use). Queued steers are NOT injected here; they wait for the
+      // next no-tool boundary (above), so an in-progress task can't be hijacked by a mid-flight message.
       const toolResults: ContentBlock[] = [];
       for (const tool of response.toolUses) {
         emit({ type: 'tool_start', id: tool.id, name: tool.name, label: describeToolCall(tool.name, tool.input) });
@@ -155,19 +174,7 @@ export async function runAgentTurn(
         emit({ type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried });
         toolResults.push(exec.block);
       }
-
-      // Queued steering messages ride along in the SAME user turn as the tool results
-      // (the API requires tool_result blocks to immediately follow their tool_use). Drain
-      // the WHOLE queue in order — never just the last — so no steer is silently dropped.
-      const userContent: ContentBlock[] = [...toolResults];
-      if (session.pendingMessages.length) {
-        for (const m of session.pendingMessages) {
-          emit({ type: 'steer', id: m.id, text: m.text });
-          userContent.push({ type: 'text', text: m.text });
-        }
-        session.pendingMessages = [];
-      }
-      commit({ role: 'user', content: userContent });
+      commit({ role: 'user', content: toolResults });
       iter++;
     }
 

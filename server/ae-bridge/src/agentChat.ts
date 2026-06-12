@@ -1,6 +1,8 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
+import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath } from "./persist.js";
+import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
+import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
 /**
@@ -25,15 +27,35 @@ import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor 
  * via `{type:'attach'}` → `{type:'attached', running, events}`. That machinery lives in `reattach.ts`.
  */
 const sessions = new Map<string, Session>();
+/** Every connected chat socket (renderer/panel). Lets us push a fresh conversation list when the AE
+ *  worker (re)connects: the project path isn't resolvable until then, so a cold-start list would
+ *  otherwise stay empty until something else triggered a refresh. */
+const chatSockets = new Set<WebSocket>();
 
-/** Current AE project path for keying the conversation on disk. Falls back to "" (the Untitled
- *  bucket) when AE/the bridge is unreachable — keeps persistence working headless. */
+/** Current AE project path for keying the conversation on disk. Fail-fast when the AE worker isn't
+ *  connected (return "" immediately instead of waiting out the 3s worker timeout) so startup never
+ *  blocks; the real list is pushed on the bridge 'connect' event once the path becomes resolvable. */
 async function resolveProjectPath(): Promise<string> {
+  if (!bridge.isConnected()) return "";
   try {
     return (await sessionCache.getProjectInfo()).path ?? "";
   } catch {
     return "";
   }
+}
+
+/**
+ * Send the current project's conversation list to one socket (the `list` reply + the connect push).
+ * NEVER waits on AE — the list is purely local data (index.json), so it loads instantly like Claude
+ * Code. When the worker is connected we use the real project path; before that, we use the last-active
+ * project as the best guess so the home appears fully populated immediately. The bridge 'connect' push
+ * then re-sends the authoritative list, which only changes anything if a different project was opened.
+ */
+async function sendConversations(ws: WebSocket): Promise<void> {
+  const projectPath = bridge.isConnected() ? await resolveProjectPath() : (lastActiveProjectPath() ?? "");
+  try {
+    ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
+  } catch { /* socket gone */ }
 }
 
 /**
@@ -57,8 +79,24 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
 }
 
 export function registerAgentChat(): void {
-  bridge.onChatClose(dropSocket);
+  bridge.onChatClose((ws) => {
+    dropSocket(ws);
+    chatSockets.delete(ws);
+  });
+  // When the AE worker (re)connects the real project path becomes resolvable — push a fresh list to
+  // every chat client so a cold-start list (worker not yet connected) fills in without a manual refresh.
+  bridge.on("connect", () => {
+    for (const ws of chatSockets) void sendConversations(ws);
+  });
   bridge.onChat(async (ws, msg) => {
+    chatSockets.add(ws);
+    // List the current project's conversations (sidebar/home). No sessionId — handled before the
+    // per-session setup below so it never spins up a bogus "default" session or joins a fan-out set.
+    if (msg.type === "list") {
+      await sendConversations(ws);
+      return;
+    }
+
     const id = msg.sessionId ?? "default";
     let session = sessions.get(id);
     if (!session) {
@@ -77,6 +115,17 @@ export function registerAgentChat(): void {
     // live-turn events it missed (committed history loads separately via the resume path above).
     if (msg.type === "attach") {
       ws.send(JSON.stringify({ type: "attached", sessionId: id, running: session.running, events: bufferFor(id) }));
+      return;
+    }
+
+    // Load one conversation's committed history as renderable display items. Read the FULL transcript
+    // from disk (not session.messages, which a hot session may have compacted/trimmed in memory) so
+    // the chat pane always shows the whole conversation. Empty for a brand-new chat with no turns yet.
+    if (msg.type === "loadHistory") {
+      const meta = getConversation(id);
+      const disk = meta ? loadSession(id, meta.projectPath) : null;
+      const items = messagesToDisplayItems(disk?.messages ?? []);
+      ws.send(JSON.stringify({ type: "history", sessionId: id, items, running: session.running }));
       return;
     }
 
@@ -145,12 +194,21 @@ export function registerAgentChat(): void {
     }
 
     await runTurnAndPersist(session, msg.text, emit);
-    // Mid-turn steers are consumed inside runAgentTurn. Messages that arrived AFTER the
-    // model's last tool boundary are still queued here → drain the whole remaining queue
-    // into one combined follow-up turn (consistent with the in-turn drain-all).
+    // Mid-turn steers are consumed inside runAgentTurn (which emits a `steer` per drain). Messages
+    // that arrived AFTER the model's last tool boundary are still queued here → drain the whole
+    // remaining queue into one combined follow-up turn (consistent with the in-turn drain-all).
     while (session.pendingMessages.length && !session.cancelRequested) {
-      const combined = session.pendingMessages.map((m) => m.text).join("\n");
+      const drained = session.pendingMessages;
       session.pendingMessages = [];
+      // Surface each drained item as a `steer` so the UI renders it as the user's message (in order,
+      // before the follow-up turn's response) and clears its "queued" chip — matching the in-turn
+      // drain. Without this, a message queued after the turn's last tool boundary runs but never
+      // appears in the transcript and its chip lingers.
+      // NOTE (⑥): these steers reach live sockets immediately, but the next runTurnAndPersist calls
+      // resetBuffer() and clears them from the re-attach replay buffer. A renderer reattaching mid
+      // follow-up turn won't replay them — it recovers them from committed history (loadHistory).
+      for (const m of drained) emit({ type: "steer", id: m.id, text: m.text });
+      const combined = drained.map((m) => m.text).join("\n");
       await runTurnAndPersist(session, combined, emit);
     }
   });

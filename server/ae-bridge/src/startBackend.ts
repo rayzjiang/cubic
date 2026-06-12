@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { defaultModel } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
@@ -6,12 +10,32 @@ import { registerAgentChat } from "./agentChat.js";
 export const AE_BRIDGE_PORT = parseInt(process.env.AE_BRIDGE_PORT ?? "17923", 10);
 
 /**
+ * Local-dev convenience: load `server/ae-bridge/.env` (e.g. ANTHROPIC_API_KEY) at boot so the app
+ * (`npm run dev`), `npm run serve`, and tests all pick the key up without exporting it each time.
+ * Node-native (`process.loadEnvFile`, Node ≥20.12) — no dependency. Real environment variables take
+ * precedence (loadEnvFile won't override an already-set var). This file is dev-only and gitignored;
+ * in production the key never lives locally — `CUBIC_ENV=prod` routes the brain through the hosted
+ * proxy (Phase 5). Resolved relative to this module so cwd doesn't matter.
+ */
+function loadLocalEnv(): void {
+  try {
+    const envPath = join(dirname(fileURLToPath(import.meta.url)), "..", ".env");
+    const proc = process as unknown as { loadEnvFile?: (path?: string) => void };
+    if (proc.loadEnvFile && existsSync(envPath)) proc.loadEnvFile(envPath);
+  } catch { /* best-effort: a missing/invalid .env never blocks boot */ }
+}
+
+/**
  * Boot the backend: open the WS bridge and fold in the agent loop. Shared by
  * both entrypoints — the MCP dev interface (`index.ts`) and the standalone
  * server the app spawns (`serve.ts`). The open WS server keeps the event loop
  * alive, so no stdio transport is needed to stay running.
  */
 export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void> {
+  loadLocalEnv();
+  // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in .env is reflected (sonnet|haiku|opus or a
+  // full model id). Defaults to Sonnet. Lets you flip models for cheap dev without a rebuild.
+  console.error(`Cubic model: ${defaultModel()}${process.env.CUBIC_MODEL ? ` (CUBIC_MODEL=${process.env.CUBIC_MODEL})` : " (default)"}`);
   await bridge.start(port);
   registerAgentChat();
 }

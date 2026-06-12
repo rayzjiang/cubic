@@ -46,19 +46,31 @@
 - [x] §E — Agent-driven restore ("Cubic, undo that" maps to the handler via `rules.ts` #4 — explicit user revert only, never as a self-heal step; no params = most recent)
 - [x] §E — **pre-turn snapshot save popup — RESOLVED (option b, dirty-guard):** `backupProject` is now `if (project.dirty) project.save()` — clean project copies the on-disk `.aep` as-is (no popup, disk == memory), dirty saves first as before. Zero correctness loss, popup only fires when there are genuinely unsaved edits.
 - ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥ (will call this same handler).
+- [ ] 🐞 **KNOWN BUG (found 6/12/26, ④ scope — fix before relying on undo):** "undo that" is a no-op. The
+  loop snapshots EVERY turn pre-emptively (`loop.ts:116`, turnId=Date.now()), so the undo turn first
+  snapshots the CURRENT state, then `restoreProject` with no args restores the "most recent" backup =
+  that just-taken snapshot = the very state you're undoing → nothing changes (tool still returns ok, so
+  the agent says "rolled back"). Fix options: (a) `restoreProject` no-args should restore the most recent
+  backup whose contents DIFFER from the current working `.aep` (the undo turn's snapshot is byte-identical
+  to current → skip it, land on the real prior state); or (b) thread the current turn's snapshot turnId so
+  restore excludes it; or (c) don't snapshot a turn that only restores. (a) is cleanest + self-contained in
+  `project.jsx`. Repro: create comp → "undo that" → comp remains.
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
-**⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged.
-- [ ] §C — Chat UI (agentEvent reducer + streaming per-iteration + message history)
-- [ ] §C — Render compaction/context events ("compacting…" indicator + `context_full` CTA)
-- [ ] §C — Markdown rendering (`react-markdown` + `remark-gfm`)
-- [ ] §C — Friendly transient-error rendering
-- [ ] §C — Command surface (buttons/icons, no slash commands)
-- [ ] §C — Good UX (spinner + progress words)
-- [ ] §C — Instrument event seams (no-op `track(...)`)
-- [ ] §C — Manual E2E compaction test (deferred from Phase 2)
-- [ ] §C2 (UI) — Conversation-list sidebar + delete kebab (consume ③'s `index.json`)
+**⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
+- [x] §C — Chat UI (agentEvent reducer + message history) — Zustand store `foldEvent` reducer; one `DisplayItem[]` display-model shared by live events + loaded history; Cursor-style transcript (boxed prompt, full-width assistant text, compact per-action tool rows w/ status icons).
+- [x] §C — Render compaction/context events — "Tidying up earlier steps…" pill + friendly `context_full` "start a new chat" CTA card.
+- [x] §C — Markdown rendering (`react-markdown` + `remark-gfm`, no `rehype-raw`; `.md-body` styles).
+- [x] §C — Friendly transient-error rendering — mapped plain-English message + "Try again" (resend) + raw "Details" expander; delete-refusal surfaces as a toast.
+- [x] §C — Command surface (buttons/icons, no slash commands) — New chat + per-row delete kebab; `/clear`,`/compact` stay backend-only.
+- [x] §C — Good UX (spinner + progress words) — motion-themed gerunds cycled in reasoning gaps; per-tool spinners; loading splash; delete confirm modal + toasts.
+- [x] §C — Instrument event seams (no-op `track(...)`) — `message_sent`/`turn_done`/`turn_error`/`conversation_deleted`/`new_chat`.
+- [ ] §C — Manual E2E compaction test (deferred from Phase 2) — **still pending** (drive a real chat to ≥90% ctx → "Tidying up…" pill; push to ≥97% → `context_full` card).
+- [x] §C2 (UI) — Conversation-list sidebar (collapsible, animated) + delete kebab + Home landing view.
 - ↳ §C "Re-attach on reload (renderer half)" is **NOT here** — it's in ⑥.
+- [x] optimize conversation-list loading — **decoupled from AE** (the list is local `index.json` data, so it loads instantly like Claude Code, no wait). `sendConversations` uses the real project path when the worker's connected, else `lastActiveProjectPath()` (most-recent conversation's project) as the guess; the bridge 'connect' push re-sends the authoritative list, which only changes anything on a project switch. Root cause was the old `waitForWorker` coupling the list to the CEP panel's exponential reconnect backoff (1s→10s).
+- ↳ **Backend footprint (⑤ wasn't frontend-only):** new `list`→`conversations` + `loadHistory`→`history` wire (`wsBridge.ts`/`agentChat.ts`/`PROTOCOL.md`); `displayItems.ts` (Message[]→DisplayItem transform); friendly `describeToolCall` labels (`cubic-ai/events.ts`); `.env` loading at backend boot (`startBackend.ts`); public `bridge.waitForWorker`.
+- [ ] maybe make restore a bit more robust (if someone asks cubic to do 2 things/revert, it should be able to revert twice)
 
 **⑥ WT-CONTROLS** — run controls + the renderer halves that need ⑤'s reducer. Needs ⑤ + ③'s wire + ④'s handler.
 - [ ] §D — Stop/cancel button (+ Esc) → `{type:'cancel'}`
@@ -91,6 +103,15 @@ Resume cost of huge chats: on reopen we load full history; the first turn
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
 - Take inspo from good looking after effects youtube video tutorials
 - Maybe inspo from gaming montages as well? (since those are usually edited well)
+
+# context quality — agent only sees point-in-time property values, not keyframes/animation
+The per-turn live-state snapshot (`server/ai/src/context/buildContext.ts`) reads each property's VALUE
+at the current playhead time. If the playhead sits at t=0 where an animation hasn't started, Scale/etc.
+read as `[0,0]` and the agent concludes "nothing is visible / no animation" — even when the comp clearly
+has keyframed animation (it just doesn't see keyframes unless it calls `getLayerKeyframes`). Surfaced
+6/12/26 while testing wt-chat-ui (amplified by Haiku; default Sonnet 4.6 reasons better). Fix options:
+include a keyframe/animation summary in the live-state context, and/or prompt the agent to check
+keyframes before declaring a layer static. Context/prompt work — NOT a chat-UI concern.
 
 # post mvp
 True token-level streaming + tool events

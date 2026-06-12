@@ -5,6 +5,24 @@ import type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, Cont
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 4096;
 
+/** Friendly aliases for the CUBIC_MODEL env var (so you can flip models without the full id). */
+const MODEL_ALIASES: Record<string, string> = {
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5',
+  opus: 'claude-opus-4-8',
+};
+
+/**
+ * The model used when a call doesn't specify one. Reads `CUBIC_MODEL` at CALL time (not import time)
+ * so the backend's `.env` — loaded at boot — is honored; accepts a friendly alias (sonnet|haiku|opus)
+ * or a full model id. Defaults to Sonnet. Lets you flip Sonnet↔Haiku for cheap dev without a rebuild.
+ */
+export function defaultModel(): string {
+  const raw = process.env.CUBIC_MODEL?.trim();
+  if (!raw) return DEFAULT_MODEL;
+  return MODEL_ALIASES[raw.toLowerCase()] ?? raw;
+}
+
 // ─── Per-model metadata (the API does not report any of this) ──────────────────
 // Each provider owns its own tables; an OpenAI provider added later brings its own.
 const DEFAULT_CONTEXT_WINDOW = 200_000; // conservative fallback for an unmapped model id
@@ -133,12 +151,12 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   contextWindow(model?: string): number {
-    return CONTEXT_WINDOWS[model ?? DEFAULT_MODEL] ?? DEFAULT_CONTEXT_WINDOW;
+    return CONTEXT_WINDOWS[model ?? defaultModel()] ?? DEFAULT_CONTEXT_WINDOW;
   }
 
   async chat(messages: Message[], opts: ChatOptions): Promise<ChatResponse> {
     const params: Anthropic.MessageCreateParamsNonStreaming = {
-      model: opts.model ?? DEFAULT_MODEL,
+      model: opts.model ?? defaultModel(),
       max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: opts.temperature ?? 1,
       system: toSystemParam(opts.systemPrompt),
@@ -185,7 +203,7 @@ export class AnthropicProvider implements LLMProvider {
 
   async *stream(messages: Message[], opts: ChatOptions): AsyncIterable<StreamChunk> {
     const stream = await this.client.messages.stream({
-      model: opts.model ?? DEFAULT_MODEL,
+      model: opts.model ?? defaultModel(),
       max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: opts.temperature ?? 1,
       system: toSystemParam(opts.systemPrompt),
