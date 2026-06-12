@@ -7,8 +7,15 @@ import { useChatStore } from '../store'
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
+  const isEmpty = useChatStore((s) => s.items.length === 0)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const [draft, setDraft] = useState('')
+
+  const placeholder = running
+    ? 'Add a follow-up — Cubic picks it up as it works…'
+    : isEmpty
+      ? 'What are we building today?'
+      : 'Send a message…'
 
   const submit = () => {
     const text = draft.trim()
@@ -30,7 +37,7 @@ export function InputBar() {
             }
           }}
           rows={2}
-          placeholder={running ? 'Add a follow-up — Cubic picks it up as it works…' : 'Tell Cubic what to make…'}
+          placeholder={placeholder}
           className="max-h-40 w-full resize-none bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
         />
       </div>

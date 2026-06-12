@@ -20,6 +20,15 @@ export function MessageList() {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [items, running, progressWord])
 
+  if (items.length === 0 && !running) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+        <h2 className="text-xl font-medium text-white/70">What are we building today?</h2>
+        <p className="mt-2 max-w-sm text-sm text-white/35">Describe a look, a motion, or an edit — Cubic makes it for you in After Effects.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl px-5 py-6">

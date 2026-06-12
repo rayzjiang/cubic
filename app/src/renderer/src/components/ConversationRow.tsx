@@ -4,34 +4,13 @@ import { useChatStore } from '../store'
 
 /**
  * One conversation in the home list / sidebar. Click opens it. A hover-revealed kebab (⋯) opens a
- * small menu whose only action is Delete, which asks for inline confirmation first (delete is
- * permanent — the store does optimistic-remove + rollback-on-refusal). Optional "recent" badge.
+ * small menu whose only action is Delete, which raises the confirm MODAL (delete is permanent — the
+ * store does optimistic-remove + rollback-on-refusal, and shows a toast on success). Optional badge.
  */
 export function ConversationRow({ conv, active, badge }: { conv: ConversationMeta; active?: boolean; badge?: string }) {
   const openChat = useChatStore((s) => s.openChat)
-  const deleteConversation = useChatStore((s) => s.deleteConversation)
+  const requestDelete = useChatStore((s) => s.requestDelete)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-
-  if (confirming) {
-    return (
-      <div className="flex items-center gap-2 rounded-md bg-white/[0.06] px-3 py-2 text-[13px]">
-        <span className="flex-1 truncate text-white/70">Delete this chat?</span>
-        <button onClick={() => setConfirming(false)} className="rounded px-2 py-0.5 text-white/60 hover:bg-white/10">
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            deleteConversation(conv.id)
-            setConfirming(false)
-          }}
-          className="rounded bg-red-500/80 px-2 py-0.5 text-white hover:bg-red-500"
-        >
-          Delete
-        </button>
-      </div>
-    )
-  }
 
   return (
     <div className={`group relative flex items-center rounded-md ${active ? 'bg-white/10' : 'hover:bg-white/[0.06]'}`}>
@@ -54,7 +33,7 @@ export function ConversationRow({ conv, active, badge }: { conv: ConversationMet
             <button
               onClick={() => {
                 setMenuOpen(false)
-                setConfirming(true)
+                requestDelete(conv)
               }}
               className="block w-full px-3 py-1.5 text-left text-[13px] text-red-300 hover:bg-white/10"
             >

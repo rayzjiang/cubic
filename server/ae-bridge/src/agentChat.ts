@@ -1,4 +1,5 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
+import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
 import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
@@ -26,15 +27,29 @@ import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor 
  * via `{type:'attach'}` → `{type:'attached', running, events}`. That machinery lives in `reattach.ts`.
  */
 const sessions = new Map<string, Session>();
+/** Every connected chat socket (renderer/panel). Lets us push a fresh conversation list when the AE
+ *  worker (re)connects: the project path isn't resolvable until then, so a cold-start list would
+ *  otherwise stay empty until something else triggered a refresh. */
+const chatSockets = new Set<WebSocket>();
 
-/** Current AE project path for keying the conversation on disk. Falls back to "" (the Untitled
- *  bucket) when AE/the bridge is unreachable — keeps persistence working headless. */
+/** Current AE project path for keying the conversation on disk. Fail-fast when the AE worker isn't
+ *  connected (return "" immediately instead of waiting out the 3s worker timeout) so startup never
+ *  blocks; the real list is pushed on the bridge 'connect' event once the path becomes resolvable. */
 async function resolveProjectPath(): Promise<string> {
+  if (!bridge.isConnected()) return "";
   try {
     return (await sessionCache.getProjectInfo()).path ?? "";
   } catch {
     return "";
   }
+}
+
+/** Send the current project's conversation list to one socket (the `list` reply + the connect push). */
+async function sendConversations(ws: WebSocket): Promise<void> {
+  const projectPath = await resolveProjectPath();
+  try {
+    ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
+  } catch { /* socket gone */ }
 }
 
 /**
@@ -58,13 +73,21 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
 }
 
 export function registerAgentChat(): void {
-  bridge.onChatClose(dropSocket);
+  bridge.onChatClose((ws) => {
+    dropSocket(ws);
+    chatSockets.delete(ws);
+  });
+  // When the AE worker (re)connects the real project path becomes resolvable — push a fresh list to
+  // every chat client so a cold-start list (worker not yet connected) fills in without a manual refresh.
+  bridge.on("connect", () => {
+    for (const ws of chatSockets) void sendConversations(ws);
+  });
   bridge.onChat(async (ws, msg) => {
+    chatSockets.add(ws);
     // List the current project's conversations (sidebar/home). No sessionId — handled before the
     // per-session setup below so it never spins up a bogus "default" session or joins a fan-out set.
     if (msg.type === "list") {
-      const projectPath = await resolveProjectPath();
-      ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
+      await sendConversations(ws);
       return;
     }
 

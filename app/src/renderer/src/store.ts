@@ -53,6 +53,9 @@ interface ChatState {
   queuedSteers: { id: string; text: string }[]
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
   pendingDeletes: Set<string>
+  // transient UI: confirm-delete modal target + auto-dismissing toasts
+  pendingDeleteConfirm: ConversationMeta | null
+  toasts: { id: string; text: string }[]
   // actions
   setConnection: (c: Connection) => void
   toggleSidebar: () => void
@@ -64,7 +67,12 @@ interface ChatState {
   sendMessage: (text: string) => void
   cancelSteer: (id: string) => void
   cancelRun: () => void
+  requestDelete: (conv: ConversationMeta) => void
+  confirmDelete: () => void
+  cancelDelete: () => void
   deleteConversation: (id: string) => void
+  addToast: (text: string) => void
+  dismissToast: (id: string) => void
   retry: () => void
   dismissError: () => void
 }
@@ -96,6 +104,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: null,
   ...blankConversation(),
   pendingDeletes: new Set(),
+  pendingDeleteConfirm: null,
+  toasts: [],
 
   setConnection: (c) => set({ connection: c }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -232,6 +242,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (s.sessionId) sendCancel(s.sessionId)
   },
 
+  requestDelete: (conv) => set({ pendingDeleteConfirm: conv }),
+  cancelDelete: () => set({ pendingDeleteConfirm: null }),
+  confirmDelete: () => {
+    const conv = get().pendingDeleteConfirm
+    if (!conv) return
+    set({ pendingDeleteConfirm: null })
+    get().deleteConversation(conv.id)
+    get().addToast('Conversation deleted')
+  },
+
   deleteConversation: (id) => {
     const s = get()
     const pendingDeletes = new Set(s.pendingDeletes)
@@ -241,6 +261,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     sendDelete(id)
     if (s.sessionId === id) get().newChat() // deleting the open chat → drop into a fresh New chat
   },
+
+  addToast: (text) => set((s) => ({ toasts: [...s.toasts, { id: crypto.randomUUID(), text }] })),
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   retry: () => {
     const s = get()
