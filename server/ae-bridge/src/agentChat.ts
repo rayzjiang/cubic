@@ -204,6 +204,9 @@ export function registerAgentChat(): void {
       // before the follow-up turn's response) and clears its "queued" chip — matching the in-turn
       // drain. Without this, a message queued after the turn's last tool boundary runs but never
       // appears in the transcript and its chip lingers.
+      // NOTE (⑥): these steers reach live sockets immediately, but the next runTurnAndPersist calls
+      // resetBuffer() and clears them from the re-attach replay buffer. A renderer reattaching mid
+      // follow-up turn won't replay them — it recovers them from committed history (loadHistory).
       for (const m of drained) emit({ type: "steer", id: m.id, text: m.text });
       const combined = drained.map((m) => m.text).join("\n");
       await runTurnAndPersist(session, combined, emit);

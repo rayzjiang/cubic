@@ -39,7 +39,6 @@ interface ChatState {
   conversations: ConversationMeta[]
   listLoaded: boolean
   sidebarCollapsed: boolean
-  lastOpenedId: string | null
   // active conversation
   sessionId: string | null
   items: DisplayItem[]
@@ -100,7 +99,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
-  lastOpenedId: null,
   sessionId: null,
   ...blankConversation(),
   pendingDeletes: new Set(),
@@ -208,7 +206,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   openChat: (id) => {
-    set({ sessionId: id, view: 'chat', lastOpenedId: id, ...blankConversation() })
+    set({ sessionId: id, view: 'chat', ...blankConversation() })
     sendLoadHistory(id)
   },
 
