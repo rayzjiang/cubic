@@ -22,10 +22,12 @@ interface PendingCommand {
 type BridgeEvent = 'connect' | 'disconnect';
 
 /** Chat-channel messages the panel/renderer sends over its socket (Phase 2 agent loop + Phase 4
- *  re-attach/persistence). `attach` rejoins a running turn by sessionId; `delete` removes a stored
- *  conversation (fired from the sidebar list, so it targets any sessionId, not just the open one). */
+ *  re-attach/persistence/list). `attach` rejoins a running turn by sessionId; `delete` removes a
+ *  stored conversation (fired from the sidebar list, so it targets any sessionId, not just the open
+ *  one); `list` requests the current project's conversation list; `loadHistory` fetches one
+ *  conversation's committed history as renderable display items. */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory';
   sessionId?: string;
   text?: string;
   /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
@@ -34,7 +36,7 @@ export interface ChatInbound {
 
 /** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
 const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
-  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete',
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory',
 ]);
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;

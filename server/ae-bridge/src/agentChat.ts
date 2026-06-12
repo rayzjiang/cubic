@@ -1,6 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath } from "./persist.js";
+import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations } from "./persist.js";
+import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
 /**
@@ -59,6 +60,14 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
 export function registerAgentChat(): void {
   bridge.onChatClose(dropSocket);
   bridge.onChat(async (ws, msg) => {
+    // List the current project's conversations (sidebar/home). No sessionId — handled before the
+    // per-session setup below so it never spins up a bogus "default" session or joins a fan-out set.
+    if (msg.type === "list") {
+      const projectPath = await resolveProjectPath();
+      ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
+      return;
+    }
+
     const id = msg.sessionId ?? "default";
     let session = sessions.get(id);
     if (!session) {
@@ -77,6 +86,17 @@ export function registerAgentChat(): void {
     // live-turn events it missed (committed history loads separately via the resume path above).
     if (msg.type === "attach") {
       ws.send(JSON.stringify({ type: "attached", sessionId: id, running: session.running, events: bufferFor(id) }));
+      return;
+    }
+
+    // Load one conversation's committed history as renderable display items. Read the FULL transcript
+    // from disk (not session.messages, which a hot session may have compacted/trimmed in memory) so
+    // the chat pane always shows the whole conversation. Empty for a brand-new chat with no turns yet.
+    if (msg.type === "loadHistory") {
+      const meta = getConversation(id);
+      const disk = meta ? loadSession(id, meta.projectPath) : null;
+      const items = messagesToDisplayItems(disk?.messages ?? []);
+      ws.send(JSON.stringify({ type: "history", sessionId: id, items, running: session.running }));
       return;
     }
 

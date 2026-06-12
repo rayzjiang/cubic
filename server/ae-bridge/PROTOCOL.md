@@ -31,7 +31,7 @@ implement what's on this page** — nothing else in the codebase is part of the 
 
 In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
 1. `type === "hello"` → register/replace the single **worker** client.
-2. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`) → agent **chat channel**.
+2. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`/`list`/`loadHistory`) → agent **chat channel**.
 3. has an `ok` field → a **command response** from the worker (correlated by `id`).
 4. has a `command` field → a **command request** from an external caller.
 
@@ -76,6 +76,8 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "removeQueue", "sessionId": "<uuid>", "id": "<queue-item-id>" }
 { "type": "attach",      "sessionId": "<uuid>" }
 { "type": "delete",      "sessionId": "<uuid>" }
+{ "type": "list" }
+{ "type": "loadHistory", "sessionId": "<uuid>" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
@@ -89,12 +91,24 @@ Inbound (UI → backend), the `ChatInbound` union:
 - `delete`: removes a stored conversation (its JSONL + index entry) and drops it from memory.
   Fired from the sidebar list, so it may target **any** `sessionId`, not just the open one.
   **Refused while that conversation has a turn in flight** (replied as an `error` agentEvent).
+- `list`: request the conversation list for the **currently-open AE project** (the backend resolves
+  the project path itself). Replied with one `conversations` envelope (below).
+- `loadHistory`: fetch one conversation's committed history (by `sessionId`) as renderable
+  `DisplayItem[]`. Read from the JSONL store (full untrimmed transcript). Replied with one `history`
+  envelope (below).
 
-Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot reply to `attach`:
+Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json
-{ "type": "agentEvent", "sessionId": "<uuid>", "event": <AgentEvent> }
-{ "type": "attached",   "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ] }
+{ "type": "agentEvent",    "sessionId": "<uuid>", "event": <AgentEvent> }
+{ "type": "attached",      "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ] }
+{ "type": "conversations", "projectPath": "<path>", "conversations": [ <ConversationMeta>, ... ] }
+{ "type": "history",       "sessionId": "<uuid>", "items": [ <DisplayItem>, ... ], "running": false }
 ```
+`conversations` is scoped to the current project, newest-first (`ConversationMeta` = id, title,
+projectPath, lastActivity, renamed — see `src/persist.ts`). `history.items` is a flat
+`DisplayItem[]` (`{kind:'user'|'assistant',text}` or `{kind:'tool',id,label,status:'ok'|'fail'}`,
+source of truth `src/displayItems.ts`); the renderer's live `agentEvent` reducer produces the same
+shape so history + live turn share one render path. `history.running` flags an in-flight turn.
 `agentEvent` fans out to every socket attached to the session (the original sender + any reloaded
 renderer). `attached` is the direct reply to an `attach`: `running` drives the spinner/Stop button,
 `events` replays the in-flight turn so the renderer catches up with no gap and no dup.
@@ -119,7 +133,8 @@ Conversations are stored as append-only JSONL (one `Message`/line, full history 
 only the model context, never disk) at `~/.cubic/sessions/<encoded-project-path>/<sessionId>.jsonl`,
 with a global `~/.cubic/sessions/index.json` (id, title, projectPath, lastActivity, renamed). This
 is internal to the backend (`src/persist.ts`); UI clients never read these files — they drive the
-list via `attach`/`delete` + (future) a list query, and receive history through the loaded session.
+list via the `list` → `conversations` query and `delete`, and load a conversation's transcript via
+`loadHistory` → `history` (backend transforms `Message[]` → `DisplayItem[]` in `src/displayItems.ts`).
 
 ## Who sends what (adapter checklist)
 
@@ -129,4 +144,5 @@ A new **host adapter** (Role B worker) must:
   `{id,ok:false,error}`. Emit the structured-error shape above on domain failures.
 - Reconnect automatically on socket close. It does **not** touch the chat channel.
 
-A new **UI client** speaks Channel 2 only (`userChat`/`cancel`/`queue`/… in, `agentEvent` out).
+A new **UI client** speaks Channel 2 only (`userChat`/`cancel`/`queue`/`attach`/`delete`/`list`/
+`loadHistory` in; `agentEvent`/`attached`/`conversations`/`history` out).
