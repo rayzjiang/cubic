@@ -92,6 +92,15 @@ Resume cost of huge chats: on reopen we load full history; the first turn
 - Take inspo from good looking after effects youtube video tutorials
 - Maybe inspo from gaming montages as well? (since those are usually edited well)
 
+# context quality — agent only sees point-in-time property values, not keyframes/animation
+The per-turn live-state snapshot (`server/ai/src/context/buildContext.ts`) reads each property's VALUE
+at the current playhead time. If the playhead sits at t=0 where an animation hasn't started, Scale/etc.
+read as `[0,0]` and the agent concludes "nothing is visible / no animation" — even when the comp clearly
+has keyframed animation (it just doesn't see keyframes unless it calls `getLayerKeyframes`). Surfaced
+6/12/26 while testing wt-chat-ui (amplified by Haiku; default Sonnet 4.6 reasons better). Fix options:
+include a keyframe/animation summary in the live-state context, and/or prompt the agent to check
+keyframes before declaring a layer static. Context/prompt work — NOT a chat-UI concern.
+
 # post mvp
 True token-level streaming + tool events
   WHY: Smoothest 'typing' feel, most like Claude Code. WHY NOT: Must rebuild

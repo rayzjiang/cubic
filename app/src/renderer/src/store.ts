@@ -37,6 +37,8 @@ interface ChatState {
   projectPath: string
   // sidebar/home list
   conversations: ConversationMeta[]
+  listLoaded: boolean
+  sidebarCollapsed: boolean
   lastOpenedId: string | null
   // active conversation
   sessionId: string | null
@@ -53,6 +55,7 @@ interface ChatState {
   pendingDeletes: Set<string>
   // actions
   setConnection: (c: Connection) => void
+  toggleSidebar: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   newChat: () => void
@@ -87,19 +90,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   view: 'home',
   projectPath: '',
   conversations: [],
+  listLoaded: false,
+  sidebarCollapsed: false,
   lastOpenedId: null,
   sessionId: null,
   ...blankConversation(),
   pendingDeletes: new Set(),
 
   setConnection: (c) => set({ connection: c }),
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   handleServerMessage: (msg) => {
     const s = get()
     switch (msg.type) {
       case 'conversations':
-        // A fresh list reconciles any optimistic deletes (backend sends no success ack).
-        set({ conversations: msg.conversations, projectPath: msg.projectPath, pendingDeletes: new Set() })
+        // A fresh list reconciles any optimistic deletes (backend sends no success ack). listLoaded
+        // flips the initial loading screen off once the first list lands (no UI-before-data flash).
+        set({ conversations: msg.conversations, projectPath: msg.projectPath, listLoaded: true, pendingDeletes: new Set() })
         break
       case 'history':
         // Guard against a stale reply painting a chat the user already navigated away from.
