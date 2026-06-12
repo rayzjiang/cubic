@@ -135,6 +135,18 @@ export function listConversations(projectPath: string): ConversationMeta[] {
     .sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
+/**
+ * Best guess for the current project BEFORE the AE worker connects: the project of the
+ * most-recently-active conversation. Lets the sidebar/home list load instantly from disk (like
+ * Claude Code) with no wait on AE; the authoritative list is pushed once the worker connects, which
+ * only changes anything if the user opened a different project than last time. Null if no history.
+ */
+export function lastActiveProjectPath(): string | null {
+  const entries = readIndex();
+  if (entries.length === 0) return null;
+  return entries.reduce((best, e) => (e.lastActivity > best.lastActivity ? e : best)).projectPath;
+}
+
 /** Look up one conversation's metadata by id (used to find its stored project path before a rekey). */
 export function getConversation(id: string): ConversationMeta | null {
   return readIndex().find((e) => e.id === id) ?? null;

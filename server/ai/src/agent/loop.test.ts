@@ -117,10 +117,11 @@ describe('runAgentTurn', () => {
     expect(session.running).toBe(false);
   });
 
-  it('injects a queued steering message into the next user turn', async () => {
+  it('defers a queued steer to the next no-tool boundary (its own turn, after the task completes)', async () => {
     const { provider, seen } = mockLLM([
       toolResponse([runScriptCall('t1', 'createLayer')]),
-      textResponse('ok, faster now'),
+      textResponse('done — created the layer'), // finishes + reports the ORIGINAL task first
+      textResponse('ok, faster now'), // then addresses the steer
     ]);
     const session = new Session();
     const execute = vi.fn(async (t: ToolUse) => {
@@ -131,21 +132,25 @@ describe('runAgentTurn', () => {
 
     await runAgentTurn(session, 'animate it', (e) => events.push(e), baseDeps(provider, { executeTool: execute }));
 
-    // The steer event now carries the queue item's id alongside its text.
+    // The steer fired (with its id), and only after the original task reached a no-tool boundary.
     const steer = events.find((e) => e.type === 'steer') as { type: 'steer'; id: string; text: string } | undefined;
     expect(steer).toMatchObject({ type: 'steer', id: 'q1', text: 'make it faster' });
     expect(session.pendingMessages).toHaveLength(0);
-    // The steering text was appended as a text block after the tool_result.
-    const userTurn = seen[1][2].content as Array<{ type: string; text?: string }>;
-    expect(userTurn.some((b) => b.type === 'text' && b.text === 'make it faster')).toBe(true);
+    // The tool_result user turn (chat #2's input) did NOT carry the steer — the task wasn't hijacked.
+    const toolResultTurn = seen[1][2].content as Array<{ type: string; text?: string }>;
+    expect(toolResultTurn.some((b) => b.type === 'text' && b.text === 'make it faster')).toBe(false);
+    // The steer landed as its OWN user turn after the assistant's task report (seen by chat #3).
+    const steerTurn = seen[2][seen[2].length - 1].content as Array<{ type: string; text?: string }>;
+    expect(steerTurn.some((b) => b.type === 'text' && b.text === 'make it faster')).toBe(true);
   });
 
-  it('drains ALL queued steering messages in order (regression: no silent drop)', async () => {
-    // Two messages queued before the tool boundary. The old single-slot pendingMessage
-    // would keep only the last (silently dropping the first); the queue must inject both.
+  it('drains ALL queued steers in order at the no-tool boundary (regression: no silent drop)', async () => {
+    // Two messages queued during tool execution. Both must drain in order at the next no-tool
+    // boundary (never just the last → no silent drop), as one steer user turn.
     const { provider, seen } = mockLLM([
       toolResponse([runScriptCall('t1', 'createLayer')]),
-      textResponse('ok'),
+      textResponse('done the layer'),
+      textResponse('ok both'),
     ]);
     const session = new Session();
     const execute = vi.fn(async (t: ToolUse) => {
@@ -163,9 +168,9 @@ describe('runAgentTurn', () => {
     expect(steers.map((s) => s.id)).toEqual(['q1', 'q2']);
     expect(session.pendingMessages).toHaveLength(0);
 
-    // Both rode along as text blocks after the tool_result, in order.
-    const userTurn = seen[1][2].content as Array<{ type: string; text?: string }>;
-    const texts = userTurn.filter((b) => b.type === 'text').map((b) => b.text);
+    // Both landed as text blocks in one steer user turn (after the task report), in order.
+    const steerTurn = seen[2][seen[2].length - 1].content as Array<{ type: string; text?: string }>;
+    const texts = steerTurn.filter((b) => b.type === 'text').map((b) => b.text);
     expect(texts).toEqual(['first steer', 'second steer']);
   });
 

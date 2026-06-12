@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { useChatStore } from '../store'
 
 /**
- * Composer. Enter sends, Shift+Enter newlines. Sending mid-turn is allowed — the store queues it as
- * a steer (the removable "queued" chip lands in Step 5). The Stop button is worktree ⑥.
+ * Composer. Enter sends, Shift+Enter newlines. Sending mid-turn is allowed — the store queues it as a
+ * steer and shows a removable "queued" chip here (it fires at the next boundary). The Stop button is
+ * worktree ⑥.
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
   const isEmpty = useChatStore((s) => s.items.length === 0)
   const sendMessage = useChatStore((s) => s.sendMessage)
+  const queuedSteers = useChatStore((s) => s.queuedSteers)
+  const cancelSteer = useChatStore((s) => s.cancelSteer)
   const [draft, setDraft] = useState('')
 
   const placeholder = running
@@ -26,7 +29,20 @@ export function InputBar() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-5 pb-5">
-      <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 focus-within:border-white/20">
+      {queuedSteers.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1.5">
+          {queuedSteers.map((q) => (
+            <span key={q.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/10 py-1 pl-3 pr-2 text-[12px] text-white/70">
+              <span className="truncate">{q.text}</span>
+              <span className="shrink-0 text-white/35">· queued</span>
+              <button onClick={() => cancelSteer(q.id)} className="shrink-0 text-white/40 hover:text-white/80" aria-label="Cancel queued message">
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="rounded-xl border border-white/10 bg-white/4 px-3 py-2 focus-within:border-white/20">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

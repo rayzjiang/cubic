@@ -123,11 +123,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (msg.sessionId === get().sessionId) set({ items: msg.items, running: msg.running })
         break
       case 'agentEvent': {
-        // Delete-refusal: an error for a conversation we optimistically removed → roll the row back.
+        // Delete-refusal: an error for a conversation we optimistically removed → roll the row back +
+        // surface a toast (not the turn-error notice, whose "Try again" wouldn't make sense here).
         if (msg.event.type === 'error' && s.pendingDeletes.has(msg.sessionId)) {
           const pd = new Set(s.pendingDeletes)
           pd.delete(msg.sessionId)
-          set({ pendingDeletes: pd, error: { friendly: "Can't delete a chat while it's still working — stop it first.", raw: msg.event.message } })
+          set({ pendingDeletes: pd })
+          get().addToast("Can't delete a chat while it's running — stop it first.")
           sendList() // reconcile: re-add the row
           break
         }

@@ -4,6 +4,7 @@ import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
 import { ToolActionRow } from './ToolActionRow'
 import { ProgressIndicator } from './ProgressIndicator'
+import { CompactionPill } from './CompactionPill'
 
 /**
  * The transcript. One flat DisplayItem[] (history + live share the shape) rendered in order: each
@@ -14,13 +15,14 @@ export function MessageList() {
   const items = useChatStore((s) => s.items)
   const running = useChatStore((s) => s.running)
   const progressWord = useChatStore((s) => s.progressWord)
+  const compacting = useChatStore((s) => s.compacting)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [items, running, progressWord])
+  }, [items, running, progressWord, compacting])
 
-  if (items.length === 0 && !running) {
+  if (items.length === 0 && !running && !compacting) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
         <h2 className="text-xl font-medium text-white/70">What are we building today?</h2>
@@ -53,6 +55,11 @@ export function MessageList() {
             </div>
           )
         })}
+        {compacting && (
+          <div className="mt-2">
+            <CompactionPill />
+          </div>
+        )}
         {running && progressWord && (
           <div className="mt-2">
             <ProgressIndicator word={progressWord} />

@@ -174,10 +174,7 @@ class AEBridge {
     });
   }
 
-  /** Resolve when the AE worker is connected, reject after `ms`. Used internally before a command,
-   *  and by the chat layer to hold the first conversation-list reply until the project is resolvable
-   *  (so the renderer's home never flashes an empty list then populates). One-shot + bounded. */
-  waitForWorker(ms: number): Promise<void> {
+  private waitForWorker(ms: number): Promise<void> {
     if (this.workerClient?.readyState === WebSocket.OPEN) return Promise.resolve();
     return new Promise((resolve, reject) => {
       let done = false;

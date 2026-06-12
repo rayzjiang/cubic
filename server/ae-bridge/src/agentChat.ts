@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations } from "./persist.js";
+import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -44,21 +44,15 @@ async function resolveProjectPath(): Promise<string> {
   }
 }
 
-/** How long the first conversation-list reply waits for the AE worker to connect before giving up.
- *  Covers the cold-start window where the CEP panel is reconnecting to the freshly-spawned backend
- *  (~1s); bounded so a genuinely AE-less session still resolves (to the empty list) instead of hanging. */
-const LIST_WORKER_WAIT_MS = 8000;
-
-/** Send the current project's conversation list to one socket (the `list` reply + the connect push).
- *  Holds the reply until the AE worker is connected so the FIRST list the renderer receives is the
- *  REAL project's conversations — not an empty "" list that then gets replaced (which is what made the
- *  home flash "no conversations" then populate). Bounded: if AE never connects we fall through and
- *  reply with the empty list, and the bridge 'connect' push fills it in later if AE shows up. */
+/**
+ * Send the current project's conversation list to one socket (the `list` reply + the connect push).
+ * NEVER waits on AE — the list is purely local data (index.json), so it loads instantly like Claude
+ * Code. When the worker is connected we use the real project path; before that, we use the last-active
+ * project as the best guess so the home appears fully populated immediately. The bridge 'connect' push
+ * then re-sends the authoritative list, which only changes anything if a different project was opened.
+ */
 async function sendConversations(ws: WebSocket): Promise<void> {
-  if (!bridge.isConnected()) {
-    await bridge.waitForWorker(LIST_WORKER_WAIT_MS).catch(() => { /* timed out — reply with what we have */ });
-  }
-  const projectPath = await resolveProjectPath();
+  const projectPath = bridge.isConnected() ? await resolveProjectPath() : (lastActiveProjectPath() ?? "");
   try {
     ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
   } catch { /* socket gone */ }
@@ -200,12 +194,18 @@ export function registerAgentChat(): void {
     }
 
     await runTurnAndPersist(session, msg.text, emit);
-    // Mid-turn steers are consumed inside runAgentTurn. Messages that arrived AFTER the
-    // model's last tool boundary are still queued here → drain the whole remaining queue
-    // into one combined follow-up turn (consistent with the in-turn drain-all).
+    // Mid-turn steers are consumed inside runAgentTurn (which emits a `steer` per drain). Messages
+    // that arrived AFTER the model's last tool boundary are still queued here → drain the whole
+    // remaining queue into one combined follow-up turn (consistent with the in-turn drain-all).
     while (session.pendingMessages.length && !session.cancelRequested) {
-      const combined = session.pendingMessages.map((m) => m.text).join("\n");
+      const drained = session.pendingMessages;
       session.pendingMessages = [];
+      // Surface each drained item as a `steer` so the UI renders it as the user's message (in order,
+      // before the follow-up turn's response) and clears its "queued" chip — matching the in-turn
+      // drain. Without this, a message queued after the turn's last tool boundary runs but never
+      // appears in the transcript and its chip lingers.
+      for (const m of drained) emit({ type: "steer", id: m.id, text: m.text });
+      const combined = drained.map((m) => m.text).join("\n");
       await runTurnAndPersist(session, combined, emit);
     }
   });
