@@ -135,6 +135,38 @@ export async function run(ctx, opts) {
     return `Vibrance=${vibProp.value} (overridden)`;
   });
 
+  // Coverage for EVERY curated effect — incl. glow + text-pop, which were untested when the wrong
+  // "ADBE Glow" matchName shipped. A bad matchName or property name now fails loudly here.
+  const EVERY_TEMPLATE = [
+    'gaussian-blur', 'directional-blur', 'color-balance', 'brightness-contrast',
+    'curves', 'glow', 'drop-shadow', 'vibrance', // singles
+    'text-pop', // composite (drop-shadow + glow)
+  ];
+  for (const tpl of EVERY_TEMPLATE) {
+    await test(`applyEffectTemplate — "${tpl}" applies with no rejected matchName or property`, async () => {
+      const r = await send('applyEffectTemplate', { compName: COMP_NAME, layerIndex: li, templateName: tpl });
+      assertNoError(r);
+      assertArray(r, 'appliedEffects');
+      if (r.appliedEffects.length === 0) throw new Error(`"${tpl}" applied no effects`);
+      if (r.warning) throw new Error(`"${tpl}" partial-applied: ${r.warning}`);
+      if (r.failedProperties) throw new Error(`"${tpl}" failed properties: ${JSON.stringify(r.failedProperties)}`);
+      return r.appliedEffects.map(e => e.name).join(' + ');
+    });
+  }
+
+  await test('applyEffect — friendly effectName "glow" resolves to the real matchName', async () => {
+    const r = await send('applyEffect', { compName: COMP_NAME, layerIndex: li, effectName: 'glow' });
+    assertNoError(r);
+    assertValue(r.effect, 'matchName', 'ADBE Glo2'); // resolved via the dictionary, not guessed
+    if (r.warning) throw new Error(`glow partial-applied: ${r.warning}`);
+  });
+
+  await test('applyEffect — unknown effectName fails with a self-healable list', async () => {
+    const r = await send('applyEffect', { compName: COMP_NAME, layerIndex: li, effectName: 'definitely-not-an-effect' });
+    if (r.status !== 'error') throw new Error('expected an error for an unknown effect');
+    if (!/known effects/i.test(r.message || '')) throw new Error(`error should list known effects, got: ${r.message}`);
+  });
+
   // ── Read ──────────────────────────────────────────────────────────────────
 
   await test('getLayerEffects — ≥4 effects with index, name, matchName, enabled, properties', async () => {

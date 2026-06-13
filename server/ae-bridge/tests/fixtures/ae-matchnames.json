@@ -1,0 +1,275 @@
+{
+  "effects": {
+    "ADBE Gaussian Blur 2": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Gaussian Blur 2",
+      "displayName": "Gaussian Blur",
+      "properties": [
+        {
+          "name": "Blurriness",
+          "matchName": "ADBE Gaussian Blur 2-0001"
+        },
+        {
+          "name": "Blur Dimensions",
+          "matchName": "ADBE Gaussian Blur 2-0002"
+        },
+        {
+          "name": "Repeat Edge Pixels",
+          "matchName": "ADBE Gaussian Blur 2-0003"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Motion Blur": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Motion Blur",
+      "displayName": "Directional Blur",
+      "properties": [
+        {
+          "name": "Direction",
+          "matchName": "ADBE Motion Blur-0001"
+        },
+        {
+          "name": "Blur Length",
+          "matchName": "ADBE Motion Blur-0002"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Color Balance (HLS)": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Color Balance (HLS)",
+      "displayName": "Color Balance (HLS)",
+      "properties": [
+        {
+          "name": "Hue",
+          "matchName": "ADBE Color Balance (HLS)-0001"
+        },
+        {
+          "name": "Lightness",
+          "matchName": "ADBE Color Balance (HLS)-0002"
+        },
+        {
+          "name": "Saturation",
+          "matchName": "ADBE Color Balance (HLS)-0003"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Brightness & Contrast 2": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Brightness & Contrast 2",
+      "displayName": "Brightness & Contrast",
+      "properties": [
+        {
+          "name": "Brightness",
+          "matchName": "ADBE Brightness & Contrast 2-0001"
+        },
+        {
+          "name": "Contrast",
+          "matchName": "ADBE Brightness & Contrast 2-0002"
+        },
+        {
+          "name": "Use Legacy (supports HDR)",
+          "matchName": "ADBE Brightness & Contrast 2-0003"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE CurvesCustom": {
+      "valid": true,
+      "canonicalMatchName": "ADBE CurvesCustom",
+      "displayName": "Curves",
+      "properties": [
+        {
+          "name": "Channel:",
+          "matchName": "ADBE CurvesCustom-0002"
+        },
+        {
+          "name": "Curves",
+          "matchName": "ADBE CurvesCustom-0001"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Glo2": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Glo2",
+      "displayName": "Glow",
+      "properties": [
+        {
+          "name": "Glow Based On",
+          "matchName": "ADBE Glo2-0001"
+        },
+        {
+          "name": "Glow Threshold",
+          "matchName": "ADBE Glo2-0002"
+        },
+        {
+          "name": "Glow Radius",
+          "matchName": "ADBE Glo2-0003"
+        },
+        {
+          "name": "Glow Intensity",
+          "matchName": "ADBE Glo2-0004"
+        },
+        {
+          "name": "Composite Original",
+          "matchName": "ADBE Glo2-0005"
+        },
+        {
+          "name": "Glow Operation",
+          "matchName": "ADBE Glo2-0006"
+        },
+        {
+          "name": "Glow Colors",
+          "matchName": "ADBE Glo2-0007"
+        },
+        {
+          "name": "Color Looping",
+          "matchName": "ADBE Glo2-0008"
+        },
+        {
+          "name": "Color Loops",
+          "matchName": "ADBE Glo2-0009"
+        },
+        {
+          "name": "Color Phase",
+          "matchName": "ADBE Glo2-0010"
+        },
+        {
+          "name": "A & B Midpoint",
+          "matchName": "ADBE Glo2-0011"
+        },
+        {
+          "name": "Color A",
+          "matchName": "ADBE Glo2-0012"
+        },
+        {
+          "name": "Color B",
+          "matchName": "ADBE Glo2-0013"
+        },
+        {
+          "name": "Glow Dimensions",
+          "matchName": "ADBE Glo2-0014"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Drop Shadow": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Drop Shadow",
+      "displayName": "Drop Shadow",
+      "properties": [
+        {
+          "name": "Shadow Color",
+          "matchName": "ADBE Drop Shadow-0001"
+        },
+        {
+          "name": "Opacity",
+          "matchName": "ADBE Drop Shadow-0002"
+        },
+        {
+          "name": "Direction",
+          "matchName": "ADBE Drop Shadow-0003"
+        },
+        {
+          "name": "Distance",
+          "matchName": "ADBE Drop Shadow-0004"
+        },
+        {
+          "name": "Softness",
+          "matchName": "ADBE Drop Shadow-0005"
+        },
+        {
+          "name": "Shadow Only",
+          "matchName": "ADBE Drop Shadow-0006"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Vibrance": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Vibrance",
+      "displayName": "Vibrance",
+      "properties": [
+        {
+          "name": "Vibrance",
+          "matchName": "ADBE Vibrance-0001"
+        },
+        {
+          "name": "Saturation",
+          "matchName": "ADBE Vibrance-0002"
+        },
+        {
+          "name": "Compositing Options",
+          "matchName": "ADBE Effect Built In Params"
+        }
+      ]
+    },
+    "ADBE Glow": {
+      "valid": false,
+      "error": "Error: After Effects error: Can not add a property with name “ADBE Glow” to this PropertyGroup."
+    },
+    "ADBE Directional Blur": {
+      "valid": false,
+      "error": "Error: After Effects error: Can not add a property with name “ADBE Directional Blur” to this PropertyGroup."
+    }
+  },
+  "reviewedNonEffect": [
+    "ADBE Text Animator",
+    "ADBE Text Animator Properties",
+    "ADBE Text Character Offset",
+    "ADBE Text Document",
+    "ADBE Text Fill Color",
+    "ADBE Text Line Anchor",
+    "ADBE Text Line Spacing",
+    "ADBE Text Opacity",
+    "ADBE Text Position 3D",
+    "ADBE Text Properties",
+    "ADBE Text Range Advanced",
+    "ADBE Text Range Based On",
+    "ADBE Text Range Shape",
+    "ADBE Text Range Units",
+    "ADBE Text Rotation",
+    "ADBE Text Scale 3D",
+    "ADBE Text Selector",
+    "ADBE Text Selector Based On",
+    "ADBE Text Selectors",
+    "ADBE Text Skew",
+    "ADBE Text Stroke Color",
+    "ADBE Text Tracking Amount",
+    "ADBE Vector Filter - RC",
+    "ADBE Vector Filter - Repeater",
+    "ADBE Vector Filter - Trim",
+    "ADBE Vector Graphic - Fill",
+    "ADBE Vector Graphic - G-Fill",
+    "ADBE Vector Graphic - G-Stroke",
+    "ADBE Vector Graphic - Stroke",
+    "ADBE Vector Group",
+    "ADBE Vector Shape - Ellipse",
+    "ADBE Vector Shape - Rect",
+    "ADBE Vector Shape - Star"
+  ]
+}

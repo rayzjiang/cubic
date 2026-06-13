@@ -16,7 +16,7 @@ var EFFECT_DICT = {
     "gaussian-blur":       { matchName: "ADBE Gaussian Blur 2",        defaults: { "Blurriness": 20 }, customMap: { blurriness: "Blurriness" } },
     "directional-blur":    { matchName: "ADBE Motion Blur",            defaults: { "Direction": 0, "Blur Length": 10 }, customMap: { direction: "Direction", length: "Blur Length" } },
     "color-balance":       { matchName: "ADBE Color Balance (HLS)",    defaults: { "Hue": 0, "Lightness": 0, "Saturation": 0 }, customMap: { hue: "Hue", lightness: "Lightness", saturation: "Saturation" } },
-    "brightness-contrast": { matchName: "ADBE Brightness & Contrast 2", defaults: { "Brightness": 0, "Contrast": 0, "Use Legacy": false }, customMap: { brightness: "Brightness", contrast: "Contrast" } },
+    "brightness-contrast": { matchName: "ADBE Brightness & Contrast 2", defaults: { "Brightness": 0, "Contrast": 0, "Use Legacy (supports HDR)": false }, customMap: { brightness: "Brightness", contrast: "Contrast" } },
     "curves":              { matchName: "ADBE CurvesCustom",           defaults: {}, customMap: {} },
     "glow":                { matchName: "ADBE Glo2",                   defaults: { "Glow Threshold": 50, "Glow Radius": 15, "Glow Intensity": 1 }, customMap: { threshold: "Glow Threshold", radius: "Glow Radius", intensity: "Glow Intensity" } },
     "drop-shadow":         { matchName: "ADBE Drop Shadow",            defaults: { "Shadow Color": [0, 0, 0, 1], "Opacity": 50, "Direction": 135, "Distance": 10, "Softness": 10 }, customMap: { color: "Shadow Color", opacity: "Opacity", direction: "Direction", distance: "Distance", softness: "Softness" } },
