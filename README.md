@@ -12,8 +12,8 @@ Built for video editors, not developers: a standalone desktop app with a consume
 │ (React chat UI) │   WebSocket  │  (AE bridge +    │
 └─────────────────┘◄────────────►│   Claude brain)  │
                                  └────────┬─────────┘
-                                         │ WebSocket (127.0.0.1:17923)
-                                         ▼
+                                          │ WebSocket (127.0.0.1:17923)
+                                          ▼
                                  ┌──────────────────┐
                                  │  CEP extension   │
                                  │  in After Effects│ ── runs ExtendScript
