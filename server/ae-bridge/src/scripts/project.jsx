@@ -92,6 +92,21 @@ function backupProject(args) {
     }
 }
 
+// Byte-equality test used by no-args restore to skip backups identical to the working file.
+// Size first (instant, and the only check needed when sizes differ); a full binary read+compare
+// runs only on a size match — which is exactly the undo turn's own snapshot (an exact file copy).
+function _filesEqual(a, b) {
+    if (!a.exists || !b.exists) return false;
+    if (a.length !== b.length) return false;
+    a.encoding = "BINARY";
+    b.encoding = "BINARY";
+    if (!a.open("r")) return false;
+    var ca = a.read(); a.close();
+    if (!b.open("r")) return false;
+    var cb = b.read(); b.close();
+    return ca === cb;
+}
+
 // R/U: restoreProject — revert the project to a pre-turn backup created by backupProject.
 // Copies the chosen `.cubic-backups/` .aep back OVER the working file on disk, then drops the
 // in-memory project and reopens the working path. We overwrite-then-reopen (rather than
@@ -99,6 +114,15 @@ function backupProject(args) {
 // the backup path, hijacking the user's file — the same trap backupProject's copy avoids.
 // close(DO_NOT_SAVE_CHANGES) discards the current state with no save dialog (that discard is
 // exactly what "undo that" means). args = { turnId?: string, backupPath?: string }.
+//
+// No-args = "undo that": the agent loop already snapshotted the CURRENT state before this turn,
+// so the newest backup(s) are byte-identical to the working file. We can't just grab backups[0]
+// (that's the no-op bug — restoring current onto current). Instead we walk newest→oldest and land
+// on the first backup whose CONTENTS differ — the real prior state — then PRUNE everything newer
+// than it. The prune is what makes repeated "undo that" walk strictly backward (linear, one-way —
+// there is no redo): without it, the just-restored state would still sit on disk and a second undo
+// would bounce forward to the redo copy instead of further back. turnId/backupPath stay raw
+// (restore exactly that backup, no diff, no prune) as an explicit escape hatch.
 function restoreProject(args) {
     try {
         var project = app.project;
@@ -111,6 +135,7 @@ function restoreProject(args) {
         var backupDir = new Folder(working.parent.fsName + "/.cubic-backups");
 
         var backupFile = null;
+        var prune = [];                                           // backups newer than the target (no-args undo only)
         if (args && args.backupPath) {
             backupFile = new File(args.backupPath);
         } else {
@@ -136,7 +161,19 @@ function restoreProject(args) {
                     throw _err(ERROR_CODES.INVALID_ARGS, "No backup found for turnId " + args.turnId + ".");
                 }
             } else {
-                backupFile = backups.length ? backups[0] : null;   // most recent
+                for (var j = 0; j < backups.length; j++) {
+                    if (!_filesEqual(backups[j], working)) {
+                        backupFile = backups[j];                  // most recent state that differs from current
+                        prune = backups.slice(0, j);              // the own-turn snapshot + any redundant copies
+                        break;
+                    }
+                }
+                if (!backupFile) {
+                    return JSON.stringify({
+                        status: "noop",
+                        message: "Already at the earliest restore point — nothing left to undo."
+                    }, null, 2);
+                }
             }
         }
 
@@ -151,6 +188,11 @@ function restoreProject(args) {
         // Drop the (now stale) in-memory project without a save dialog, then reload from disk.
         project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
         app.open(new File(workingPath));
+
+        // Discard the abandoned "future" so the next undo can only step further back (one-way rewind).
+        for (var k = 0; k < prune.length; k++) {
+            if (prune[k].exists) prune[k].remove();
+        }
 
         return JSON.stringify({
             status: "success",
