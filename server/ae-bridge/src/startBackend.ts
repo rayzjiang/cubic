@@ -10,16 +10,17 @@ import { registerAgentChat } from "./agentChat.js";
 export const AE_BRIDGE_PORT = parseInt(process.env.AE_BRIDGE_PORT ?? "17923", 10);
 
 /**
- * Local-dev convenience: load `server/ae-bridge/.env` (e.g. ANTHROPIC_API_KEY) at boot so the app
- * (`npm run dev`), `npm run serve`, and tests all pick the key up without exporting it each time.
- * Node-native (`process.loadEnvFile`, Node ≥20.12) — no dependency. Real environment variables take
- * precedence (loadEnvFile won't override an already-set var). This file is dev-only and gitignored;
- * in production the key never lives locally — `CUBIC_ENV=prod` routes the brain through the hosted
- * proxy (Phase 5). Resolved relative to this module so cwd doesn't matter.
+ * Local-dev convenience: load the single shared `server/.env` (ANTHROPIC_API_KEY + optional
+ * CUBIC_MODEL) at boot so the app (`npm run dev`), `npm run serve`, and the server/ai tests all read
+ * the SAME file — one source of truth, no per-package drift. Node-native (`process.loadEnvFile`,
+ * Node ≥20.12) — no dependency. Real environment variables take precedence (loadEnvFile won't
+ * override an already-set var). This file is dev-only and gitignored; in production the key never
+ * lives locally — `CUBIC_ENV=prod` routes the brain through the hosted proxy (Phase 5). Resolved
+ * relative to this module (build/ → ../../ = server/) so cwd doesn't matter.
  */
 function loadLocalEnv(): void {
   try {
-    const envPath = join(dirname(fileURLToPath(import.meta.url)), "..", ".env");
+    const envPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".env");
     const proc = process as unknown as { loadEnvFile?: (path?: string) => void };
     if (proc.loadEnvFile && existsSync(envPath)) proc.loadEnvFile(envPath);
   } catch { /* best-effort: a missing/invalid .env never blocks boot */ }
@@ -33,9 +34,20 @@ function loadLocalEnv(): void {
  */
 export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void> {
   loadLocalEnv();
-  // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in .env is reflected (sonnet|haiku|opus or a
-  // full model id). Defaults to Sonnet. Lets you flip models for cheap dev without a rebuild.
-  console.error(`Cubic model: ${defaultModel()}${process.env.CUBIC_MODEL ? ` (CUBIC_MODEL=${process.env.CUBIC_MODEL})` : " (default)"}`);
+  // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in server/.env is reflected (sonnet|haiku|opus
+  // or a full model id). An unmissable banner so the active model — and whether it's the costly
+  // Sonnet default — is obvious in the `npm run dev` terminal every boot.
+  const model = defaultModel();
+  const raw = process.env.CUBIC_MODEL?.trim();
+  const bar = "=".repeat(46);
+  console.error(bar);
+  console.error(`  CUBIC MODEL: ${model}`);
+  console.error(`  (source: ${raw ? `CUBIC_MODEL=${raw}` : "default — no CUBIC_MODEL set"})`);
+  if (!raw) {
+    console.error("  ⚠  CUBIC_MODEL unset → defaulting to Sonnet (pricier).");
+    console.error("     Set CUBIC_MODEL=haiku in server/.env for cheap dev.");
+  }
+  console.error(bar);
   await bridge.start(port);
   registerAgentChat();
 }

@@ -11,7 +11,7 @@
  * Run: node tests/tools-live.mjs   (rebuild first: imports from ../build)
  */
 
-import 'dotenv/config';
+import './lib/loadEnv.mjs';
 import { getLLM, buildSystemPrompt, AE_TOOLS } from '../build/index.js';
 import { bold, green, red, dim, enableLlmIO, printCostTotal } from './lib/format.mjs';
 

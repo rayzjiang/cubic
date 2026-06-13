@@ -12,7 +12,7 @@
 //   4. Expression on Scale       → test shows expression field
 //   5. Click a keyframe diamond  → test shows selectedKeys array
 
-import 'dotenv/config';
+import './lib/loadEnv.mjs';
 import { buildContext, buildSystemPrompt, formatStateForPrompt, getLLM, bridgeClient, getSelectionDetails } from '../build/index.js';
 import { green, red, dim, bold, enableLlmIO, printCostTotal } from './lib/format.mjs';
 

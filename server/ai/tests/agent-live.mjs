@@ -9,7 +9,7 @@
 // ⚠️  THIS MUTATES YOUR AE PROJECT — it asks the agent to create a "__CUBIC_AGENT_TEST"
 //     comp + a layer. Delete that comp afterwards (or undo). Uses Haiku to stay cheap.
 
-import 'dotenv/config';
+import './lib/loadEnv.mjs';
 import { runAgentTurn, Session, bridgeClient, sessionCache } from '../build/index.js';
 import { green, red, dim, bold, cyan, enableLlmIO, printCostTotal } from './lib/format.mjs';
 
