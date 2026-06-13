@@ -46,15 +46,17 @@
 - [x] §E — Agent-driven restore ("Cubic, undo that" maps to the handler via `rules.ts` #4 — explicit user revert only, never as a self-heal step; no params = most recent)
 - [x] §E — **pre-turn snapshot save popup — RESOLVED (option b, dirty-guard):** `backupProject` is now `if (project.dirty) project.save()` — clean project copies the on-disk `.aep` as-is (no popup, disk == memory), dirty saves first as before. Zero correctness loss, popup only fires when there are genuinely unsaved edits.
 - ↳ §E **"Restore to before this request" button is NOT here** — it's renderer-side → ⑥ (will call this same handler).
-- [ ] 🐞 **KNOWN BUG (found 6/12/26, ④ scope — fix before relying on undo):** "undo that" is a no-op. The
-  loop snapshots EVERY turn pre-emptively (`loop.ts:116`, turnId=Date.now()), so the undo turn first
-  snapshots the CURRENT state, then `restoreProject` with no args restores the "most recent" backup =
-  that just-taken snapshot = the very state you're undoing → nothing changes (tool still returns ok, so
-  the agent says "rolled back"). Fix options: (a) `restoreProject` no-args should restore the most recent
-  backup whose contents DIFFER from the current working `.aep` (the undo turn's snapshot is byte-identical
-  to current → skip it, land on the real prior state); or (b) thread the current turn's snapshot turnId so
-  restore excludes it; or (c) don't snapshot a turn that only restores. (a) is cleanest + self-contained in
-  `project.jsx`. Repro: create comp → "undo that" → comp remains.
+- [x] 🐞 **FIXED (6/13/26) — "undo that" no-op.** No-args `restoreProject` now lands on the most-recent
+  backup whose bytes differ from the working `.aep` (skips the own-turn snapshot), prunes newer backups
+  (one-way, no redo), and returns `status:"noop"` at the floor. Self-contained in `project.jsx`.
+- [ ] 🐞 **IN PROGRESS (6/13/26) — undo leaks across chats.** Backups have no chat identity, so undo digs
+  into previous chats' backups. Fix (per Claude Code's per-session rewind): scope to current chat via
+  per-session subfolder `.cubic-backups/<sessionId>/`; thread `session.id` → `backupProject` + inject into
+  `restoreProject`; keep 10/chat; delete the folder on conversation-delete / `/clear`.
+- [ ] ⚠️ **LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
+  Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
+  options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo
+  in `.cubic-backups/`. Ship keep-10 now.
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
