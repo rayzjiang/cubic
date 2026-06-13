@@ -1,7 +1,7 @@
-# CLAUDE.md
+# CLAUDE.md — server/ae-bridge
 Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
-> **End goal:** Motion Copilot — an AI agent that lives in After Effects and writes animations natively, like GitHub Copilot but for video. See [`docs/PRD.md`](../../docs/PRD.md) for the full vision.
+> **Scope:** AE bridge — WS transport (`wsBridge.ts`), ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them, plus an optional MCP-server dev entrypoint. Hosts the `cubic-ai` agent loop in-process but does NOT reimplement the brain (that lives in `server/ai`). End goal: Motion Copilot — an AI agent that writes animations natively in After Effects; see [`docs/PRD.md`](../../docs/PRD.md) (vision) + `TODOS/TODO-phase4.md` (status).
 
 ## Project structure (repo root: `cubic/`)
 ```
@@ -15,22 +15,21 @@ cubic/
 │       ├── src/
 │       │   ├── index.ts         # MCP server entrypoint (dev): tool/resource registration + stdio transport for Claude Code
 │       │   ├── serve.ts         # Standalone backend entrypoint: bridge + agent loop only, no MCP/stdio — the app spawns this (§B)
-│       │   ├── startBackend.ts  # Shared boot helper: bridge.start() + registerAgentChat() + signal shutdown (used by both entrypoints)
+│       │   ├── startBackend.ts  # Shared boot helper: loadLocalEnv() + bridge.start() + registerAgentChat() + signal shutdown; logs the active model banner (used by both entrypoints)
+│       │   ├── commands.ts       # COMMANDS allowlist — source of truth for valid command names (index.ts validates every runScript against it)
+│       │   ├── agentChat.ts      # Folds in the cubic-ai agent loop: bridge.onChat handler, steer queue (incl. edit/remove by id), streams agentEvents back
+│       │   ├── persist.ts        # Conversation persistence — sessions on disk (default ~/.cubic/sessions, override CUBIC_SESSIONS_DIR)
+│       │   ├── reattach.ts / displayItems.ts  # Re-bind an in-flight turn's stream on renderer reload; map agent events → renderer DisplayItem rows
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
 │       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
 │       │       ├── bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
-│       │       ├── compositions.jsx / layers.jsx / animation.jsx
-│       │       ├── effects.jsx / masks.jsx / footage.jsx
+│       │       ├── compositions.jsx / layers.jsx / animation.jsx / effects.jsx / masks.jsx / footage.jsx / text.jsx / shapes.jsx / markers.jsx / project.jsx
 │       ├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (Phase 4: strip its UI, app auto-installs it)
 │       ├── scripts/build-cep-extension.mjs  # Bundles .jsx files → handlers.bundled.jsx
 │       └── tests/               # Per-domain integration tests (require live AE + panel)
 ```
 
-**What this package is:** the AE bridge — WS transport (`wsBridge.ts`), the ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them. The MCP server (`src/index.ts`, stdio via `@modelcontextprotocol/sdk`) is just *one* entrypoint on top, kept as an optional dev interface (drive handlers from Claude Code). The agent brain it talks to (`server/ai`, `cubic-ai`) is built — loop, self-heal, compaction, sessions. The chat UI is a separate Electron app (`app/`) that hosts this package's bridge + loop in its main process and connects the renderer over the same WS; the `cep-extension/` is being slimmed to a headless `evalScript` dispatcher the app auto-installs into AE. See `TODOS/TODO-phase4.md`.
-
 > **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. The code-identifier rename is done (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`). Two **path/bundle** names still say "mcp" and are deferred to the §B install-flow item (they force a reinstall/migration): the `com.cubic.ae-mcp-bridge` bundle id and the `~/.ae-mcp-bridge/port` home dir.
-
----
 
 ## Commands
 ```bash
@@ -52,6 +51,9 @@ npm run build:serve    # Compile src/serve.ts → build/serve.js
 
 CEP panel reloads handlers on each command — no AE restart needed for `.jsx` changes. MCP server requires CC restart.
 
+## Env (one shared file)
+`startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).
+
 ## Architecture
 Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on `127.0.0.1:17923`, receives tool calls, forwards `{ id, command, args }` to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` needed.
 
@@ -62,16 +64,16 @@ Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on 
 compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
                      setCompositionProperties, deleteComposition, duplicateComposition,
                      getCurrentTime, setCurrentTime, saveFrameToPng
-layers.jsx        ← getLayerInfo, getSelectedLayers, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
+layers.jsx        ← getLayerInfo, getSelectedLayers, getSelectionDetails, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
                      createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
-                     batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setLayerParent, moveLayer,
+                     batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setTimeRemapEnabled, setLayerParent, moveLayer,
                      setAnchorPoint, centerAnchorPoint (alias), alignLayers, sequenceLayers,
                      precompose, decomposeLayer, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty,
                      distributeLayers3D (shape: cylinder|grid; backend computes XYZ coords)
 text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector,
                      explodeTextLayer
 shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty, convertToShape
-animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, removePropertyKeyframes,
+animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, setKeyframeSpatial, removePropertyKeyframes,
                      setLayerExpression (+ preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|
                      LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing,
                      applyMotionRecipe (recipe: popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle; layerIndices[] + stagger)
@@ -81,7 +83,8 @@ effects.jsx       ← getLayerEffects, applyEffect (matchName|effectName|presetP
 footage.jsx       ← listProjectItems, importFootage, addFootageToComp, importAssetToComp,
                      deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
-project.jsx       ← getProjectPath, saveProject, backupProject (internal: filesystem-copies the .aep to .cubic-backups/ — NOT in COMMANDS/registry, called only by the agent loop)
+project.jsx       ← getProjectPath, saveProject, restoreProject (reopens the .aep from a .cubic-backups/ copy; skips the undo wrapper),
+                     backupProject (internal: copies the .aep to .cubic-backups/ — NOT in COMMANDS, called only by the agent loop)
 bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +
                      _resolvePropertyByPath() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
 ```
@@ -90,7 +93,7 @@ bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resol
 1. Add handler to the appropriate domain file in `src/scripts/`
 2. Add a `case` in `_dispatchSwitch()` in `bridge.jsx`
 3. If read-only (getter), add to `READ_ONLY_COMMANDS` in `bridge.jsx`
-4. Add name to `allowedScripts` in `src/index.ts`
+4. Add name to the `COMMANDS` array in `src/commands.ts` (the allowlist `index.ts` validates against)
 5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
 
 Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface (`runScript`, `batch`, `getHelp`, `createComposition`, `runBridgeTest`, `testAnimation`, `getResults`). All handler commands are called via `runScript` — no per-command typed tool needed.
@@ -100,14 +103,14 @@ Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagno
 ## Undo groups (Cubic undo)
 Every mutating command is wrapped in `app.beginUndoGroup("Cubic: <command>") / endUndoGroup()` via `try/finally` in `dispatchCommand()` — so one Cmd+Z reverts a full Cubic operation. Read-only commands (in `READ_ONLY_COMMANDS`) skip the wrapper. `batch` gets its own outer group wrapping the entire loop — all sub-commands collapse into one undo entry. Callers may pass `groupLabel` to set a human-readable label (`"Cubic: <groupLabel>"`); when omitted, falls back to `"Cubic: batch (N commands)"`.
 
-Read-only allowlist: `getProjectInfo`, `listCompositions`, `getCompositionInfo`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`, `getLayerProperty`
+Read-only allowlist (`READ_ONLY_COMMANDS`): `getProjectInfo`, `listCompositions`, `getCompositionInfo`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `getSelectionDetails`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`, `getLayerProperty`. (`restoreProject` also skips the undo wrapper but via a special-case check, not this map.)
 
 **No programmatic undo.** AE gates `app.executeCommand(Undo)` from CEP's evalScript context — every approach (top-level, `scheduleTask`, `BridgeTalk`, `findMenuCommandId`-by-dynamic-label) no-ops. Rollback is handled via **inverse-CRUD**: each `create*` has a matching `delete*`, each `set*` can be replayed with prior values captured via the matching `get*`. The user's own ⌘Z still works because every mutation is wrapped in `beginUndoGroup`.
 
 Autosave-before-run revert point is now the agent loop's pre-turn `backupProject` snapshot (a filesystem copy to `.cubic-backups/`), NOT a per-turn undo group — AE undo groups can't span the loop's async LLM round-trips. Deferred: undo history panel (Phase 4).
 
 ## Agent loop fold (Phase 2)
-This process now also hosts the AI agent loop: `server/ae-bridge` depends on `cubic-ai` (`file:../ai`) and `agentChat.ts` registers a chat handler on the bridge (`bridge.onChat`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; the loop streams `{type:'agentEvent', event}` back. **Rebuild + `npm install` notes:** after changing `server/ai`, run its `npm run build` (emits `build/` + `build/types/`) so the symlinked `cubic-ai` is current; then rebuild this server. The loop reaches AE via cubic-ai's own loopback bridge client (a second WS connection), so command + agentEvent traffic share the panel socket.
+This process now also hosts the AI agent loop: `server/ae-bridge` depends on `cubic-ai` (`file:../ai`) and `agentChat.ts` registers a chat handler on the bridge (`bridge.onChat`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; the loop streams `{type:'agentEvent', event}` back. **Rebuild + `npm install` notes:** after changing `server/ai`, run its `npm run build` (emits `build/` + `build/types/`) so the symlinked `cubic-ai` is current; then rebuild this server. The loop reaches AE via cubic-ai's own loopback bridge client (a second WS connection), so command + agentEvent traffic share the panel socket. Around the loop this package owns `persist.ts`, `reattach.ts`, `displayItems.ts`, and the steer queue in `agentChat.ts` (queue/edit/remove by id) — see the structure tree above. The `cubic-ai` Session only exposes the FIFO `pendingMessages` drain; queue editing is this package's transport concern.
 
 ## Structured errors (Tier 3)
 All handler `catch` blocks now return `{ status:"error", errorCode, message, line }`. `errorCode` is one of: `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`, `BATCH_FAILED` (any sub-command of a `batch` failed — per-command codes are in `results[]`). The Node bridge uses `BridgeError` (with `.code`) for transport-level errors. `dispatchTool()` in `src/index.ts` parses handler responses and sets MCP `isError:true` + `structuredContent` when `status:"error"` is detected.

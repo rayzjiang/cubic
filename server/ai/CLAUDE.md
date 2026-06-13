@@ -3,7 +3,7 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
 > **Scope:** Claude API backend + agent brain. Talks to AE by connecting to the
 > live WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
-> client. Does NOT modify any bridge or CEP code.
+> client. Does NOT modify any bridge or CEP code (that lives in `server/ae-bridge`).
 
 ## Phase 2 build order (this module)
 1. ✅ **Context pipeline** — fetch live AE state before every Claude call
@@ -26,7 +26,7 @@ buildSystemPrompt()     ← { cached: STATIC_RULES + generated <command_catalog>
     ↓
 getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_control)
     ↓
-(planned) agent loop: tool calls → bridge → AE → repeat
+agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 ```
 
 ## Module map (`src/`)
@@ -40,16 +40,17 @@ getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_cont
 - `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
 - `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
 - `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).
-- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps are injectable for tests), `session.ts` (`Session`: history + run lock + cancel/steer flags), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `snapshot.ts` (`backupProject` call), `events.ts` (`AgentEvent` union streamed to the panel).
+- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`backupProject` call), `events.ts` (`AgentEvent` union streamed to the panel).
 - `index.ts` — public barrel export.
 
 ## Agent loop (`src/agent/`)
-- **Shape:** bounded while-loop (`MAX_ITERATIONS = 15`), not a formal state machine. One model call per iteration; tools execute in order; their `tool_result` blocks become the next user message.
+- **Shape:** bounded while-loop (`DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn via deps), not a formal state machine. One model call per iteration; tools execute in order; their `tool_result` blocks become the next user message.
 - **Self-healing:** tool errors return as `tool_result(is_error)` so the model reasons + retries forward, bounded by the iteration budget. `RENDER_FAILED` retries once (transient flush race). Transport failures surface as a `BRIDGE_ERROR` result, never a thrown turn.
 - **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `bridgeClient`). A failed snapshot warns and proceeds.
+- **Compaction:** `loop.ts` watches `Session.lastContextTokens` (the true prefill size of the last `chat()`); at `COMPACT_THRESHOLD` (90% of the model's context window) it calls `compactSession` (`compaction.ts`) to summarize older turns into one message while keeping `KEEP_RECENT_TURNS` (3) verbatim; `HARD_CEILING` (97%) is an emergency pause when even compaction can't fit. The summary is itself a Claude call (extra cost — visible under `CUBIC_LLM_DEBUG`).
 - **Narration:** per-iteration `AgentEvent` push (assistant text, then `tool_start`/`tool_end`). Token-level streaming is a later swap (`chat()`→`stream()`) with no change to the loop.
-- **Concurrency:** single in-flight run per `Session`; `cancelRequested` and the `pendingMessages` queue (FIFO `{id,text}[]` steer queue) are checked at iteration boundaries — mirrors Claude Code. The whole queue drains in order at each tool-result boundary (never just the last → no silent drop); `editQueue`/`removeQueue` (by id) let the panel revise a queued steer before it fires. Messages left after the final boundary run as one combined follow-up turn.
-- **Transport (folded into MCP process):** `server/ae-bridge` depends on `cubic-ai` (`file:../ai`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; `wsBridge.onChat` → `agentChat.ts` runs the loop and streams `{type:'agentEvent', event}` back. The loop reaches AE through `bridgeClient` (a second loopback bridge client). Rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
+- **Concurrency:** single in-flight run per `Session`; `cancelRequested` and the `pendingMessages` queue (FIFO `{id,text}[]` steer queue) are checked at iteration boundaries — mirrors Claude Code. The whole queue drains in order at each tool-result boundary (never just the last → no silent drop). Messages left after the final boundary run as one combined follow-up turn. (Editing/removing a queued steer before it fires is a transport concern owned by `server/ae-bridge`'s `agentChat.ts`.)
+- **Consumed by `server/ae-bridge`:** that package folds this loop into its process (`cubic-ai` as a `file:../ai` dep) and owns the panel↔loop wiring, session persistence, and steer-queue editing — see `server/ae-bridge/CLAUDE.md`. Build note: rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
 
 ## Bridge transport (BridgeClient)
 - **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `BridgeClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
@@ -67,7 +68,9 @@ getLLM().chat() / .stream()   ← Anthropic SDK (cached prefix marked cache_cont
 All dynamic context injected into prompts **must be wrapped in XML tags** so the model unambiguously knows what each section is — e.g. `<live_ae_state>{JSON}</live_ae_state>`. Never use plain-text headers like `[Live AE State]`.
 
 ## LLM wrapper rule
-All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@anthropic-ai/sdk` directly elsewhere — `src/llm/anthropic.ts` is the sole chokepoint that enables multi-provider support later. Supports `chat()` and `stream()`; default model `claude-sonnet-4-6`. `ANTHROPIC_API_KEY` is loaded from `.env` (dotenv).
+All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@anthropic-ai/sdk` directly elsewhere — `src/llm/anthropic.ts` is the sole chokepoint that enables multi-provider support later. Supports `chat()` and `stream()`; default model `claude-sonnet-4-6`. `defaultModel()` reads `CUBIC_MODEL` (alias `sonnet|haiku|opus` or a full id) at call time, so flipping models needs no rebuild — just edit the env and restart.
+
+**Env: one shared file — `server/.env`** (the single source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL`, gitignored). The running app loads it via `server/ae-bridge/src/startBackend.ts` → `loadLocalEnv()`; these tests load it via `tests/lib/loadEnv.mjs` (a side-effect import that replaced bare `dotenv/config`). Do NOT recreate per-package `server/ai/.env` or `server/ae-bridge/.env` — both were removed to end the "edited the wrong .env" drift.
 
 ## Agent tool-surface rule (encoded in `STATIC_RULES`)
 The model drives AE through a small parameterized tool set, **not** one tool per feature:
