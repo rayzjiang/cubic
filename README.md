@@ -8,8 +8,8 @@ Built for video editors, not developers: a standalone desktop app with a consume
 
 ```
 ┌─────────────────┐     IPC      ┌──────────────────┐
-│  Electron app    │◄────────────►│  Node backend   │
-│  (React chat UI) │   WebSocket    │  (AE bridge + │
+│  Electron app   │◄────────────►│  Node backend   │
+│ (React chat UI) │   WebSocket │  (AE bridge + │
 └─────────────────┘◄────────────►│   Claude brain)  │
                                  └────────┬─────────┘
                                            │ WebSocket (127.0.0.1:17923)
