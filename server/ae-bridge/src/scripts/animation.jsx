@@ -344,8 +344,6 @@ function setKeyframeEasing(args) {
             var ki = indices[i];
             if (ki < 1 || ki > property.numKeys) continue;
 
-            property.setInterpolationTypeAtKey(ki, types[0], types[1]);
-
             var curIn  = property.keyInTemporalEase(ki);
             var curOut = property.keyOutTemporalEase(ki);
             var dim = curIn.length; // 1=scalar, 2=2D, 3=3D
@@ -372,6 +370,11 @@ function setKeyframeEasing(args) {
                 }
                 property.setTemporalEaseAtKey(ki, newInArr, newOutArr);
             }
+
+            // Set interpolation types LAST: setTemporalEaseAtKey (above) forces BEZIER on both
+            // tangents it touches, so an intended LINEAR side (easeIn/easeOut) must be applied AFTER
+            // the ease, or it silently reverts to bezier (i.e. easeIn/easeOut behaved like easyEase).
+            property.setInterpolationTypeAtKey(ki, types[0], types[1]);
             changed.push(ki);
         }
 

@@ -1169,5 +1169,74 @@ export async function run(ctx, opts) {
 
       await send('deleteComposition', { compName: DIST_COMP });
     }
+
+    // ── Full-variant coverage (the glow class): every enum value applied + read back ──
+
+    // Every blend mode — read back via getLayerInfo.blendMode (added so this is verifiable).
+    const BLEND_MODES = ['normal', 'add', 'multiply', 'screen', 'overlay', 'softLight', 'hardLight',
+      'colorDodge', 'colorBurn', 'darken', 'lighten', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'];
+    await test('setLayerProperties — blend-mode probe layer', async () => {
+      const lr = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'BlendProbe', color: [0.5, 0.5, 0.5] });
+      assertNoError(lr);
+      return 'probe at index 1';
+    });
+    for (const bm of BLEND_MODES) {
+      await test(`setLayerProperties blendMode ${bm} — reads back as ${bm}`, async () => {
+        const r = await send('setLayerProperties', { compName: COMP_NAME, layerIndex: 1, blendMode: bm });
+        assertNoError(r);
+        const info = await send('getLayerInfo', { compName: COMP_NAME });
+        assertNoError(info);
+        const layer = info.layers.find((l) => l.index === 1);
+        if (!layer) throw new Error('blend probe layer not found');
+        if (layer.blendMode !== bm) throw new Error(`expected blendMode ${bm}, got ${layer.blendMode}`);
+        return bm;
+      });
+    }
+
+    // Every light type — read back via getLayerInfo.lightType.
+    for (const lt of ['parallel', 'spot', 'point', 'ambient']) {
+      await test(`createLayer light ${lt} — reads back as ${lt}`, async () => {
+        const r = await send('createLayer', { compName: COMP_NAME, type: 'light', lightType: lt, name: `Light_${lt}` });
+        assertNoError(r);
+        const info = await send('getLayerInfo', { compName: COMP_NAME });
+        const layer = info.layers.find((l) => l.name === `Light_${lt}`);
+        if (!layer) throw new Error(`light ${lt} not found`);
+        if (layer.lightType !== lt) throw new Error(`expected lightType ${lt}, got ${layer.lightType}`);
+        return lt;
+      });
+    }
+
+    // Every alignment — two equal-size layers, then assert they share the aligned axis coordinate.
+    const ALIGN = { LEFT: 0, HORIZONTAL_CENTER: 0, RIGHT: 0, TOP: 1, VERTICAL_CENTER: 1, BOTTOM: 1 };
+    for (const [al, axis] of Object.entries(ALIGN)) {
+      await test(`alignLayers ${al} — aligned layers share ${axis === 0 ? 'X' : 'Y'}`, async () => {
+        const a = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: `Al_${al}_A`, size: [100, 100], position: [200, 200] });
+        assertNoError(a);
+        const b = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: `Al_${al}_B`, size: [100, 100], position: [800, 700] });
+        assertNoError(b);
+        const r = await send('alignLayers', { compName: COMP_NAME, layerIndices: [1, 2], alignment: al, reference: 'COMPOSITION' });
+        assertNoError(r);
+        const info = await send('getLayerInfo', { compName: COMP_NAME });
+        const la = info.layers.find((l) => l.name === `Al_${al}_A`);
+        const lb = info.layers.find((l) => l.name === `Al_${al}_B`);
+        if (!la || !lb) throw new Error(`${al}: aligned layers not found`);
+        if (Math.abs(la.position[axis] - lb.position[axis]) > 0.5) {
+          throw new Error(`${al}: not aligned on ${axis === 0 ? 'X' : 'Y'} (${la.position[axis]} vs ${lb.position[axis]})`);
+        }
+        return `${axis === 0 ? 'X' : 'Y'}=${la.position[axis].toFixed(0)}`;
+      });
+    }
+
+    // Polygon + star shapes (untested shapeTypes) — confirm the shape layer is actually created.
+    for (const st of ['polygon', 'star']) {
+      await test(`createLayer shape ${st} — creates a shape layer`, async () => {
+        const r = await send('createLayer', { compName: COMP_NAME, type: 'shape', shapeType: st, name: `Shape_${st}`, points: 5 });
+        assertNoError(r);
+        const info = await send('getLayerInfo', { compName: COMP_NAME });
+        const layer = info.layers.find((l) => l.name === `Shape_${st}`);
+        if (!layer || layer.type !== 'shape') throw new Error(`${st}: shape layer not created`);
+        return st;
+      });
+    }
   }
 }

@@ -195,4 +195,24 @@ export async function run(ctx, opts) {
     });
     assertStructuredError(r, 'INVALID_ARGS');
   });
+
+  // Full-variant coverage: every track-matte type maps to the right AE TrackMatteType — read it back.
+  // Target by NAME so setting a matte (which can reorder layers) doesn't drift the indices.
+  await test('setTrackMatte — matte-type probe (content + matte layers)', async () => {
+    const top = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'MatteTop', color: [1, 1, 1] });
+    assertNoError(top);
+    const content = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'MatteContent', color: [1, 0, 0] });
+    assertNoError(content);
+    return 'two layers';
+  });
+  for (const mt of ['alpha', 'alphaInverted', 'luma', 'lumaInverted', 'none']) {
+    await test(`setTrackMatte ${mt} — reads back as ${mt}`, async () => {
+      const args = { compName: COMP_NAME, layerName: 'MatteContent', matteType: mt };
+      if (mt !== 'none') args.matteLayerName = 'MatteTop';
+      const r = await send('setTrackMatte', args);
+      assertNoError(r);
+      if (r.layer.trackMatteType !== mt) throw new Error(`expected ${mt}, got ${r.layer.trackMatteType}`);
+      return mt;
+    });
+  }
 }

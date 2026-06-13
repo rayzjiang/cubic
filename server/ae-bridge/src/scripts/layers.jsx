@@ -82,6 +82,11 @@ function getLayerInfo(args) {
                 masksCount: layer.property("Masks") ? layer.property("Masks").numProperties : 0
             };
 
+            // Blend mode as a friendly label (reverse of BLEND_MODES) — enables read-back verification.
+            for (var bmk in BLEND_MODES) {
+                if (BLEND_MODES.hasOwnProperty(bmk) && BLEND_MODES[bmk] === layer.blendingMode) { layerInfo.blendMode = bmk; break; }
+            }
+
             // Type-specific fields
             if (layer instanceof CameraLayer) {
                 var camOpts = layer.property("Camera Options");

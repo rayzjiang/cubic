@@ -233,4 +233,24 @@ export async function run(ctx, opts) {
     if (m.closed !== false) throw new Error(`expected closed=false, got ${m.closed}`);
     return `closed=${m.closed}`;
   });
+
+  // Full-variant coverage: every mask mode must map to the right AE MaskMode constant — read it back.
+  const MASK_MODES = ['none', 'add', 'subtract', 'intersect', 'lighten', 'darken', 'difference'];
+  await test('setLayerMask — mask-mode probe (fresh layer + mask)', async () => {
+    const lr = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'MaskModeProbe', color: [0.5, 0.5, 0.5] });
+    assertNoError(lr);
+    const mk = await send('setLayerMask', { compName: COMP_NAME, layerIndex: 1, maskPath: [[100, 100], [300, 100], [300, 300], [100, 300]] });
+    assertNoError(mk);
+    return 'mask created on index 1';
+  });
+  for (const mode of MASK_MODES) {
+    await test(`setLayerMask maskMode ${mode} — reads back as ${mode}`, async () => {
+      const r = await send('setLayerMask', { compName: COMP_NAME, layerIndex: 1, maskIndex: 1, maskMode: mode });
+      assertNoError(r);
+      const rb = await send('getLayerMasks', { compName: COMP_NAME, layerIndex: 1 });
+      assertNoError(rb);
+      if (!rb.masks[0] || rb.masks[0].mode !== mode) throw new Error(`expected mask mode ${mode}, got ${rb.masks[0] && rb.masks[0].mode}`);
+      return mode;
+    });
+  }
 }

@@ -757,5 +757,89 @@ export async function run(ctx, opts) {
       });
       assertStructuredError(r, 'INVALID_ARGS');
     });
+
+    // ── Full-variant coverage (the glow class): exercise EVERY enumerable value + read it back ──
+    // A wrong AE constant / expression / property name in an untested variant is exactly how the
+    // glow bug shipped. Each variant is applied and then VERIFIED by reading state back.
+
+    // Every setLayerExpression preset — assert the generated expression text (distinctive per preset;
+    // the three bounce presets differ only by their freq/decay defaults, so assert those).
+    const PRESET_TOKENS = {
+      INERTIAL_BOUNCE: 'var freq=2.5', ELASTIC: 'var freq=4', OVERSHOOT: 'var freq=1.5',
+      WIGGLE: 'wiggle(3,25)', AUTO_FADE: 'var fadeIn=0.5',
+      LOOP_OUT: 'loopOut("cycle")', LOOP_IN: 'loopIn("cycle")', LOOP_PINGPONG: 'loopOut("pingpong")',
+    };
+    await test('setLayerExpression — probe layer for preset coverage', async () => {
+      const lr = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'ExprPresetProbe', color: [0.3, 0.3, 0.3] });
+      assertNoError(lr);
+      return 'probe at index 1';
+    });
+    for (const [preset, token] of Object.entries(PRESET_TOKENS)) {
+      await test(`setLayerExpression preset ${preset} — generates the right expression`, async () => {
+        const r = await send('setLayerExpression', { compName: COMP_NAME, layerIndex: 1, propertyName: 'Opacity', preset });
+        assertNoError(r);
+        const rb = await send('getLayerExpressions', { compName: COMP_NAME, layerIndex: 1 });
+        assertNoError(rb);
+        const hit = rb.expressions.find(e => e.expression && e.expression.indexOf(token) !== -1);
+        if (!hit) throw new Error(`${preset}: expected expression containing "${token}", got ${JSON.stringify(rb.expressions)}`);
+        return token;
+      });
+    }
+
+    // Every applyMotionRecipe recipe — fresh layer each, read back the keyframes/expression it creates.
+    const RECIPES = {
+      popIn: { prop: 'Scale', kind: 'kf' }, popOut: { prop: 'Scale', kind: 'kf' },
+      fadeIn: { prop: 'Opacity', kind: 'kf' }, fadeOut: { prop: 'Opacity', kind: 'kf' },
+      slideIn: { prop: 'Position', kind: 'kf' }, slideOut: { prop: 'Position', kind: 'kf' },
+      scaleIn: { prop: 'Scale', kind: 'kf' }, bounceIn: { prop: 'Scale', kind: 'kf' },
+      wiggle: { prop: 'Position', kind: 'expr', token: 'wiggle(' },
+    };
+    for (const [recipe, spec] of Object.entries(RECIPES)) {
+      await test(`applyMotionRecipe ${recipe} — animates ${spec.prop} (verified)`, async () => {
+        const lr = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: `Recipe_${recipe}`, color: [0.2, 0.2, 0.2] });
+        assertNoError(lr);
+        const r = await send('applyMotionRecipe', { compName: COMP_NAME, layerIndices: [1], recipe });
+        assertNoError(r);
+        if (spec.kind === 'kf') {
+          const kf = await send('getLayerKeyframes', { compName: COMP_NAME, layerIndex: 1, propertyName: spec.prop });
+          assertNoError(kf);
+          if (kf.count < 2) throw new Error(`${recipe}: expected ≥2 ${spec.prop} keyframes, got ${kf.count}`);
+          return `${kf.count} ${spec.prop} keys`;
+        }
+        const ex = await send('getLayerExpressions', { compName: COMP_NAME, layerIndex: 1 });
+        assertNoError(ex);
+        const hit = ex.expressions.find(e => e.expression && e.expression.indexOf(spec.token) !== -1);
+        if (!hit) throw new Error(`${recipe}: expected a ${spec.prop} expression containing "${spec.token}"`);
+        return spec.token;
+      });
+    }
+
+    // Every setKeyframeEasing easeType — read back the interpolation labels on the middle keyframe.
+    const EASE_EXPECT = {
+      easyEase: ['bezier', 'bezier'], easeIn: ['bezier', 'linear'], easeOut: ['linear', 'bezier'],
+      linear: ['linear', 'linear'], hold: ['hold', 'hold'], bezier: ['bezier', 'bezier'],
+    };
+    await test('setKeyframeEasing — probe layer with 3 Position keyframes', async () => {
+      const lr = await send('createLayer', { compName: COMP_NAME, type: 'solid', name: 'EaseProbe', color: [0.4, 0.4, 0.4] });
+      assertNoError(lr);
+      for (const [t, v] of [[0, [100, 100]], [1, [300, 300]], [2, [500, 200]]]) {
+        const k = await send('setLayerKeyframe', { compName: COMP_NAME, layerIndex: 1, propertyName: 'Position', value: v, timeInSeconds: t });
+        assertNoError(k);
+      }
+      return '3 keyframes';
+    });
+    for (const [easeType, [expIn, expOut]] of Object.entries(EASE_EXPECT)) {
+      await test(`setKeyframeEasing ${easeType} — in=${expIn} out=${expOut} (verified)`, async () => {
+        const r = await send('setKeyframeEasing', { compName: COMP_NAME, layerIndex: 1, propertyName: 'Position', keyIndices: [1, 2, 3], easeType });
+        assertNoError(r);
+        const kf = await send('getLayerKeyframes', { compName: COMP_NAME, layerIndex: 1, propertyName: 'Position' });
+        assertNoError(kf);
+        const mid = kf.keyframes[1]; // middle key has real in + out tangents
+        if (mid.inInterpolationLabel !== expIn || mid.outInterpolationLabel !== expOut) {
+          throw new Error(`${easeType}: expected in=${expIn}/out=${expOut}, got in=${mid.inInterpolationLabel}/out=${mid.outInterpolationLabel}`);
+        }
+        return `in=${mid.inInterpolationLabel} out=${mid.outInterpolationLabel}`;
+      });
+    }
   }
 }

@@ -255,4 +255,23 @@ export async function run(ctx, opts) {
     });
     assertStructuredError(r, 'INVALID_ARGS');
   });
+
+  // Full-variant coverage: every text animator property must resolve to a real AE matchName. A wrong
+  // one surfaces as a per-property `error` (addProperty throws, caught per-property), so even though
+  // status stays "success", this catches the glow class for text animators.
+  await test('addTextAnimator — all 11 animator properties resolve (no wrong matchName)', async () => {
+    const tl = await send('createLayer', { compName: COMP_NAME, type: 'text', text: 'VARIANTS', fontSize: 120, position: [960, 540], color: [1, 1, 1] });
+    assertNoError(tl);
+    const ALL = ['Position', 'Scale', 'Skew', 'Rotation', 'Opacity', 'Fill Color', 'Stroke Color', 'Tracking Amount', 'Character Offset', 'Line Anchor', 'Line Spacing'];
+    const r = await send('addTextAnimator', { compName: COMP_NAME, layerIndex: 1, properties: ALL, name: 'AllProps' });
+    assertNoError(r);
+    const got = (r.animator && r.animator.properties) || [];
+    for (const name of ALL) {
+      const p = got.find((x) => x.name === name);
+      if (!p) throw new Error(`property "${name}" missing from result`);
+      if (p.error) throw new Error(`property "${name}" failed to add: ${p.error}`);
+      if (!p.matchName) throw new Error(`property "${name}" resolved to no matchName`);
+    }
+    return `${got.length}/11 resolved`;
+  });
 }
