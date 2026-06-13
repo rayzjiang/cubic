@@ -19,11 +19,13 @@ describe('renderCommandCatalog', () => {
     for (const name of visible) {
       expect(catalog).toContain(`${name}(`);
     }
-    // The only command we expect to be hidden is the internal one.
+    // The only commands we expect to be hidden are the internal diagnostics.
     const hidden = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
       .filter(([, spec]) => spec.internal)
-      .map(([name]) => name);
-    expect(hidden).toEqual(['saveFrameToPng']);
+      .map(([name]) => name)
+      .sort();
+    expect(hidden).toEqual(['introspectMatchNames', 'saveFrameToPng']);
+    for (const name of hidden) expect(catalog).not.toContain(`${name}(`);
   });
 
   it('preserves registry order for visible commands (cache-stable prefix)', () => {
