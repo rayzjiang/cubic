@@ -12,7 +12,10 @@ export type AgentEvent =
   | { type: 'snapshot'; ok: boolean; path?: string; reason?: string }
   | { type: 'text'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
-  | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean }
+  // `noop` = the call succeeded but changed nothing (handler returned status:"noop", e.g. "undo that"
+  // with nothing left to undo). The row renders as a neutral outcome (not a success check); `label`
+  // carries the finalized, outcome-accurate label that replaces the optimistic tool_start one.
+  | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean; noop?: boolean; label?: string }
   | { type: 'steer'; id: string; text: string }
   | { type: 'cancelled' }
   // History compaction: older turns summarized to stay under the context window. 'done' also
@@ -134,6 +137,22 @@ export function describeToolCall(name: string, input: unknown): string {
     default:
       return readableDefault(name);
   }
+}
+
+/** A few commands get a friendlier "nothing changed" phrase. */
+const NOOP_SCRIPT_LABELS: Record<string, string> = {
+  restoreProject: 'Nothing to undo',
+};
+
+/**
+ * Finalized label for a tool call that changed nothing (handler returned status:"noop"). Mirrors
+ * describeToolCall's runScript unwrapping; falls back to a generic "No change" so ANY future command
+ * that returns a noop reads honestly without per-tool wiring.
+ */
+export function describeToolNoop(name: string, input: unknown): string {
+  const obj = (input ?? {}) as Params;
+  if (name === 'runScript') return NOOP_SCRIPT_LABELS[String(obj.script ?? '')] ?? 'No change';
+  return 'No change';
 }
 
 export type { ToolUse };

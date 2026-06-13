@@ -4,7 +4,7 @@ import { buildContext as defaultBuildContext } from '../context/buildContext.js'
 import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSystemPrompt.js';
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
-import { describeToolCall, type EmitFn } from './events.js';
+import { describeToolCall, describeToolNoop, type EmitFn } from './events.js';
 import { compactSession, contextTokensOf, COMPACT_THRESHOLD, HARD_CEILING } from './compaction.js';
 import type { Session } from './session.js';
 import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput, Message } from '../llm/types.js';
@@ -171,7 +171,12 @@ export async function runAgentTurn(
       for (const tool of response.toolUses) {
         emit({ type: 'tool_start', id: tool.id, name: tool.name, label: describeToolCall(tool.name, tool.input) });
         const exec = await execute(tool, session.id);
-        emit({ type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried });
+        emit({
+          type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried,
+          noop: exec.noop,
+          // On a noop, swap the optimistic tool_start label for the outcome-accurate one.
+          label: exec.noop ? describeToolNoop(tool.name, tool.input) : undefined,
+        });
         toolResults.push(exec.block);
       }
       commit({ role: 'user', content: toolResults });

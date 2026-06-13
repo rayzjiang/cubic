@@ -14,7 +14,8 @@ export type AgentEvent =
   | { type: 'snapshot'; ok: boolean; path?: string; reason?: string }
   | { type: 'text'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
-  | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean }
+  // `noop` = succeeded but changed nothing; `label` is the outcome-accurate label replacing tool_start's.
+  | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean; noop?: boolean; label?: string }
   | { type: 'steer'; id: string; text: string }
   | { type: 'cancelled' }
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
@@ -23,7 +24,7 @@ export type AgentEvent =
   | { type: 'done'; stopReason: string }
 
 // ── Display model (one shape for history + live turn) ──
-export type ToolStatus = 'running' | 'ok' | 'fail'
+export type ToolStatus = 'running' | 'ok' | 'fail' | 'noop'
 export type DisplayItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }

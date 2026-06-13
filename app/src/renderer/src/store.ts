@@ -164,7 +164,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const liveToolIds = new Set(s.liveToolIds)
         liveToolIds.delete(event.id)
         const items: DisplayItem[] = s.items.map((it) =>
-          it.kind === 'tool' && it.id === event.id ? { ...it, status: event.ok ? 'ok' : 'fail' } : it,
+          it.kind === 'tool' && it.id === event.id
+            ? {
+                ...it,
+                status: event.ok ? (event.noop ? 'noop' : 'ok') : 'fail',
+                // A noop sends the finalized, outcome-accurate label (e.g. "Nothing to undo").
+                ...(event.label ? { label: event.label } : {}),
+              }
+            : it,
         )
         // Between tool_end and the next text/tool, the model is reasoning → show a fresh gerund.
         set({ items, liveToolIds, progressWord: liveToolIds.size === 0 ? pickWord() : s.progressWord })

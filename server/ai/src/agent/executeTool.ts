@@ -26,6 +26,8 @@ export interface ToolExecution {
   errorCode?: string;
   /** True if the call was retried (transient error). */
   retried: boolean;
+  /** True if the call succeeded but changed nothing (handler returned status:"noop"). */
+  noop?: boolean;
 }
 
 /**
@@ -84,16 +86,23 @@ interface RawOutcome {
   ok: boolean;
   errorCode?: string;
   content: string;
+  noop?: boolean;
 }
 
 async function runOnce(command: string, args: Record<string, unknown>): Promise<RawOutcome> {
   try {
     const result = await bridgeClient.callRunScript(command, args);
-    // Handler-level errors come back as a successful bridge response whose JSON has
-    // status:"error" — surface them as an error tool_result, not a thrown turn.
-    if (result && typeof result === 'object' && (result as { status?: string }).status === 'error') {
-      const r = result as { errorCode?: string };
-      return { ok: false, errorCode: r.errorCode, content: JSON.stringify(result) };
+    if (result && typeof result === 'object') {
+      const status = (result as { status?: string }).status;
+      // Handler-level errors come back as a successful bridge response whose JSON has
+      // status:"error" — surface them as an error tool_result, not a thrown turn.
+      if (status === 'error') {
+        const r = result as { errorCode?: string };
+        return { ok: false, errorCode: r.errorCode, content: JSON.stringify(result) };
+      }
+      // status:"noop" — the call succeeded but changed nothing. Still an ok tool_result (the model
+      // reads the message), just flagged so the UI row finalizes to a neutral outcome.
+      if (status === 'noop') return { ok: true, noop: true, content: JSON.stringify(result) };
     }
     return { ok: true, content: typeof result === 'string' ? result : JSON.stringify(result) };
   } catch (e) {
@@ -128,7 +137,8 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
     outcome = await runOnce(command, args);
   }
 
-  if (outcome.ok && !READ_ONLY_COMMANDS.has(command)) {
+  // A noop changed nothing, so the cached state is still valid — don't invalidate.
+  if (outcome.ok && !outcome.noop && !READ_ONLY_COMMANDS.has(command)) {
     sessionCache.invalidate();
   }
 
@@ -137,5 +147,6 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
     ok: outcome.ok,
     errorCode: outcome.errorCode,
     retried,
+    noop: outcome.noop,
   };
 }

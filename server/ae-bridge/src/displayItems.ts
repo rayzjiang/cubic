@@ -1,4 +1,4 @@
-import { describeToolCall, type Message, type ContentBlock } from "cubic-ai";
+import { describeToolCall, describeToolNoop, type Message, type ContentBlock } from "cubic-ai";
 
 /**
  * Display-model contract shared with the renderer (mirrored in app/src/renderer/src/protocol.ts —
@@ -6,20 +6,31 @@ import { describeToolCall, type Message, type ContentBlock } from "cubic-ai";
  * renderer's live `agentEvent` reducer produces the SAME shape, so history and the live turn share
  * one render path (no second component tree, no label drift — both label via describeToolCall).
  */
-export type ToolStatus = "running" | "ok" | "fail";
+// "noop" = the call succeeded but changed nothing (handler returned status:"noop"); rendered neutral.
+export type ToolStatus = "running" | "ok" | "fail" | "noop";
 
 export type DisplayItem =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; label: string; status: ToolStatus };
 
-/** A committed turn's tool failed iff its matching tool_result carried is_error. */
-function isErrorById(messages: Message[]): Map<string, boolean> {
-  const map = new Map<string, boolean>();
+/**
+ * A committed turn's tool outcome, from its matching tool_result: "fail" iff is_error; otherwise
+ * "noop" iff the result JSON carried status:"noop" (changed nothing); else "ok". Absent → "ok".
+ */
+function outcomeById(messages: Message[]): Map<string, "ok" | "fail" | "noop"> {
+  const map = new Map<string, "ok" | "fail" | "noop">();
   for (const m of messages) {
     if (!Array.isArray(m.content)) continue;
     for (const block of m.content) {
-      if (block.type === "tool_result") map.set(block.tool_use_id, block.is_error === true);
+      if (block.type !== "tool_result") continue;
+      if (block.is_error === true) { map.set(block.tool_use_id, "fail"); continue; }
+      let status: string | undefined;
+      try {
+        const raw = typeof block.content === "string" ? block.content : "";
+        status = raw ? (JSON.parse(raw) as { status?: string }).status : undefined;
+      } catch { /* non-JSON content → treat as ok */ }
+      map.set(block.tool_use_id, status === "noop" ? "noop" : "ok");
     }
   }
   return map;
@@ -31,10 +42,10 @@ function isErrorById(messages: Message[]): Map<string, boolean> {
  *   user(string)                         → a real prompt
  *   user(ContentBlock[])                 → tool_results (skipped — consumed below) + steer text
  *   assistant(string | ContentBlock[])   → narration text + tool_use calls
- * History is always settled, so tool status is `ok`/`fail` (never `running`).
+ * History is always settled, so tool status is `ok`/`fail`/`noop` (never `running`).
  */
 export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
-  const errs = isErrorById(messages);
+  const outcomes = outcomeById(messages);
   const items: DisplayItem[] = [];
 
   for (const m of messages) {
@@ -52,11 +63,12 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
         const text = block.text.trim();
         if (text) items.push({ kind: m.role === "user" ? "user" : "assistant", text });
       } else if (block.type === "tool_use") {
+        const outcome = outcomes.get(block.id) ?? "ok";
         items.push({
           kind: "tool",
           id: block.id,
-          label: describeToolCall(block.name, block.input),
-          status: errs.get(block.id) ? "fail" : "ok",
+          label: outcome === "noop" ? describeToolNoop(block.name, block.input) : describeToolCall(block.name, block.input),
+          status: outcome,
         });
       }
       // tool_result blocks are folded into the matching tool_use's status above — not rendered.
