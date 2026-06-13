@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   loadSession: vi.fn(() => null),
   getConversation: vi.fn(() => null),
   deleteConversation: vi.fn(),
+  deleteSessionBackups: vi.fn(),
   rekey: vi.fn(),
   runAgentTurn: vi.fn(async (..._args: any[]) => {}),
 }));
@@ -31,6 +32,7 @@ vi.mock('./persist.js', () => ({
   loadSession: h.loadSession,
   getConversation: h.getConversation,
   deleteConversation: h.deleteConversation,
+  deleteSessionBackups: h.deleteSessionBackups,
   rekey: h.rekey,
   encodeProjectPath: (p: string) => p || '_untitled',
 }));

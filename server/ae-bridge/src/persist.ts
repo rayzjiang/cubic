@@ -152,6 +152,19 @@ export function getConversation(id: string): ConversationMeta | null {
   return readIndex().find((e) => e.id === id) ?? null;
 }
 
+/**
+ * Remove a chat's pre-turn backup folder (`.cubic-backups/<sessionId>/` next to the project `.aep`)
+ * when its conversation is deleted or cleared, so orphaned full-`.aep` copies don't pile up. The
+ * sessionId sanitization MUST match `_sessionBackupDir` in `scripts/bridge.jsx`. No-op for an unsaved
+ * project (`""` → no backups exist) or if the folder is already gone.
+ */
+export function deleteSessionBackups(projectPath: string, sessionId: string): void {
+  if (!projectPath) return;
+  const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const dir = path.join(path.dirname(projectPath), '.cubic-backups', safeId);
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ }
+}
+
 /** Delete a conversation: remove its JSONL + drop its index entry. Idempotent; keyed by id alone. */
 export function deleteConversation(id: string): void {
   const entries = readIndex();

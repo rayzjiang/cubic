@@ -18,8 +18,8 @@ const DEFAULT_MAX_ITERATIONS = 15;
  */
 export interface AgentDeps {
   llm: LLMProvider;
-  executeTool: (tool: ToolUse) => Promise<ToolExecution>;
-  snapshot: (turnId: string) => Promise<SnapshotResult>;
+  executeTool: (tool: ToolUse, sessionId: string) => Promise<ToolExecution>;
+  snapshot: (sessionId: string, turnId: string) => Promise<SnapshotResult>;
   buildContext: () => Promise<LiveAEState>;
   buildSystemPrompt: (state: LiveAEState) => SystemPromptInput;
   /** Model override (default: provider default). */
@@ -114,7 +114,7 @@ export async function runAgentTurn(
     // Pre-turn revert point. A failed snapshot warns but never blocks the turn —
     // the user still has per-command ⌘Z.
     if (takeSnapshot) {
-      const snap = await snapshot(String(Date.now()));
+      const snap = await snapshot(session.id, String(Date.now()));
       emit({ type: 'snapshot', ok: snap.ok, path: snap.path, reason: snap.reason });
     }
 
@@ -170,7 +170,7 @@ export async function runAgentTurn(
       const toolResults: ContentBlock[] = [];
       for (const tool of response.toolUses) {
         emit({ type: 'tool_start', id: tool.id, name: tool.name, label: describeToolCall(tool.name, tool.input) });
-        const exec = await execute(tool);
+        const exec = await execute(tool, session.id);
         emit({ type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried });
         toolResults.push(exec.block);
       }

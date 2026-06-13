@@ -132,6 +132,17 @@ function _resolveComp(args) {
     return comp;
 }
 
+// Per-chat backup folder: .cubic-backups/<sessionId>/ next to the working .aep. Scoping each chat's
+// pre-turn snapshots to its own folder is what keeps "undo that" from walking into a DIFFERENT
+// conversation's backups (see backupProject/restoreProject). sessionId is sanitized to a filesystem-safe
+// token; absent → "default" (the legacy single-session / unset path). Used by both backup + restore so
+// they always agree on the location. Returns a Folder (not yet created).
+function _sessionBackupDir(projectFile, args) {
+    var root = projectFile.parent.fsName + "/.cubic-backups";
+    var id = (args && args.sessionId) ? String(args.sessionId).replace(/[^a-zA-Z0-9_-]/g, "-") : "default";
+    return new Folder(root + "/" + id);
+}
+
 // Walks a property path array on a layer (e.g. ["Contents","Group 1","Trim Paths 1","Start"]).
 // Throws with path context on missing step.
 function _resolvePropertyByPath(layer, propertyPath) {

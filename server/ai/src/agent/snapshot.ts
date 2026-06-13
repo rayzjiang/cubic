@@ -16,10 +16,13 @@ export interface SnapshotResult {
  *
  * Never throws: a failed snapshot (e.g. an unsaved project) is reported so the loop
  * can warn and proceed — the user still has per-command ⌘Z.
+ *
+ * `sessionId` scopes the backup to the current chat (`.cubic-backups/<sessionId>/`) so a later
+ * "undo that" walks back through THIS conversation's turns only, never another chat's.
  */
-export async function snapshotProject(turnId: string): Promise<SnapshotResult> {
+export async function snapshotProject(sessionId: string, turnId: string): Promise<SnapshotResult> {
   try {
-    const result = await bridgeClient.callRunScript('backupProject', { turnId });
+    const result = await bridgeClient.callRunScript('backupProject', { sessionId, turnId });
     if (result && typeof result === 'object' && (result as { status?: string }).status === 'error') {
       const r = result as { message?: string; errorCode?: string };
       return { ok: false, reason: r.message ?? r.errorCode ?? 'snapshot failed' };

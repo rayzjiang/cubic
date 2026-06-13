@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, loadSession, getConversation, deleteConversation, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
+import { appendTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -136,7 +136,9 @@ export function registerAgentChat(): void {
         emit({ type: "error", message: "Can't delete a conversation while it's running — stop it first." });
         return;
       }
+      const conv = getConversation(id); // capture the project path before we drop the index entry
       deleteConversation(id);
+      if (conv) deleteSessionBackups(conv.projectPath, id); // drop this chat's pre-turn backups too
       sessions.delete(id);
       return;
     }
@@ -174,9 +176,14 @@ export function registerAgentChat(): void {
         return;
       }
       if (text === "/clear") {
+        // Resolve the project path before wiping: a persisted chat knows it from its index entry; a
+        // brand-new chat (no turns yet) falls back to the currently-open AE project.
+        const conv = getConversation(id);
+        const projectPath = conv ? conv.projectPath : await resolveProjectPath();
         session.messages = [];
         session.lastContextTokens = 0;
         deleteConversation(id); // explicit wipe — drop the persisted transcript too (dev escape hatch)
+        deleteSessionBackups(projectPath, id); // and this chat's pre-turn backups
         emit({ type: "compaction", status: "done", reason: "cleared" });
         return;
       }

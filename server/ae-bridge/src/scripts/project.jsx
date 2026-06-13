@@ -60,8 +60,8 @@ function backupProject(args) {
         if (project.dirty) project.save();
 
         var src = project.file;                                   // File
-        var backupDir = new Folder(src.parent.fsName + "/.cubic-backups");
-        if (!backupDir.exists) backupDir.create();
+        var backupDir = _sessionBackupDir(src, args);             // .cubic-backups/<sessionId>/ — scoped per chat
+        if (!backupDir.exists) backupDir.create();                // creates the .cubic-backups parent too
 
         var base = src.name.replace(/\.aep$/i, "");
         var turnId = (args && args.turnId) ? args.turnId : String((new Date()).getTime());
@@ -70,8 +70,8 @@ function backupProject(args) {
             throw _err(ERROR_CODES.INTERNAL_ERROR, "Failed to copy project to backup path: " + backupFile.fsName);
         }
 
-        // Prune to the most recent N backups for this project (default 10). turnId is a
-        // fixed-width ms timestamp, so a name sort is also a chronological sort.
+        // Prune to the most recent N backups for THIS chat (default 10) — the folder is already
+        // session-scoped. turnId is a fixed-width ms timestamp, so a name sort is also chronological.
         var keep = (args && args.keep) ? parseInt(args.keep, 10) : 10;
         var prefix = base + ".";
         var backups = backupDir.getFiles(function (f) {
@@ -132,21 +132,20 @@ function restoreProject(args) {
 
         var working = project.file;                               // File at the real working path
         var base = working.name.replace(/\.aep$/i, "");
-        var backupDir = new Folder(working.parent.fsName + "/.cubic-backups");
+        var backupDir = _sessionBackupDir(working, args);         // scope undo to THIS chat's backups only
 
         var backupFile = null;
         var prune = [];                                           // backups newer than the target (no-args undo only)
         if (args && args.backupPath) {
             backupFile = new File(args.backupPath);
         } else {
-            if (!backupDir.exists) {
-                throw _err(ERROR_CODES.INVALID_ARGS, "No backups found for this project yet.");
-            }
-            // turnId is a fixed-width ms timestamp, so a name sort is also a chronological sort.
+            // turnId is a fixed-width ms timestamp, so a name sort is also a chronological sort. A
+            // missing session folder = no backups for this chat → empty list (no-args undo then returns
+            // the "nothing left to undo" noop below; an explicit turnId throws not-found).
             var prefix = base + ".";
-            var backups = backupDir.getFiles(function (f) {
+            var backups = backupDir.exists ? backupDir.getFiles(function (f) {
                 return (f instanceof File) && f.name.indexOf(prefix) === 0 && /\.aep$/i.test(f.name);
-            });
+            }) : [];
             backups.sort(function (a, b) { return a.name < b.name ? 1 : (a.name > b.name ? -1 : 0); });
             if (args && args.turnId) {
                 var needle = "." + args.turnId + ".aep";

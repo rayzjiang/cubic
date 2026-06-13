@@ -113,8 +113,13 @@ async function runOnce(command: string, args: Record<string, unknown>): Promise<
  * metadata. Retries once on a transient error code (e.g. RENDER_FAILED). Invalidates
  * the session cache after any mutating command so the next turn re-reads live state.
  */
-export async function executeTool(tool: ToolUse): Promise<ToolExecution> {
+export async function executeTool(tool: ToolUse, sessionId?: string): Promise<ToolExecution> {
   const { command, args } = toCommandCall(tool);
+
+  // restoreProject ("undo that") must be scoped to the current chat's backup folder. The model
+  // can't know the session id, so the server injects it here — overriding any value the model
+  // guessed (it has no business choosing the session).
+  if (command === 'restoreProject' && sessionId) args.sessionId = sessionId;
 
   let outcome = await runOnce(command, args);
   let retried = false;

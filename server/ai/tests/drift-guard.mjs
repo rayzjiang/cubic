@@ -33,7 +33,7 @@ const AE_BRIDGE_SRC = join(REPO, 'server', 'ae-bridge', 'src');
 const SCRIPTS_DIR = join(AE_BRIDGE_SRC, 'scripts');
 
 // Shared resolver helpers — params they read are targeting/global, exempt below.
-const HELPER_FNS = ['_resolveComp', '_resolveCompAndLayer', '_resolveAnimProp', '_resolveMarkerProp', '_findMarkerKey'];
+const HELPER_FNS = ['_resolveComp', '_resolveCompAndLayer', '_resolveAnimProp', '_resolveMarkerProp', '_findMarkerKey', '_sessionBackupDir'];
 // createLayer dispatches by args.type to these sub-handlers; their reads count as createLayer's.
 const SCAN_TARGETS = {
   createLayer: ['createLayer', 'createSolidLayer', 'createTextLayer', 'createShapeLayer', 'createCamera', 'createLightLayer', 'createNullLayer'],
