@@ -57,6 +57,7 @@
 - [ ] **Update feed on Cloudflare R2** — release script uploads signed artifacts + `latest.yml`; electron-updater generic/S3 provider points at it.
 - [ ] **Signed updates** — updates use the §E signing identity so they install without re-triggering Gatekeeper.
 - [ ] **Update UX** — download in background → "restart to update" prompt. Consumer-friendly, non-blocking.
+- [ ] make sure that auto updates are seamless (users only interact w the electron ui, dont touch the ae panel or reload that panel at all ideally)
 - [ ] _(optional)_ **Staged rollout / beta channel** — `electron-builder` percentage rollout + `latest`/`beta` channels. Nice-to-have, not a launch blocker.
 
 ## §G. Launch gates (last checks before shipping to a paying stranger)
