@@ -105,6 +105,16 @@
 
 ---
 
+## Standalone architecture / hardening tasks (NOT worktrees — do each on its own)
+
+> Mirrored here so they're not forgotten; full detail lives in the phase files. These are deliberately **not** parallelized into the worktree waves above.
+
+- [ ] **#1 — Authenticate the local WebSocket** (pre-ship security). The backend WS on `127.0.0.1:17923` has no auth → any local process (or a localhost-reaching webpage) can drive the user's AE. Add a per-launch session token (minted by the backend, handed to the renderer via the `getBackendPort()` IPC + to the AE panel on connect; reject sockets without it). Detail → **`TODO-phase5.md` §??**.
+- [ ] **#2 — Dynamic backend port** (connection robustness). Replace the fixed `17923` with an OS-assigned free port (`bind 0`) so a port conflict can't make startup fatal on a stranger's machine. The real fix behind §B's "port-in-use" state; unify panel + `ai/bridge/client.ts` discovery on the chosen port. Detail → **`TODO-phase4.md` §F**.
+- [ ] **#3 — Brain → bridge direct in-process call** (cleanup, post-mvp). The agent loops back to its own process over a WebSocket; replace with a direct call (brain only). Detail in the post-mvp section below.
+
+---
+
 **6/9/26: eventually shift the stuff below to a separate todo for post mvp stuff (maybe call it phase 6?)
 
 # postmvp
@@ -133,6 +143,14 @@ True token-level streaming + tool events
   stream() to pass tools + accumulate tool_use JSON deltas + reconcile with
   the loop — meaningfully more code and edge cases. Polish you can add
   post-MVP without changing the loop's shape.
+
+# post mvp (architecture cleanup — not user-facing)
+Brain talks to its own process over a loopback WebSocket. The Claude agent lives **inside** the
+backend but reaches the bridge by opening a WS back to localhost (`ai/src/bridge/client.ts` →
+`wsBridge.ts`) — serializing JSON + a network hop to call code in the same process, plus a failure
+mode where the brain can "disconnect" from itself. Leftover from the MCP-first design. Replace the
+loopback with a direct in-process call (same `sendCommand` interface, no socket) for the brain only;
+the AE panel + UI stay real WS clients. Lower priority — works fine, just inelegant + adds latency.
 
 # post mvp (hot swappable models)
 Do later. Design for it now by keeping all LLM calls behind a single wrapper (one file to change).

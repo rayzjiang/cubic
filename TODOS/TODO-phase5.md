@@ -52,6 +52,12 @@
 - [ ] **Code-sign + notarize** (Apple Developer account from §B). **WHY mandatory:** un-notarized = macOS Gatekeeper "unidentified developer" block → non-technical user assumes virus and quits. Notarized = double-click → it just opens.
 - [ ] **DMG/installer** — clean drag-to-Applications install; no Terminal, no settings-digging.
 
+## §???. IMPORTANT!! Local transport security — authenticate the WebSocket
+> **Standalone** The backend's WS on `127.0.0.1:17923` currently has **no auth** — any local process (or a malicious localhost-reaching webpage) can connect and drive the user's After Effects. Close this before shipping to strangers; cheap now, painful to retrofit once users exist.
+- [ ] **Per-launch session token** — backend mints a random secret at startup; main passes it to the renderer alongside the port (extend the `getBackendPort()` IPC), and the AE panel receives it at install/connect time.
+- [ ] **Reject unauthenticated sockets** — `wsBridge.ts` requires the token in the `hello`/first frame; drop any connection that doesn't present it. Applies to all three client types (UI, brain loopback, AE panel).
+- [ ] **(optional) bind explicitly to `127.0.0.1`** (never `0.0.0.0`) so the port is never reachable off-machine.
+
 ## §F. Auto-update — electron-updater + Cloudflare R2
 > Now that the UI is Electron, push updates via `electron-updater` pulling from an R2 feed. **WHY R2:** the commercial-standard "object storage + CDN" pattern (what S3 is used for), in Cloudflare's S3-compatible flavor — free egress, private (no public binary exposure), consolidated with the proxy.
 - [ ] **Update feed on Cloudflare R2** — release script uploads signed artifacts + `latest.yml`; electron-updater generic/S3 provider points at it.

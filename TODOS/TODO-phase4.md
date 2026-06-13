@@ -69,6 +69,13 @@
 - [x] **Agent-driven restore** — "Cubic, undo that / revert the last change" → the model maps to the restore handler above.
 - [x] **⚠️ GRILL FIRST — pre-turn snapshot save popup.** `backupProject` (`project.jsx:58`) calls `project.save()` before copying the `.aep`, which fires AE's native save-progress window **every turn** (a ~0.5s centered loading popup — confirmed annoying in live use). AE has no silent-save flag, so the lever is whether/how often we `save()`. Options to grill: (a) drop the pre-copy `save()` and copy the on-disk `.aep` as-is — no popup, but the backup misses *unsaved manual edits* since the last Cmd+S; (b) save only when the project is dirty / once per session; (c) keep as-is (correctness over annoyance). Touches `project.jsx` (+ maybe `snapshot.ts`) — both ④'s files, so it belongs here. _Modifies the existing Phase-2 snapshot._
 
+## §F. Connection robustness — dynamic backend port (standalone)
+> **Standalone task — do on its own, not folded into §B.** Today the bridge binds a fixed `17923` (scan → `17927`) and the panel reads `~/.ae-mcp-bridge/port` (§A). A hard port conflict (another app, a second Cubic, a stale backend) can still make startup fatal on a stranger's machine. **This is the real fix behind §B's "port-in-use" connection state** — solve the cause, not just surface the message. Pre-ship-quality.
+- [ ] **Bind to port `0`** (OS picks any free port); `wsBridge.ts` reports the actual chosen port back up to `serve.ts`. Drop the fixed `17923`/fallback-scan assumption.
+- [ ] **Renderer:** main already owns the port (§0) → pass the *resolved* port through the existing `getBackendPort()` IPC (no shape change).
+- [ ] **Unify discovery:** the AE panel + `ai/src/bridge/client.ts` read the chosen port from the `~/.cubic` port file (already written/scanned) instead of hardcoding / scanning `17923–17927`.
+- [ ] **Kill any stale backend on launch** (single-instance) so an orphaned process can't hold the port.
+
 ---
 
 ## Already done (Phase 2 backend — no Phase 4 work)
