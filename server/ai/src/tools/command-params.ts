@@ -241,8 +241,8 @@ export const COMMAND_PARAMS = {
   getLayerEffects: { domain: 'Effects', summary: 'List effects on a layer.', params: {} },
   applyEffect: {
     domain: 'Effects',
-    summary: 'Apply an effect (effectName OR effectMatchName OR presetPath).',
-    params: { effectName: 'string (display name)', effectMatchName: 'string (AE matchName, e.g. "ADBE Ramp")', presetPath: 'string (.ffx path)', effectSettings: 'object {propertyName: value}' },
+    summary: 'Apply an effect. Prefer a known effectName (resolves to the right AE matchName for you; don\'t guess matchNames): gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, vibrance. Power use: pass effectMatchName (raw AE matchName) or presetPath. Returns a "warning" if some effectSettings didn\'t apply.',
+    params: { effectName: 'string (known effect or AE display name)', effectMatchName: 'string (raw AE matchName, e.g. "ADBE Ramp")', presetPath: 'string (.ffx path)', effectSettings: 'object {propertyName: value}' },
   },
   applyEffectTemplate: {
     domain: 'Effects',
@@ -257,6 +257,10 @@ export const COMMAND_PARAMS = {
     required: ['propertyName', 'value'],
   },
   deleteEffect: { domain: 'Effects', summary: 'Delete an effect (effectIndex or effectName).', params: { effectIndex: 'int (1-based)', effectName: 'string' } },
+  // internal: ground-truth probe — asks AE for the real matchName + property names of each candidate
+  // so tests/fixtures/ae-matchnames.json (and the static matchname guard) stay sourced from real AE,
+  // not memory. Hidden from the model's catalog; run manually to (re)generate the fixture.
+  introspectMatchNames: { domain: 'Effects', summary: 'Probe AE for the real matchName + properties of candidate effect matchNames.', params: { matchNames: 'array of string (defaults to the effect dictionary)' }, internal: true },
 
   // ── Text ──────────────────────────────────────────────────────────────────
   addTextAnimator: {

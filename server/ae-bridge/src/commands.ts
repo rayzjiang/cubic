@@ -75,6 +75,7 @@ export const COMMANDS: readonly string[] = [
   "applyEffectTemplate",
   "setEffectProperty",
   "deleteEffect",
+  "introspectMatchNames",
   // Text
   "addTextAnimator",
   "setTextAnimatorProperty",

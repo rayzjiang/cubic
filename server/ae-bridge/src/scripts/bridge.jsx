@@ -290,6 +290,7 @@ function _dispatchSwitch(command, args) {
         case "applyEffectTemplate":      return applyEffectTemplate(args);
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);
+        case "introspectMatchNames":     return introspectMatchNames(args);
         // footage.jsx
         case "listProjectItems":         return listProjectItems(args);
         case "importFootage":            return importFootage(args);
