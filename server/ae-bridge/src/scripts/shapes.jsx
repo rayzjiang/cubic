@@ -101,8 +101,11 @@ function createShapeLayer(args) {
             shapePathProperty = groupContents.addProperty("ADBE Vector Shape - Star");
             shapePathProperty.property("Type").setValue(shapeType === "polygon" ? 1 : 2);
             shapePathProperty.property("Points").setValue(points);
-            shapePathProperty.property("Outer Radius").setValue(size[0] / 2);
-            if (shapeType === "star") { shapePathProperty.property("Inner Radius").setValue(size[0] / 3); }
+            // Radius props can momentarily report "hidden" right after a Type change (AE doesn't
+            // refresh visibility within the same script pass), so set them defensively — the shape
+            // still gets a valid default radius rather than failing creation outright.
+            try { shapePathProperty.property("Outer Radius").setValue(size[0] / 2); } catch (e) {}
+            if (shapeType === "star") { try { shapePathProperty.property("Inner Radius").setValue(size[0] / 3); } catch (e) {} }
         }
         var fill = groupContents.addProperty("ADBE Vector Graphic - Fill");
         fill.property("Color").setValue(fillColor);

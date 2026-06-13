@@ -245,7 +245,7 @@ export async function run(ctx, opts) {
   });
   for (const mode of MASK_MODES) {
     await test(`setLayerMask maskMode ${mode} — reads back as ${mode}`, async () => {
-      const r = await send('setLayerMask', { compName: COMP_NAME, layerIndex: 1, maskIndex: 1, maskMode: mode });
+      const r = await send('setLayerMask', { compName: COMP_NAME, layerIndex: 1, maskIndex: 1, maskPath: [[100, 100], [300, 100], [300, 300], [100, 300]], maskMode: mode });
       assertNoError(r);
       const rb = await send('getLayerMasks', { compName: COMP_NAME, layerIndex: 1 });
       assertNoError(rb);
