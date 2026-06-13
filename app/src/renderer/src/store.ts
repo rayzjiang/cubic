@@ -24,7 +24,7 @@ function mapError(raw: string): string {
 // ── Motion-themed progress words, cycled during reasoning gaps (§C "spinner + progress words") ──
 const PROGRESS_WORDS = [
   'Animating…', 'Keyframing…', 'Easing it in…', 'Compositing…', 'Tweening…',
-  'Adding some bounce…', 'Nudging pixels…', 'Sequencing…', 'Smoothing motion…', 'Polishing…',
+  'Adding some bounce…', 'Nudging pixels…', 'Sequencing…', 'Smoothing…', 'Polishing…', 'Juicing…',
 ]
 function pickWord(): string {
   return PROGRESS_WORDS[Math.floor(Math.random() * PROGRESS_WORDS.length)]

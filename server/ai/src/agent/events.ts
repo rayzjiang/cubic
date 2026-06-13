@@ -155,4 +155,191 @@ export function describeToolNoop(name: string, input: unknown): string {
   return 'No change';
 }
 
+// ─── Result-based labels (the specific ones) ───────────────────────────────────
+// Every mutating handler echoes the RESOLVED name/value in its success payload (e.g. deleteLayer →
+// { deleted: { name } }, setLayerProperty → { property: { name, value } }) — even when the model
+// targeted by index. Reading those makes rows specific ("Deleted layer \"BG\"", "Set Opacity to 50%")
+// instead of generic. describeToolResult() is the source of truth for a SUCCEEDED call's final label;
+// describeToolCall (input-based) stays the instant/running label and the fallback.
+
+/** Walk a nested path on an unknown object; returns undefined if any hop is missing. */
+function pick(obj: unknown, ...path: string[]): unknown {
+  let cur: unknown = obj;
+  for (const k of path) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[k];
+  }
+  return cur;
+}
+
+/** Non-empty string or undefined (treats null/empty as absent). */
+function s(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  const t = String(v);
+  return t.length ? t : undefined;
+}
+
+/** Element count of an array-ish value. */
+function len(v: unknown): number {
+  return Array.isArray(v) ? v.length : 0;
+}
+
+const q = (v: unknown): string => `"${String(v)}"`;
+
+/** Compact number: integers as-is, else rounded to 2 dp. */
+function num(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
+}
+
+/** Unit suffix inferred from an AE property's display name (Opacity → %, Rotation → °). */
+function unitFor(prop: string): string {
+  const p = prop.toLowerCase();
+  if (p.includes('opacity')) return '%';
+  if (p.includes('rotation') || p.includes('skew') || p.includes('angle')) return '°';
+  return '';
+}
+
+/**
+ * Friendly trailing clause for a property value — " to 50%", " on"/" off" — but ONLY for values that
+ * read cleanly for a non-technical editor. Vectors/colors/objects/long strings return '' so the label
+ * stays name-only ("Set Position", not "Set Position to [960,540,0]").
+ */
+function formatValue(prop: string, value: unknown): string {
+  if (typeof value === 'number') return ` to ${num(value)}${unitFor(prop)}`;
+  if (typeof value === 'boolean') return value ? ' on' : ' off';
+  if (typeof value === 'string' && value.length > 0 && value.length <= 30) return ` to ${value}`;
+  return '';
+}
+
+/** "Set <prop>[ to X]" from a result's { property: { name, value } }. */
+function setPropLabel(r: Params, prefix = 'Set'): string | undefined {
+  const prop = s(pick(r, 'property', 'name'));
+  if (!prop) return undefined;
+  return `${prefix} ${prop}${formatValue(prop, pick(r, 'property', 'value'))}`;
+}
+
+const RESULT_LABELS: Record<string, (r: Params) => string | undefined> = {
+  // Layers
+  createLayer: (r) => {
+    const nm = s(pick(r, 'layer', 'name'));
+    if (!nm) return undefined;
+    const type = s(pick(r, 'layer', 'type'));
+    return `Added ${type ? `${type} ` : ''}layer ${q(nm)}`;
+  },
+  deleteLayer: (r) => { const nm = s(pick(r, 'deleted', 'name')); return nm ? `Deleted layer ${q(nm)}` : undefined; },
+  duplicateLayer: (r) => { const nm = s(pick(r, 'duplicate', 'name')); return nm ? `Duplicated layer ${q(nm)}` : undefined; },
+  setLayerProperties: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Adjusted layer ${q(nm)}` : undefined; },
+  setLayerProperty: (r) => setPropLabel(r),
+  batchSetLayerProperties: (r) => { const n = len(r.results); return n ? `Adjusted ${n} layer${n === 1 ? '' : 's'}` : undefined; },
+  setLayerParent: (r) => {
+    const nm = s(pick(r, 'layer', 'name'));
+    if (!nm) return undefined;
+    const parent = s(pick(r, 'layer', 'parent', 'name'));
+    return parent ? `Parented ${q(nm)} to ${q(parent)}` : `Un-parented ${q(nm)}`;
+  },
+  moveLayer: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Reordered ${q(nm)}` : undefined; },
+  alignLayers: (r) => { const n = len(r.modifiedLayers); return n ? `Aligned ${n} layer${n === 1 ? '' : 's'}` : undefined; },
+  sequenceLayers: (r) => { const n = len(r.modifiedLayers); return n ? `Sequenced ${n} layer${n === 1 ? '' : 's'}` : undefined; },
+  setAnchorPoint: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Set anchor point on ${q(nm)}` : undefined; },
+  centerAnchorPoint: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Centered anchor point on ${q(nm)}` : undefined; },
+  splitLayer: (r) => { const nm = s(pick(r, 'original', 'name')); return nm ? `Split ${q(nm)}` : undefined; },
+  mergeLayer: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Merged ${q(nm)}` : undefined; },
+  trimLayer: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Trimmed ${q(nm)}` : undefined; },
+  setTimeRemapEnabled: (r) => {
+    const nm = s(pick(r, 'layer', 'name'));
+    if (!nm) return undefined;
+    return `${pick(r, 'timeRemapEnabled') ? 'Enabled' : 'Disabled'} time remap on ${q(nm)}`;
+  },
+  precompose: (r) => { const nm = s(pick(r, 'newComp', 'name')); return nm ? `Pre-composed into ${q(nm)}` : undefined; },
+  decomposeLayer: (r) => { const nm = s(pick(r, 'removedPrecomp', 'name')); return nm ? `Un-nested ${q(nm)}` : undefined; },
+  setTrackMatte: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Set track matte on ${q(nm)}` : undefined; },
+  setSelectedLayers: (r) => {
+    const n = len(r.selectedLayers);
+    return n ? `Selected ${n} layer${n === 1 ? '' : 's'}` : undefined;
+  },
+  distributeLayers3D: (r) => { const n = len(r.positionedLayers); return n ? `Arranged ${n} layers in 3D` : undefined; },
+  // Compositions
+  createComposition: (r) => { const nm = s(pick(r, 'composition', 'name')); return nm ? `Created composition ${q(nm)}` : undefined; },
+  setCompositionProperties: (r) => { const nm = s(pick(r, 'composition', 'name')); return nm ? `Adjusted composition ${q(nm)}` : undefined; },
+  deleteComposition: (r) => { const nm = s(pick(r, 'deleted', 'name')); return nm ? `Deleted composition ${q(nm)}` : undefined; },
+  duplicateComposition: (r) => {
+    const nm = s(pick(r, 'duplicate', 'name')) ?? s(pick(r, 'rootDuplicate', 'name'));
+    return nm ? `Duplicated composition ${q(nm)}` : undefined;
+  },
+  setCurrentTime: (r) => {
+    const t = pick(r, 'timeInSeconds');
+    return typeof t === 'number' ? `Moved playhead to ${num(t)}s` : undefined;
+  },
+  // Keyframes / expressions
+  setLayerKeyframe: (r) => { const p = s(pick(r, 'property', 'name')); return p ? `Keyframed ${p}` : undefined; },
+  setKeyframeEasing: (r) => { const p = s(pick(r, 'property', 'name')); return p ? `Eased ${p} keyframes` : undefined; },
+  setKeyframeSpatial: (r) => { const p = s(pick(r, 'property', 'name')); return p ? `Adjusted ${p} motion path` : undefined; },
+  removePropertyKeyframes: (r) => { const p = s(pick(r, 'property', 'name')); return p ? `Cleared ${p} keyframes` : undefined; },
+  setLayerExpression: (r) => {
+    const preset = s(pick(r, 'preset'));
+    if (preset) return `Added ${preset.toLowerCase()} expression`;
+    const p = s(pick(r, 'property', 'name'));
+    return p ? `Set ${p} expression` : undefined;
+  },
+  // Masks
+  setLayerMask: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Set mask on ${q(nm)}` : undefined; },
+  deleteLayerMask: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Deleted mask from ${q(nm)}` : undefined; },
+  // Effects
+  applyEffect: (r) => {
+    const eff = s(pick(r, 'effect', 'name'));
+    if (!eff) return undefined;
+    const nm = s(pick(r, 'layer', 'name'));
+    return nm ? `Applied ${eff} to ${q(nm)}` : `Applied ${eff}`;
+  },
+  applyEffectTemplate: (r) => {
+    const eff = s(pick(r, 'appliedEffects', '0', 'name'));
+    if (!eff) return undefined;
+    const nm = s(pick(r, 'layer', 'name'));
+    return nm ? `Applied ${eff} to ${q(nm)}` : `Applied ${eff}`;
+  },
+  setEffectProperty: (r) => {
+    const eff = s(pick(r, 'effect', 'name'));
+    const prop = s(pick(r, 'property', 'name'));
+    if (!prop) return undefined;
+    return `Set ${eff ? `${eff} ` : ''}${prop}${formatValue(prop, pick(r, 'property', 'value'))}`;
+  },
+  deleteEffect: (r) => {
+    const eff = s(pick(r, 'deleted', 'name'));
+    if (!eff) return undefined;
+    const nm = s(pick(r, 'layer', 'name'));
+    return nm ? `Removed ${eff} from ${q(nm)}` : `Removed ${eff}`;
+  },
+  // Text
+  addTextAnimator: (r) => { const nm = s(pick(r, 'animator', 'name')); return nm ? `Added text animator ${q(nm)}` : undefined; },
+  setTextAnimatorProperty: (r) => setPropLabel(r),
+  setTextAnimatorRangeSelector: (r) => { const nm = s(pick(r, 'animator', 'name')); return nm ? `Adjusted range selector on ${q(nm)}` : undefined; },
+  explodeTextLayer: (r) => { const n = len(r.createdLayers); return n ? `Split text into ${n} layers` : undefined; },
+  // Shapes
+  addShapeOperator: (r) => { const nm = s(pick(r, 'operator', 'name')) ?? s(pick(r, 'operator', 'type')); return nm ? `Added ${nm} to shape` : undefined; },
+  setShapeOperatorProperty: (r) => setPropLabel(r),
+  convertToShape: (r) => { const nm = s(pick(r, 'shapeLayer', 'name')); return nm ? `Converted ${q(nm)} to shapes` : undefined; },
+  // Markers
+  addMarker: (r) => { const c = s(pick(r, 'marker', 'comment')); return c ? `Added marker ${q(c)}` : 'Added a marker'; },
+  updateMarker: () => 'Updated a marker',
+  removeMarker: () => 'Removed a marker',
+  // Footage / project
+  importFootage: (r) => { const nm = s(pick(r, 'item', 'name')); return nm ? `Imported ${nm}` : undefined; },
+  addFootageToComp: (r) => { const nm = s(pick(r, 'layer', 'name')); return nm ? `Added ${q(nm)} to the comp` : undefined; },
+  importAssetToComp: (r) => { const nm = s(pick(r, 'item', 'name')); return nm ? `Imported ${nm}` : undefined; },
+  deleteProjectItem: (r) => { const nm = s(pick(r, 'deleted', 'name')); return nm ? `Deleted ${q(nm)}` : undefined; },
+  deleteUnusedSolids: (r) => { const n = pick(r, 'count'); return typeof n === 'number' ? `Removed ${n} unused solid${n === 1 ? '' : 's'}` : undefined; },
+};
+
+/**
+ * Finalized label for a SUCCEEDED tool call, built from the handler's result payload. Specific where
+ * the result carries a resolved name/value; otherwise falls back to describeToolCall (input-based) —
+ * so failures, batch (groupLabel), and the vague long tail still read cleanly and never show raw JSON.
+ */
+export function describeToolResult(name: string, input: unknown, result: unknown): string {
+  const r = (result ?? {}) as Params;
+  // createComposition/batch are typed tools (name is the command); everything else is a runScript.
+  const script = name === 'runScript' ? String((input as Params)?.script ?? '') : name;
+  return RESULT_LABELS[script]?.(r) || describeToolCall(name, input);
+}
+
 export type { ToolUse };

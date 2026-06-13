@@ -4,7 +4,7 @@ import { buildContext as defaultBuildContext } from '../context/buildContext.js'
 import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSystemPrompt.js';
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
-import { describeToolCall, describeToolNoop, type EmitFn } from './events.js';
+import { describeToolCall, describeToolNoop, describeToolResult, type EmitFn } from './events.js';
 import { compactSession, contextTokensOf, COMPACT_THRESHOLD, HARD_CEILING } from './compaction.js';
 import type { Session } from './session.js';
 import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput, Message } from '../llm/types.js';
@@ -37,6 +37,12 @@ export interface AgentDeps {
    *  conversation append-only. Deliberately NOT fired by compaction (which rewrites `messages` in
    *  place for the model context only) so persisted/display history keeps the full conversation. */
   onCommit?: (msg: Message) => void;
+}
+
+/** Parse a tool_result's JSON content into the handler's return object (for result-based labeling);
+ *  undefined if it isn't JSON. */
+function parseResult(content: string): unknown {
+  try { return JSON.parse(content); } catch { return undefined; }
 }
 
 /** Reconstructs the assistant message (narration text + tool_use blocks) for history. */
@@ -174,8 +180,14 @@ export async function runAgentTurn(
         emit({
           type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried,
           noop: exec.noop,
-          // On a noop, swap the optimistic tool_start label for the outcome-accurate one.
-          label: exec.noop ? describeToolNoop(tool.name, tool.input) : undefined,
+          // Swap the optimistic tool_start label for the outcome-accurate one: "Nothing to undo" on a
+          // noop; the specific, result-derived label on success ("Deleted layer \"BG\""). On failure,
+          // leave it undefined so the input-based tool_start label stands.
+          label: exec.noop
+            ? describeToolNoop(tool.name, tool.input)
+            : exec.ok
+              ? describeToolResult(tool.name, tool.input, parseResult(exec.block.content))
+              : undefined,
         });
         toolResults.push(exec.block);
       }

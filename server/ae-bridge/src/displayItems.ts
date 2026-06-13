@@ -1,4 +1,4 @@
-import { describeToolCall, describeToolNoop, type Message, type ContentBlock } from "cubic-ai";
+import { describeToolCall, describeToolNoop, describeToolResult, type Message, type ContentBlock } from "cubic-ai";
 
 /**
  * Display-model contract shared with the renderer (mirrored in app/src/renderer/src/protocol.ts —
@@ -14,23 +14,28 @@ export type DisplayItem =
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; label: string; status: ToolStatus };
 
+type ToolOutcome = { status: "ok" | "fail" | "noop"; result?: unknown };
+
 /**
  * A committed turn's tool outcome, from its matching tool_result: "fail" iff is_error; otherwise
  * "noop" iff the result JSON carried status:"noop" (changed nothing); else "ok". Absent → "ok".
+ * Also keeps the parsed result JSON so the row can be labeled from the handler's resolved
+ * names/values (describeToolResult) exactly like the live path does.
  */
-function outcomeById(messages: Message[]): Map<string, "ok" | "fail" | "noop"> {
-  const map = new Map<string, "ok" | "fail" | "noop">();
+function outcomeById(messages: Message[]): Map<string, ToolOutcome> {
+  const map = new Map<string, ToolOutcome>();
   for (const m of messages) {
     if (!Array.isArray(m.content)) continue;
     for (const block of m.content) {
       if (block.type !== "tool_result") continue;
-      if (block.is_error === true) { map.set(block.tool_use_id, "fail"); continue; }
-      let status: string | undefined;
+      if (block.is_error === true) { map.set(block.tool_use_id, { status: "fail" }); continue; }
+      let result: unknown;
       try {
         const raw = typeof block.content === "string" ? block.content : "";
-        status = raw ? (JSON.parse(raw) as { status?: string }).status : undefined;
-      } catch { /* non-JSON content → treat as ok */ }
-      map.set(block.tool_use_id, status === "noop" ? "noop" : "ok");
+        result = raw ? JSON.parse(raw) : undefined;
+      } catch { /* non-JSON content → treat as ok with no result */ }
+      const status = (result as { status?: string } | undefined)?.status;
+      map.set(block.tool_use_id, { status: status === "noop" ? "noop" : "ok", result });
     }
   }
   return map;
@@ -63,13 +68,14 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
         const text = block.text.trim();
         if (text) items.push({ kind: m.role === "user" ? "user" : "assistant", text });
       } else if (block.type === "tool_use") {
-        const outcome = outcomes.get(block.id) ?? "ok";
-        items.push({
-          kind: "tool",
-          id: block.id,
-          label: outcome === "noop" ? describeToolNoop(block.name, block.input) : describeToolCall(block.name, block.input),
-          status: outcome,
-        });
+        const outcome = outcomes.get(block.id) ?? { status: "ok" as const };
+        const label =
+          outcome.status === "noop"
+            ? describeToolNoop(block.name, block.input)
+            : outcome.status === "ok"
+              ? describeToolResult(block.name, block.input, outcome.result)
+              : describeToolCall(block.name, block.input); // fail → input-based label
+        items.push({ kind: "tool", id: block.id, label, status: outcome.status });
       }
       // tool_result blocks are folded into the matching tool_use's status above — not rendered.
     }
