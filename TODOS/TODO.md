@@ -57,6 +57,18 @@
   Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
   options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo
   in `.cubic-backups/`. Ship keep-10 now.
+- [x] **FIXED (6/13/26) — tool-row "noop" state.** Row used to say "Restored a backup" (success check)
+  even when nothing was undone (label computed from intent at `tool_start`; `tool_end` only had `ok`/`fail`,
+  so a `status:"noop"` result rendered as success). Added a neutral `noop` outcome end-to-end: `executeTool`
+  detects `status:"noop"` (skips cache invalidation) -> `tool_end.noop` + label override; `displayItems`
+  reads it from the persisted `tool_result` (history); `ToolActionRow`/`store.ts` render it muted (dash
+  icon, no green check, "Nothing to undo"). Mechanism is generic; `restoreProject` is wired as the only
+  current producer. Files: `ai/src/agent/{events,loop,executeTool}.ts`, `ae-bridge/src/displayItems.ts`,
+  `app/src/renderer/src/{protocol,store}.ts` + `components/ToolActionRow.tsx`.
+- [ ] **LATER (separate chat) — audit other handlers for real noop conditions** (e.g. `setLayerProperty`
+  to an identical value, `deleteEffect` with no match, `removePropertyKeyframes` when none exist) and have
+  them return `status:"noop"` -- each then gets the muted row for free. Verify noop renders correctly
+  across the different tool rows.
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
