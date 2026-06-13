@@ -78,8 +78,11 @@ animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, se
                      LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing,
                      applyMotionRecipe (recipe: popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle; layerIndices[] + stagger)
 masks.jsx         ← getLayerMasks, setLayerMask, deleteLayerMask
-effects.jsx       ← getLayerEffects, applyEffect (matchName|effectName|presetPath), applyEffectTemplate,
-                     setEffectProperty, deleteEffect
+effects.jsx       ← getLayerEffects, applyEffect (friendly effectName resolved via EFFECT_DICT — the
+                     single source of truth for matchNames + default settings; raw matchName/presetPath
+                     still work), applyEffectTemplate, setEffectProperty, deleteEffect,
+                     introspectMatchNames (internal/diagnostic — asks AE for real matchNames; feeds the
+                     ae-matchnames.json fixture + the test:matchnames CI guard)
 footage.jsx       ← listProjectItems, importFootage, addFootageToComp, importAssetToComp,
                      deleteProjectItem, deleteUnusedSolids
 markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker

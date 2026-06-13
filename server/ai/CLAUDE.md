@@ -82,6 +82,7 @@ The model drives AE through a small parameterized tool set, **not** one tool per
 - `npm test` — unit tests (vitest), no deps needed.
 - `npm run test:tools` — tool-use round-trip; needs `ANTHROPIC_API_KEY` only, no AE (uses Haiku 4.5, ~sub-cent/run).
 - `npm run test:drift` — **static** unified guard (builds first): asserts the `command-params.ts` registry matches `server/ae-bridge/commands.ts` (names) AND the `.jsx` handler `args.X` reads (params). No bridge/AE/Claude Code needed — runs in CI.
+- `npm run test:matchnames` — **static** guard (CI, no AE): asserts every hardcoded `"ADBE …"` matchName in the `.jsx` handlers is AE-verified (effects, via `server/ae-bridge/tests/fixtures/ae-matchnames.json`) or in the reviewed text/shape baseline. Catches a wrong matchName (the class that shipped the glow bug). Regenerate the fixture after an AE upgrade: `cd server/ae-bridge && node scripts/introspect-matchnames.mjs`.
 - `npm run test:live` / `npm run test:chat` — context + full LLM round-trip; need AE + MCP panel + `ANTHROPIC_API_KEY`.
 - `npm run test:agent` — **full agent loop** end-to-end (snapshot → context → chat → tools → loop); needs AE + panel + `ANTHROPIC_API_KEY`. ⚠️ mutates the project (creates a `__CUBIC_AGENT_TEST` comp — delete after).
 

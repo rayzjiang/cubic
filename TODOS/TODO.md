@@ -112,6 +112,7 @@
 - [ ] **#1 — Authenticate the local WebSocket** (pre-ship security). The backend WS on `127.0.0.1:17923` has no auth → any local process (or a localhost-reaching webpage) can drive the user's AE. Add a per-launch session token (minted by the backend, handed to the renderer via the `getBackendPort()` IPC + to the AE panel on connect; reject sockets without it). Detail → **`TODO-phase5.md` §??**.
 - [ ] **#2 — Dynamic backend port** (connection robustness). Replace the fixed `17923` with an OS-assigned free port (`bind 0`) so a port conflict can't make startup fatal on a stranger's machine. The real fix behind §B's "port-in-use" state; unify panel + `ai/bridge/client.ts` discovery on the chosen port. Detail → **`TODO-phase4.md` §F**.
 - [ ] **#3 — Brain → bridge direct in-process call** (cleanup, post-mvp). The agent loops back to its own process over a WebSocket; replace with a direct call (brain only). Detail in the post-mvp section below.
+- [ ] **#4 — Exhaustive test-truth pass** (post-mvp). The glow-class gaps are closed (every AE-string-backed enum variant is now applied + read back), but ~40% of the *other* integration tests still only assert no-error/shape, not read-back — so a silent no-op could still pass. Convert the remaining weak create/set tests to read state back, and AE-verify the two non-matchName risks: `convertToShape` English-only menu strings (i18n) + `layers.jsx` light-falloff numeric indices. Full detail in the post-mvp section below.
 
 ---
 
@@ -122,6 +123,22 @@ Resume cost of huge chats: on reopen we load full history; the first turn
  auto-compacts
  (≥90%) or hits the existing context_full CTA (≥97%) — same safety net §C
  renders. **A friendlier pre-warning is a later refinement, not built here.**
+
+# post mvp (test-truth — finish what the glow/effects audit started)
+Context: an effect shipped broken (wrong AE matchName) while all tests passed, because (a) the broken
+variant was never invoked and (b) tests asserted only "no error", not real read-back. Fixed for the
+glow class: effects now have an AE-sourced matchName fixture + CI guard, and every AE-string-backed
+enum variant (expression presets, motion recipes, easings, text-animator properties, blend modes,
+light types, alignments, mask modes, track mattes, polygon/star) is applied AND read back. That pass
+found + fixed 4 real bugs (glow matchName, brightness-contrast property, easeIn/easeOut, star shape).
+Remaining (the "exhaustive" tier, deferred):
+- Convert the ~40% of OTHER integration tests that still only assert no-error/shape into read-back
+  assertions (create* → get* confirms existence; set* → get* confirms the value actually changed).
+- AE-verify the two non-matchName risks the audit flagged: `convertToShape` uses English-only menu
+  strings (`findMenuCommandId` — breaks on localized AE), and `layers.jsx` light-falloff is a raw
+  numeric-index map ({none:0,smooth:1,inverseSquare:2}) never read back.
+- Regenerate `server/ae-bridge/tests/fixtures/ae-matchnames.json` (run `scripts/introspect-matchnames.mjs`)
+  whenever the AE version changes; extend the matchname guard's reviewed baseline if text/shape grows.
 
 # somewhat post mvp, maybe during (billing/usage limiting)
 - System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos

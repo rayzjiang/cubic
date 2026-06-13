@@ -252,7 +252,7 @@ Mask modes: `NONE`, `ADD`, `SUBTRACT`, `INTERSECT`, `LIGHTEN`, `DARKEN`, `DIFFER
 | Command | Description |
 |---|---|
 | `getLayerEffects({compName, layerIndex})` | All effects with matchName, name, enabled, properties + values. |
-| `applyEffect({compName, layerIndex, matchName? \| effectName? \| presetPath?, settings?})` | Apply effect by AE matchName, display name, or `.ffx` preset file. |
+| `applyEffect({compName, layerIndex, effectName? \| effectMatchName? \| presetPath?, effectSettings?})` | Apply an effect. Prefer a friendly `effectName` (glow, drop-shadow, …) — resolved to the real matchName via `EFFECT_DICT`; raw `effectMatchName` or a `.ffx` `presetPath` also work. A bad name returns a self-healable error listing known effects; a partial apply returns a `warning` (effect added, but a setting didn't stick). |
 | `applyEffectTemplate({compName, layerIndex, templateName, customSettings?})` | Apply a built-in template bundle. |
 | `setEffectProperty({compName, layerIndex, effectIndex, propertyName, value})` | Update one property. Returns `previousValue`. |
 | `deleteEffect({compName, layerIndex, effectIndex})` | Remove. |
@@ -261,14 +261,19 @@ Mask modes: `NONE`, `ADD`, `SUBTRACT`, `INTERSECT`, `LIGHTEN`, `DARKEN`, `DIFFER
 `gaussian-blur`, `directional-blur`, `color-balance`, `brightness-contrast`, `curves`, `glow`, `drop-shadow`, `cinematic-look`, `text-pop`
 
 ### Common matchNames
-| Effect | matchName |
+Prefer a friendly `effectName` (gaussian-blur, glow, drop-shadow, …) — `applyEffect` resolves it to the
+right matchName via the curated `EFFECT_DICT` in `effects.jsx`, so you never guess. matchNames below are
+AE-verified (see `tests/fixtures/ae-matchnames.json`, generated from real AE); note they often differ
+from the display name (the trap that shipped the glow bug).
+| Effect (display name) | matchName |
 |---|---|
 | Gaussian Blur | `ADBE Gaussian Blur 2` |
-| Directional Blur | `ADBE Directional Blur` |
+| Directional Blur | `ADBE Motion Blur` |
 | Brightness & Contrast | `ADBE Brightness & Contrast 2` |
 | Curves | `ADBE CurvesCustom` |
-| Glow | `ADBE Glow` |
+| Glow | `ADBE Glo2` |
 | Drop Shadow | `ADBE Drop Shadow` |
+| Color Balance (HLS) | `ADBE Color Balance (HLS)` |
 | Hue/Saturation | `ADBE HUE SATURATION` |
 | Vibrance | `ADBE Vibrance` |
 | Gradient Ramp | `ADBE Ramp` |

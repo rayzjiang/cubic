@@ -247,11 +247,13 @@ Call getSelectedLayers at the start of each interactive turn — it returns the 
 gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, cinematic-look, text-pop
 
 ## Common Effect Match Names
+Prefer a friendly effectName (glow, drop-shadow, gaussian-blur, …) — applyEffect resolves it to the
+right matchName for you. These are AE-verified; note matchName often differs from the display name.
 - Gaussian Blur: "ADBE Gaussian Blur 2"
-- Directional Blur: "ADBE Directional Blur"
+- Directional Blur: "ADBE Motion Blur"
 - Brightness & Contrast: "ADBE Brightness & Contrast 2"
 - Curves: "ADBE CurvesCustom"
-- Glow: "ADBE Glow"
+- Glow: "ADBE Glo2"
 - Drop Shadow: "ADBE Drop Shadow"
 - Hue/Saturation: "ADBE HUE SATURATION"
 - Vibrance: "ADBE Vibrance"
