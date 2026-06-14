@@ -110,6 +110,8 @@ Read-only allowlist (`READ_ONLY_COMMANDS`): `getProjectInfo`, `listCompositions`
 
 **No programmatic undo.** AE gates `app.executeCommand(Undo)` from CEP's evalScript context — every approach (top-level, `scheduleTask`, `BridgeTalk`, `findMenuCommandId`-by-dynamic-label) no-ops. Rollback is handled via **inverse-CRUD**: each `create*` has a matching `delete*`, each `set*` can be replayed with prior values captured via the matching `get*`. The user's own ⌘Z still works because every mutation is wrapped in `beginUndoGroup`.
 
+**Atomic create (handler convention).** A `create*`/`apply*` handler that builds an object (`addText`, `addShape`, `addSolid`, `Effects.addProperty`, `Masks.addProperty`, …) and then does more work that can throw MUST roll back on failure: declare the object var as `null` *before* the `try`, assign it on creation, and in the `catch` do `if (obj !== null) { try { obj.remove(); } catch (e2) {} }` (a loop in reverse for multi-object creates like `applyEffectTemplate`). Without this, a failed create leaves an orphan and the agent's self-heal retry stacks a duplicate. This is intra-handler atomicity — distinct from the model-facing inverse-CRUD above. Since AE can't programmatically undo, there's no generic wrapper; it's per-handler.
+
 Autosave-before-run revert point is now the agent loop's pre-turn `backupProject` snapshot (a filesystem copy to `.cubic-backups/`), NOT a per-turn undo group — AE undo groups can't span the loop's async LLM round-trips. Deferred: undo history panel (Phase 4).
 
 ## Agent loop fold (Phase 2)

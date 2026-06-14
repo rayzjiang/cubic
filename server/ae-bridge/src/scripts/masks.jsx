@@ -59,6 +59,9 @@ function getLayerMasks(args) {
 // ── C/U: setLayerMask ─────────────────────────────────────────────────────────
 
 function setLayerMask(args) {
+    // Only set when THIS call creates a new mask (not the update branch), so the catch rolls back
+    // just our own partial creation and never deletes a pre-existing mask we were only editing.
+    var createdMask = null;
     try {
         var resolved = _resolveCompAndLayer(args);
         var comp = resolved.comp;
@@ -133,6 +136,7 @@ function setLayerMask(args) {
             changed.push("maskPath");
         } else {
             mask = layer.property("Masks").addProperty("Mask");
+            createdMask = mask;  // newly created — eligible for rollback on a later failure
             mask.property("Mask Path").setValue(myShape);
             changed.push("newMask");
         }
@@ -156,6 +160,9 @@ function setLayerMask(args) {
             previousValues: previousValues
         }, null, 2);
     } catch (error) {
+        // Roll back only a mask THIS call created (never one we were editing) so a failed create
+        // leaves no orphan.
+        if (createdMask !== null) { try { createdMask.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

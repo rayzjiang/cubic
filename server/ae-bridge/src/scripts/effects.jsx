@@ -153,6 +153,7 @@ function getLayerEffects(args) {
 // ── C: applyEffect ────────────────────────────────────────────────────────────
 
 function applyEffect(args) {
+    var effect = null;  // tracked for atomic-create rollback (see catch); preset path doesn't set it
     try {
         var resolved = _resolveCompAndLayer(args);
         var comp = resolved.comp;
@@ -168,7 +169,6 @@ function applyEffect(args) {
         }
 
         var effectResult;
-        var effect;
         var failedProps = [];
         var warning;
 
@@ -208,6 +208,8 @@ function applyEffect(args) {
             failedProperties: failedProps.length > 0 ? failedProps : undefined
         }, null, 2);
     } catch (error) {
+        // Roll back the partially-added effect so a failed apply leaves no orphan.
+        if (effect !== null) { try { effect.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
@@ -224,6 +226,10 @@ function applyEffect(args) {
 //   • per-index:   { "1": { intensity: 1.5 } } — targets the sub-effect at that 0-based index (composites)
 
 function applyEffectTemplate(args) {
+    // Effect objects added so far, tracked for atomic-create rollback: a template adds several
+    // effects in a loop, so a mid-loop failure must remove ALL of them (not just the last) — else
+    // a self-heal retry stacks duplicates on top of the half-applied template.
+    var addedEffects = [];
     try {
         var resolved = _resolveCompAndLayer(args);
         var comp = resolved.comp;
@@ -273,6 +279,7 @@ function applyEffectTemplate(args) {
                 // A bad matchName here is a code/fixture bug, not user error — surface it loudly.
                 throw _err(ERROR_CODES.INVALID_ARGS, "Effect matchName '" + steps[i].entry.matchName + "' was rejected by AE (template '" + templateName + "'). The effect dictionary is out of sync with this AE version.");
             }
+            addedEffects.push(effect);
             var fp = applyEffectSettings(effect, steps[i].settings);
             for (var fpi = 0; fpi < fp.length; fpi++) { allFailed.push({ effectName: effect.name, name: fp[fpi].name, reason: fp[fpi].reason }); }
             appliedEffects.push({ name: effect.name, matchName: effect.matchName });
@@ -288,6 +295,9 @@ function applyEffectTemplate(args) {
             failedProperties: allFailed.length > 0 ? allFailed : undefined
         }, null, 2);
     } catch (error) {
+        // Roll back every effect added before the failure (reverse order) so the template is
+        // all-or-nothing and leaves no partial stack behind.
+        for (var r = addedEffects.length - 1; r >= 0; r--) { try { addedEffects[r].remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

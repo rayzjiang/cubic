@@ -134,6 +134,7 @@ function getLayerInfo(args) {
 
 // C: createSolidLayer
 function createSolidLayer(args) {
+    var solidLayer = null;  // tracked for atomic-create rollback (see catch)
     try {
         var comp = _resolveComp(args);
         var color = args.color || [1, 1, 1];
@@ -146,7 +147,6 @@ function createSolidLayer(args) {
 
         if (!size) { size = [comp.width, comp.height]; }
         if (!position) { position = [comp.width / 2, comp.height / 2]; }
-        var solidLayer;
         if (isAdjustment) {
             solidLayer = comp.layers.addSolid([0, 0, 0], name, size[0], size[1], 1);
             solidLayer.adjustmentLayer = true;
@@ -161,12 +161,15 @@ function createSolidLayer(args) {
             layer: { name: solidLayer.name, index: solidLayer.index, type: isAdjustment ? "adjustment" : "solid", inPoint: solidLayer.inPoint, outPoint: solidLayer.outPoint, position: solidLayer.property("Position").value, isAdjustment: solidLayer.adjustmentLayer }
         }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (solidLayer !== null) { try { solidLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // C: createCamera
 function createCamera(args) {
+    var cameraLayer = null;  // tracked for atomic-create rollback (see catch)
     try {
         var comp = _resolveComp(args);
         var name            = args.name || "Camera";
@@ -182,7 +185,7 @@ function createCamera(args) {
         var blurLevel       = args.blurLevel;
 
         var centerPoint = [comp.width / 2, comp.height / 2];
-        var cameraLayer = comp.layers.addCamera(name, centerPoint);
+        cameraLayer = comp.layers.addCamera(name, centerPoint);
         var camOpts = cameraLayer.property("Camera Options");
         camOpts.property("Zoom").setValue(zoom);
 
@@ -217,12 +220,15 @@ function createCamera(args) {
 
         return JSON.stringify({ status: "success", message: "Camera created successfully", layer: result }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (cameraLayer !== null) { try { cameraLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // C: createLightLayer
 function createLightLayer(args) {
+    var lightLayer = null;  // tracked for atomic-create rollback (see catch)
     try {
         var comp = _resolveComp(args);
         var name            = args.name || "Light";
@@ -242,7 +248,7 @@ function createLightLayer(args) {
         var shadowDiffusion = args.shadowDiffusion;
 
         var centerPoint = [comp.width / 2, comp.height / 2];
-        var lightLayer = comp.layers.addLight(name, centerPoint);
+        lightLayer = comp.layers.addLight(name, centerPoint);
         var lightTypes = { "parallel": LightType.PARALLEL, "spot": LightType.SPOT, "point": LightType.POINT, "ambient": LightType.AMBIENT };
         if (lightTypes[lightType] !== undefined) { lightLayer.lightType = lightTypes[lightType]; }
         var lightOpts = lightLayer.property("Light Options");
@@ -286,12 +292,15 @@ function createLightLayer(args) {
 
         return JSON.stringify({ status: "success", message: "Light layer created successfully", layer: layerResult }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (lightLayer !== null) { try { lightLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
 
 // C: createNullLayer
 function createNullLayer(args) {
+    var nullLayer = null;  // tracked for atomic-create rollback (see catch)
     try {
         var comp = _resolveComp(args);
         var name = args.name || "Null";
@@ -300,7 +309,7 @@ function createNullLayer(args) {
         var startTime = args.startTime || 0;
         var duration = args.duration || 5;
 
-        var nullLayer = comp.layers.addNull();
+        nullLayer = comp.layers.addNull();
         nullLayer.name = name;
         nullLayer.threeDLayer = !!threeDLayer;
         if (position !== undefined && position !== null) { nullLayer.property("Position").setValue(position); }
@@ -311,6 +320,8 @@ function createNullLayer(args) {
             layer: { name: nullLayer.name, index: nullLayer.index, type: "null", threeDLayer: nullLayer.threeDLayer, inPoint: nullLayer.inPoint, outPoint: nullLayer.outPoint, position: nullLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (nullLayer !== null) { try { nullLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

@@ -69,6 +69,7 @@ function convertToShape(args) {
 
 // C: createShapeLayer
 function createShapeLayer(args) {
+    var shapeLayer = null;  // tracked for atomic-create rollback (see catch)
     try {
         var comp = _resolveComp(args);
         var shapeType = args.shapeType || "rectangle";
@@ -84,7 +85,7 @@ function createShapeLayer(args) {
         var points = args.points || 5;
 
         if (!position) { position = [comp.width / 2, comp.height / 2]; }
-        var shapeLayer = comp.layers.addShape();
+        shapeLayer = comp.layers.addShape();
         shapeLayer.name = name;
         var contents = shapeLayer.property("Contents");
         var shapeGroup = contents.addProperty("ADBE Vector Group");
@@ -124,6 +125,8 @@ function createShapeLayer(args) {
             layer: { name: shapeLayer.name, index: shapeLayer.index, type: "shape", shapeType: shapeType, inPoint: shapeLayer.inPoint, outPoint: shapeLayer.outPoint, position: shapeLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (shapeLayer !== null) { try { shapeLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

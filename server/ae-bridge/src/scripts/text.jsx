@@ -5,6 +5,11 @@
 
 // C: createTextLayer
 function createTextLayer(args) {
+    // Tracked across the try so the catch can roll back a half-created layer. addText() creates
+    // the layer up front, but a later step (e.g. an unavailable font name) can still throw — without
+    // rollback the failed call leaves an orphan, and the self-heal retry then stacks a second
+    // overlapping layer. Atomic create: on any failure, leave no trace.
+    var textLayer = null;
     try {
         var comp = _resolveComp(args);
         var text = args.text || "Text Layer";
@@ -17,7 +22,7 @@ function createTextLayer(args) {
         var alignment = args.alignment || "center";
 
         if (!position) { position = [comp.width / 2, comp.height / 2]; }
-        var textLayer = comp.layers.addText(text);
+        textLayer = comp.layers.addText(text);
         var textProp = textLayer.property("ADBE Text Properties").property("ADBE Text Document");
         var textDocument = textProp.value;
         textDocument.fontSize = fontSize;
@@ -35,6 +40,8 @@ function createTextLayer(args) {
             layer: { name: textLayer.name, index: textLayer.index, type: "text", inPoint: textLayer.inPoint, outPoint: textLayer.outPoint, position: textLayer.property("Position").value }
         }, null, 2);
     } catch (error) {
+        // Roll back the partially-created layer so a failed create leaves no orphan.
+        if (textLayer !== null) { try { textLayer.remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
