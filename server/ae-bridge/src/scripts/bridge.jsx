@@ -198,7 +198,13 @@ function dispatchCommand(command, args) {
     if (READ_ONLY_COMMANDS[command] === 1 || command === "batch" || command === "restoreProject") {
         return _dispatchSwitch(command, args);
     }
-    app.beginUndoGroup("Cubic: " + command);
+    // Prefer the agent-supplied friendly label (the same text shown in the chat row, e.g.
+    // "Added text layer") so Edit > Undo never exposes the raw command name. Direct/MCP
+    // callers omit it and fall back to the command name.
+    var undoLabel = (typeof args.__undoLabel === "string" && args.__undoLabel.length > 0)
+        ? args.__undoLabel
+        : command;
+    app.beginUndoGroup("Cubic: " + undoLabel);
     try {
         return _dispatchSwitch(command, args);
     } finally {
@@ -323,11 +329,13 @@ function batch(args) {
     var succeeded = 0;
     var failed = 0;
 
-    // Use the caller-supplied label when present (the agent passes a human-readable
-    // summary like "Cubic: apply cinematic look to logo", which appears in AE's Edit
-    // menu as the single undo entry for the entire turn). Falls back to a generic
-    // label when no summary is provided.
-    var batchLabel = (typeof args.groupLabel === "string" && args.groupLabel.length > 0)
+    // Label the single undo entry for the whole turn. Prefer the agent-injected __undoLabel
+    // (the same friendly text the chat shows — the model's groupLabel when given, otherwise
+    // synthesized from the sub-commands), then a raw groupLabel from direct/MCP callers, then
+    // a generic count. Never exposes "batch"/raw command names on the agent path.
+    var batchLabel = (typeof args.__undoLabel === "string" && args.__undoLabel.length > 0)
+        ? ("Cubic: " + args.__undoLabel)
+        : (typeof args.groupLabel === "string" && args.groupLabel.length > 0)
         ? ("Cubic: " + args.groupLabel)
         : ("Cubic: batch (" + commands.length + " commands)");
     app.beginUndoGroup(batchLabel);

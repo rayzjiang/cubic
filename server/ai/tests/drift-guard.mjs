@@ -34,6 +34,10 @@ const SCRIPTS_DIR = join(AE_BRIDGE_SRC, 'scripts');
 
 // Shared resolver helpers — params they read are targeting/global, exempt below.
 const HELPER_FNS = ['_resolveComp', '_resolveCompAndLayer', '_resolveAnimProp', '_resolveMarkerProp', '_findMarkerKey', '_sessionBackupDir'];
+// Server-injected meta fields — set by the agent (executeTool), not model-facing params,
+// so they're absent from the registry/catalog by design. The bridge reads them for plumbing
+// (e.g. __undoLabel → the Edit > Undo entry name) but the model never supplies them.
+const INJECTED_META = ['__undoLabel'];
 // createLayer dispatches by args.type to these sub-handlers; their reads count as createLayer's.
 const SCAN_TARGETS = {
   createLayer: ['createLayer', 'createSolidLayer', 'createTextLayer', 'createShapeLayer', 'createCamera', 'createLightLayer', 'createNullLayer'],
@@ -66,8 +70,8 @@ const argsIn = body => {
   return set;
 };
 
-// EXEMPT = every arg read by a shared resolver helper.
-const EXEMPT = new Set();
+// EXEMPT = every arg read by a shared resolver helper, plus server-injected meta fields.
+const EXEMPT = new Set(INJECTED_META);
 for (const h of HELPER_FNS) for (const p of argsIn(fnBody[h])) EXEMPT.add(p);
 
 // ── Axis 1: NAMES (registry keys vs commands.ts) ──────────────────────────────

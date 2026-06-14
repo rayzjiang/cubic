@@ -23,7 +23,8 @@ describe('executeTool', () => {
     callRunScript.mockResolvedValue({ status: 'success', layerIndex: 1 });
     const exec = await executeTool(runScript('createLayer'));
 
-    expect(callRunScript).toHaveBeenCalledWith('createLayer', {});
+    // args carry only the server-injected friendly undo label (no model params here).
+    expect(callRunScript).toHaveBeenCalledWith('createLayer', { __undoLabel: expect.any(String) });
     expect(exec.ok).toBe(true);
     expect(exec.block.is_error).toBe(false);
     expect(invalidate).toHaveBeenCalledTimes(1);
@@ -81,6 +82,7 @@ describe('executeTool', () => {
         { command: 'setLayerKeyframe', args: { propertyName: 'Opacity', value: 0, timeInSeconds: 0 } },
       ],
       groupLabel: 'add',
+      __undoLabel: expect.any(String),
     });
     expect(invalidate).toHaveBeenCalledTimes(1);
   });

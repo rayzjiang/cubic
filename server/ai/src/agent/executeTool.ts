@@ -1,5 +1,6 @@
 import { bridgeClient } from '../bridge/client.js';
 import { sessionCache } from '../context/cache.js';
+import { describeToolCall } from './events.js';
 import type { ToolUse, ToolResultBlock } from '../llm/types.js';
 
 /**
@@ -129,6 +130,12 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
   // can't know the session id, so the server injects it here — overriding any value the model
   // guessed (it has no business choosing the session).
   if (command === 'restoreProject' && sessionId) args.sessionId = sessionId;
+
+  // Thread the same friendly label the chat row shows down to AE's undo group, so Edit > Undo
+  // reads "Cubic: Added text layer" instead of the raw command name. `__undoLabel` is a
+  // server-injected meta field (not a model-facing param) — the bridge reads it for the undo
+  // group name only; handlers ignore it. Read-only commands skip the undo wrapper, so it's inert there.
+  args.__undoLabel = describeToolCall(tool.name, tool.input);
 
   let outcome = await runOnce(command, args);
   let retried = false;

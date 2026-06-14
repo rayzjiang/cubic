@@ -56,3 +56,30 @@ describe('describeToolResult', () => {
     expect(describeToolResult(tool.name, tool.input, result)).toBe('Created composition "Intro"');
   });
 });
+
+describe('describeToolCall — batch label (drives the undo-group name)', () => {
+  // batch is normally invoked via runScript({ script: 'batch', parameters: {...} }) per the prompt.
+  const batch = (parameters: Record<string, unknown>) => ({ name: 'runScript', input: { script: 'batch', parameters } });
+
+  it('prefers the model-provided groupLabel', () => {
+    const { name, input } = batch({ commands: [{ command: 'createLayer', args: { type: 'text' } }], groupLabel: 'animate intro title' });
+    expect(describeToolCall(name, input)).toBe('animate intro title');
+  });
+
+  it('synthesizes a descriptive label from sub-commands when groupLabel is missing', () => {
+    const { name, input } = batch({
+      commands: [
+        { command: 'createLayer', args: { type: 'text', name: 'Title' } },
+        { command: 'applyEffect', args: { effectName: 'Glow' } },
+        { command: 'setLayerKeyframe', args: { propertyName: 'Opacity' } },
+      ],
+    });
+    // First sub-command's friendly label + a count of the rest — never exposes "batch".
+    expect(describeToolCall(name, input)).toBe('Added text layer "Title" + 2 more');
+  });
+
+  it('uses just the single sub-command label for a one-command batch', () => {
+    const { name, input } = batch({ commands: [{ command: 'applyEffect', args: { effectName: 'Glow' } }] });
+    expect(describeToolCall(name, input)).toBe('Applied Glow');
+  });
+});

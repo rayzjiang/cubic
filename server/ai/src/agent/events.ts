@@ -115,6 +115,30 @@ const SCRIPT_LABELS: Record<string, (p: Params) => string> = {
   restoreProject: () => 'Restored a backup',
 };
 
+/** Friendly label for a single command (used standalone and inside a batch). */
+function describeCommand(script: string, params: Params): string {
+  const fn = SCRIPT_LABELS[script];
+  return fn ? fn(params) : (script ? readableDefault(script) : 'a command');
+}
+
+/**
+ * Friendly label for a batch turn. Prefers the model's groupLabel (its own intent
+ * summary); otherwise synthesizes from the sub-commands ("Added text layer + 2 more")
+ * so the label is always descriptive and never exposes "batch"/raw command names.
+ */
+function describeBatch(params: Params): string {
+  if (params.groupLabel) return String(params.groupLabel);
+  const cmds = Array.isArray(params.commands) ? params.commands : [];
+  if (cmds.length === 0) return 'Made a change';
+  const first = (cmds[0] ?? {}) as Params;
+  const firstLabel = describeCommand(
+    String(first.command ?? first.script ?? ''),
+    ((first.args ?? first.parameters) ?? {}) as Params,
+  );
+  const rest = cmds.length - 1;
+  return rest > 0 ? `${firstLabel} + ${rest} more` : firstLabel;
+}
+
 /**
  * Human-readable label for a tool call, shown in the chat's per-action row
  * (e.g. "Added solid layer \"BG\"", "Applied Glow", "Created composition \"Intro\"").
@@ -125,13 +149,14 @@ export function describeToolCall(name: string, input: unknown): string {
   switch (name) {
     case 'runScript': {
       const script = String(obj.script ?? '');
-      const fn = SCRIPT_LABELS[script];
-      return fn ? fn((obj.parameters ?? {}) as Params) : (script ? readableDefault(script) : 'Ran a command');
+      const params = (obj.parameters ?? {}) as Params;
+      // batch is usually invoked via runScript({script:"batch"}) per the prompt — route it
+      // through the same batch labeller so the chat row + undo entry stay descriptive.
+      if (script === 'batch') return describeBatch(params);
+      return describeCommand(script, params);
     }
-    case 'batch': {
-      const n = Array.isArray(obj.commands) ? obj.commands.length : 0;
-      return obj.groupLabel ? String(obj.groupLabel) : `Made ${n} change${n === 1 ? '' : 's'}`;
-    }
+    case 'batch':
+      return describeBatch(obj);
     case 'createComposition':
       return obj.name ? `Created composition "${String(obj.name)}"` : 'Created a composition';
     default:

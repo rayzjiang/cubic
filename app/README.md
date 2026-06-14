@@ -2,8 +2,9 @@
 
 Standalone Electron + React desktop shell (Phase 4). It hosts the Node backend
 (AE bridge + agent loop) as a child process and connects the renderer to it over
-WebSocket. This is the **foundation** (Wave 1 #2 / WT-FE-FOUNDATION) — the chat UI,
-connection-state UX, persistence, and run controls land in later worktrees.
+WebSocket. The renderer is a working chat client — message list, persistence-backed
+conversation list (Home view), and run controls (send / steer / queue / cancel /
+delete). Still deferred: connection-state UX (reconnect banners) and the Stop-button UI.
 
 ## Prerequisite — build the backend first
 
@@ -31,8 +32,10 @@ What to expect:
 - A native macOS window (inset traffic-lights + translucent vibrancy). On Windows it
   launches with a normal frame (mac-only chrome is guarded).
 - Console: `[backend] ... listening on 127.0.0.1:17923`.
-- The window shows **"backend connected ✓"** — proof of the full chain
-  (spawn → port config → `getBackendPort()` IPC → renderer WebSocket).
+- A Cubic splash (`LoadingScreen`) while the first conversation list loads, then the
+  **Home view** (greeting + your conversations + New chat) — or the chat layout if you
+  open/start a conversation. This exercises the full chain: spawn → port config →
+  `getBackendPort()` IPC → renderer WebSocket → `list`/`conversations`.
 
 ## Scripts
 
@@ -48,6 +51,17 @@ What to expect:
   `ANTHROPIC_API_KEY` (inherited from the shell).
 - `prod` — **stub** until the Phase-5 proxy exists; forwards `ANTHROPIC_BASE_URL`
   (from `CUBIC_PROXY_URL`) so the loop routes through the hosted proxy.
+
+## Renderer architecture
+
+- **`protocol.ts`** — typed wire contract mirroring the backend (`AgentEvent`,
+  `DisplayItem`, `ConversationMeta`, `ClientMessage`/`ServerMessage`); keep in sync with
+  `server/ai/src/agent/events.ts` + `server/ae-bridge/src/{displayItems,persist}.ts` and
+  `wsBridge.ts`'s channel-2 contract (see `server/ae-bridge/PROTOCOL.md`).
+- **`store.ts`** — Zustand store; folds streamed `agentEvent`s into the render model
+  (shares one render path with loaded history).
+- **`ws.ts`** — the single backend socket (one-shot startup retry).
+- **`analytics.ts`** — no-op `track()` seam (vendor TBD, eg. this for tracking user actions so Id eventually hook up like PostHog).
 
 ## Notes / seams
 
