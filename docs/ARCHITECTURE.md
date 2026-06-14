@@ -257,6 +257,19 @@ turn the brain may loop up to **15 iterations**:
 test against the real AE handlers all derive from that one file, so they can't silently
 diverge.
 
+### Tool surfaces — 3 vs 4
+
+Two surfaces on two entrypoints, don't conflate:
+- **UI users → 3 tools.** `serve.ts` → agent loop = `AE_TOOLS` (`tools/definitions.ts`):
+  `runScript`, `batch`, `createComposition`. The real product surface.
+- **MCP dev path → 4 tools.** `index.ts` `registerTool` (Claude Code over stdio):
+  `runScript`, `getHelp`, `runBridgeTest`, `createComposition`. The app never uses it.
+
+Extras differ per surface: the AI gets `batch` (own array+`groupLabel` schema, one ⌘Z/turn
+— not `runScript({script:"batch"})`); MCP gets `getHelp`/`runBridgeTest` diagnostics the AI
+skips (it already has the full catalog in-prompt). `createComposition` is typed on both for
+schema guidance + local Zod validation before hitting AE; every other verb stays behind `runScript`.
+
 ---
 
 ## 6. Sessions, persistence, and reconnect
@@ -303,8 +316,9 @@ diverge.
    → AE panel → AE answers "selected layer is text 'Title' at index 2." A snapshot is
    saved.
 5. **Brain asks Claude** with rules + catalog + live state + your message. Claude
-   replies with narration plus a tool call:
-   `applyMotionRecipe(recipe:"popIn", layerIndices:[2])`.
+   replies with narration plus a tool call — the model's surface is the parameterized
+   `runScript`, so it sends
+   `runScript(script:"applyMotionRecipe", parameters:{recipe:"popIn", layerIndices:[2]})`.
 6. **Brain runs the tool.** `executeTool.ts` → `{id, command:"applyMotionRecipe", ...}`
    → bridge → AE panel → `bridge.jsx` switch → `applyMotionRecipe()` in `animation.jsx`
    sets real keyframes (in one undo group).

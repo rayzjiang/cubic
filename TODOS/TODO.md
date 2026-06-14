@@ -49,10 +49,12 @@
 - [x] 🐞 **FIXED (6/13/26) — "undo that" no-op.** No-args `restoreProject` now lands on the most-recent
   backup whose bytes differ from the working `.aep` (skips the own-turn snapshot), prunes newer backups
   (one-way, no redo), and returns `status:"noop"` at the floor. Self-contained in `project.jsx`.
-- [ ] 🐞 **IN PROGRESS (6/13/26) — undo leaks across chats.** Backups have no chat identity, so undo digs
-  into previous chats' backups. Fix (per Claude Code's per-session rewind): scope to current chat via
-  per-session subfolder `.cubic-backups/<sessionId>/`; thread `session.id` → `backupProject` + inject into
-  `restoreProject`; keep 10/chat; delete the folder on conversation-delete / `/clear`.
+- [x] 🐞 **FIXED (6/13/26) — undo leaks across chats.** Backups had no chat identity, so undo dug
+  into previous chats' backups. Fixed (per Claude Code's per-session rewind): scoped to current chat via
+  per-session subfolder `.cubic-backups/<sessionId>/` (`_sessionBackupDir` in `project.jsx`); `session.id`
+  threaded → `backupProject` (`snapshot.ts`/`loop.ts`) + injected into `restoreProject` server-side
+  (`executeTool.ts`); keep 10/chat (prune in `project.jsx`); folder deleted on conversation-delete AND
+  `/clear` (`deleteSessionBackups` in `persist.ts`, called from `agentChat.ts`).
 - [ ] ⚠️ **LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
   Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
   options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo

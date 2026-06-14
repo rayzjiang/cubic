@@ -42,8 +42,9 @@ cubic/
 │   ├── ae-bridge/        # WebSocket bridge + ExtendScript handlers + CEP extension
 │   │   ├── src/serve.ts  #   Standalone backend entrypoint (spawned by Electron)
 │   │   ├── src/bridge/   #   WS server relaying commands to the CEP worker in AE
-│   │   └── src/scripts/  #   ExtendScript (.jsx) handlers: layers, text, shapes,
-│   │                     #     animation, effects, masks, footage, markers, etc.
+│   │   ├── src/scripts/  #   ExtendScript (.jsx) handlers: layers, text, shapes,
+│   │   │                 #     animation, effects, masks, footage, markers, etc.
+│   │   └── cep-extension/ #  CEP panel running inside AE (runs the bundled .jsx)
 │   │
 │   └── ai/               # Claude brain — the agent loop
 │       ├── src/agent/    #   Iteration loop, tool execution, self-healing, cancel/steer
@@ -52,7 +53,7 @@ cubic/
 │       ├── src/prompt/   #   System prompt + command catalog assembly
 │       └── src/tools/    #   Command registry
 │
-├── docs/                 # Product docs (PRD notes)
+├── docs/                 # Product + architecture docs (PRD, ARCHITECTURE)
 └── TODOS/                # Phase roadmap and checklists
 ```
 

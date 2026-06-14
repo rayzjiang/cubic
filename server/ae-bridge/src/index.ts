@@ -183,7 +183,7 @@ const KeyframeValueSchema = z.unknown().describe("The value for the keyframe (e.
 server.registerTool(
   "runScript",
   {
-    description: "Run a script command in After Effects via the UXP bridge. Results are returned synchronously.",
+    description: "Run a script command in After Effects via the CEP bridge. Results are returned synchronously.",
     inputSchema: {
       script: z.string().describe("Name of the bridge command to run"),
       parameters: z.record(z.string(), z.unknown()).optional().describe("Optional parameters for the command")
@@ -208,7 +208,7 @@ server.registerTool(
   async () => ({
     content: [{
       type: "text",
-      text: `# After Effects MCP Integration (UXP WebSocket Bridge)
+      text: `# After Effects MCP Integration (CEP WebSocket Bridge)
 
 ## Workflow
 1. Run \`npm start\` to start the MCP server (hosts WS bridge on 127.0.0.1:${AE_BRIDGE_PORT}).

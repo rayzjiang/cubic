@@ -96,7 +96,7 @@ class AEBridge {
         try { msg = JSON.parse(data.toString()); } catch { return; }
 
         if (msg.type === 'hello') {
-          // UXP plugin registering as the ExtendScript worker
+          // CEP panel registering as the ExtendScript worker
           if (this.workerClient && this.workerClient !== ws) {
             this.workerClient.close(4000, 'superseded by new worker');
           }
@@ -110,7 +110,7 @@ class AEBridge {
           // messages back over this same socket (see registerAgentChat in agentChat.ts).
           this.chatHandler?.(ws, msg as ChatInbound);
         } else if ('ok' in msg) {
-          // Response from UXP plugin to a pending command
+          // Response from CEP panel to a pending command
           const pending = this.pending.get(msg.id);
           if (!pending) return;
           clearTimeout(pending.timer);

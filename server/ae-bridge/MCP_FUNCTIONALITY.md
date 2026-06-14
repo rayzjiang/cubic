@@ -2,7 +2,7 @@
 
 A complete map of every tool, command, and capability currently exposed by the Cubic MCP server. Use this as the source-of-truth reference when designing the agent brain (Phase 2) or onboarding a new collaborator.
 
-> **Invocation model:** Almost everything is called via `runScript({ script, parameters })` or wrapped in `batch`. The MCP-level typed tools (`runScript`, `batch`, `getHelp`, `createComposition`, `runBridgeTest`, `testAnimation`) are diagnostic/bridge surface only. The real verbs are the handler commands listed below.
+> **Invocation model:** Almost everything is called via `runScript({ script, parameters })` or wrapped in `batch` (itself a `runScript` command). The MCP-level typed tools (`runScript`, `createComposition`, `runBridgeTest`, `getHelp`) are diagnostic/bridge surface only. The real verbs are the handler commands listed below.
 
 ---
 
@@ -13,9 +13,7 @@ A complete map of every tool, command, and capability currently exposed by the C
 | `runScript({ script, parameters })` | Universal entry point. `script` must be in the `allowedScripts` list; `parameters` is forwarded to the AE handler. |
 | `createComposition({...})` | Typed convenience wrapper — same as `runScript("createComposition", ...)`. |
 | `runBridgeTest` | Calls `getProjectInfo` to verify MCP ↔ AE WebSocket health. |
-| `testAnimation({operation, compIndex, layerIndex})` | Writes a one-shot `.jsx` test file (keyframe or expression) to `os.tmpdir()` for manual run via File > Scripts. Legacy. |
 | `getHelp` | Returns the embedded help/command catalog. |
-| `getResults` | **Deprecated.** Results are now returned synchronously by each tool. |
 
 ### Resources & Prompts
 - **Resource** `aftereffects://compositions` — returns list of comps in active project.
@@ -37,7 +35,8 @@ A complete map of every tool, command, and capability currently exposed by the C
 ### Project (write)
 | Command | Description |
 |---|---|
-| `saveProject({savePath?})` | Save in place or save-as to a new path. |
+| `saveProject({saveAs?})` | Save in place, or pass `saveAs` (absolute fsName) to save-as to a new path. |
+| `restoreProject` | Reopen the `.aep` from the agent loop's pre-turn `.cubic-backups/<sessionId>/` snapshot — the model-facing "undo that" (server injects `sessionId`; walks back one turn per call; `noop` at the earliest point). |
 | `deleteProjectItem({name})` | Remove an item from the Project Panel. |
 | `deleteUnusedSolids` | Garbage-collect orphan solids. |
 
@@ -82,6 +81,7 @@ Per-type parameter surface:
 |---|---|
 | `getLayerInfo({compName, layerIndex})` | Type, transform values, 3D flag, autoOrient, motion blur, all toggles, type-specific (fillColor for text, etc.). |
 | `getSelectedLayers({compName?})` | The layers highlighted in AE's timeline — primary context signal for the agent. |
+| `getSelectionDetails({compName?})` | Selected layers plus the specific selected properties (path + value) — the finer-grained "what is the user looking at" signal merged into per-turn context. |
 | `getLayerProperty({compName, layerIndex, propertyPath})` | Path-addressable getter for any nested property (e.g. `["Contents","Group 1","Stroke 1","Color"]`). |
 
 ### Update
@@ -256,6 +256,7 @@ Mask modes: `NONE`, `ADD`, `SUBTRACT`, `INTERSECT`, `LIGHTEN`, `DARKEN`, `DIFFER
 | `applyEffectTemplate({compName, layerIndex, templateName, customSettings?})` | Apply a built-in template bundle. |
 | `setEffectProperty({compName, layerIndex, effectIndex, propertyName, value})` | Update one property. Returns `previousValue`. |
 | `deleteEffect({compName, layerIndex, effectIndex})` | Remove. |
+| `introspectMatchNames` | Internal/diagnostic — asks AE for the real effect matchNames; feeds the `tests/fixtures/ae-matchnames.json` fixture + the `test:matchnames` CI guard. Not for general agent use. |
 
 ### Built-in effect templates
 `gaussian-blur`, `directional-blur`, `color-balance`, `brightness-contrast`, `curves`, `glow`, `drop-shadow`, `cinematic-look`, `text-pop`
@@ -345,32 +346,32 @@ Handler errors return:
 ```json
 { "status": "error", "errorCode": "...", "message": "...", "line": 123, "stack": "..." }
 ```
-`errorCode` ∈ `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`. The MCP layer surfaces these as `isError: true` + `structuredContent` for agent self-healing loops.
+`errorCode` ∈ `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`, `BATCH_FAILED` (a sub-command of a `batch` failed — per-command codes in `results[]`). The MCP layer surfaces these as `isError: true` + `structuredContent` for agent self-healing loops.
 
 ### Vision-in-the-loop
 `saveFrameToPng` returns both the text JSON and an inline base64 PNG content block, enabling an agent to "see" the result of its mutations between turns.
 
 ### Read-only allowlist
-`getProjectInfo`, `listCompositions`, `getCompositionInfo`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`, `getLayerProperty`.
+`getProjectInfo`, `listCompositions`, `getCompositionInfo`, `getLayerInfo`, `getLayerKeyframes`, `getLayerExpressions`, `getLayerMasks`, `getLayerEffects`, `getSelectedLayers`, `getSelectionDetails`, `listProjectItems`, `listMarkers`, `getCurrentTime`, `getProjectPath`, `getLayerProperty`.
 
 ---
 
 ## 15. Architecture (one-paragraph)
 
-Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:17923`, receives MCP tool calls, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `mcp-bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
+Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:17923`, receives MCP tool calls, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
 
 ---
 
 # Possible Improvements
 
-**Top improvements based on better MVP/leverage:** 12, 11, 13, 22, 21, 19, 20, 17, 3, 1, 5 (audio)
+**Top improvements based on better MVP/leverage:** 12, 11, 13, 22, 21, 19, 20, 17, 5 (audio)
 
 Ordered roughly by leverage. None are blockers for Phase 2 — these are the things worth picking up opportunistically.
 
 ### Surface cleanup
-1. **Retire `getResults`** — marked deprecated, still in the typed surface. Removing it shrinks the tool list the agent sees (lower token cost).
-2. **Retire `testAnimation`** — vestigial; predates the synchronous bridge. The `runBridgeTest` tool already covers health-check needs.
-3. **Single source of truth for `allowedScripts`** — currently duplicated between `src/index.ts` and the dispatch switch in `mcp-bridge.jsx`. Generate one from the other at build time to prevent silent drift.
+1. **Retire `getResults`** — ✅ Done. Removed from the typed surface (results are synchronous).
+2. **Retire `testAnimation`** — ✅ Done. Removed; `runBridgeTest` covers health-check needs.
+3. **Single source of truth for `allowedScripts`** — ✅ Done. The registry now lives only in `src/commands.ts` (`COMMANDS`); `index.ts` imports and validates against it (no duplication with `bridge.jsx`).
 4. **`getHelp` text drift** — references `createTextLayer` / `createShapeLayer` as if they're separate tools; the canonical entry point is `createLayer({type:"..."})`. Align the docstring so the agent doesn't waste tokens on stale names.
 
 ### Capability gaps worth considering

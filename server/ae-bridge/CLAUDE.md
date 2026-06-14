@@ -55,7 +55,7 @@ CEP panel reloads handlers on each command — no AE restart needed for `.jsx` c
 `startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).
 
 ## Architecture
-Two components over WebSocket: **Node MCP server** (`src/index.ts`) hosts WS on `127.0.0.1:17923`, receives tool calls, forwards `{ id, command, args }` to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` needed.
+Two components over WebSocket: the **Node backend** hosts WS on `127.0.0.1:17923` (via the shared `startBackend()` — used by both `serve.ts`, the standalone bridge + agent loop the app spawns, and `index.ts`, the optional MCP dev entrypoint), receives `{ id, command, args }`, and forwards them to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` round-trip.
 
 > **Wire protocol contract:** the full WS message contract (both channels + `AgentEvent` + error codes) is locked in [`PROTOCOL.md`](./PROTOCOL.md) — the single source future host adapters depend on.
 
@@ -99,7 +99,7 @@ bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resol
 4. Add name to the `COMMANDS` array in `src/commands.ts` (the allowlist `index.ts` validates against)
 5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
 
-Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface (`runScript`, `batch`, `getHelp`, `createComposition`, `runBridgeTest`, `testAnimation`, `getResults`). All handler commands are called via `runScript` — no per-command typed tool needed.
+Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface — exactly four: `runScript`, `getHelp`, `runBridgeTest`, `createComposition`. All handler commands are called via `runScript` — no per-command typed tool needed. (Separate surface: the `server/ai` agent brain (AKA what the users interact with) exposes its own 3 tools to the model — `runScript`, `batch`, `createComposition` — where `batch` IS a dedicated tool, not a `runScript` command. A raw MCP caller, lacking that tool, only has access to the above 4 tools instead and would reach batch via `runScript({script:"batch"})`.)
 
 **New domain file:** also add to `domainFiles` array in `scripts/build-cep-extension.mjs`. Handler functions must live in domain files only — never in `bridge.jsx`.
 

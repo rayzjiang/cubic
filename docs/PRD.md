@@ -35,7 +35,7 @@ Avoid standard Adobe ZXP installer friction. Users install ONE thing — the Cub
 Frontend: Standalone Cubic desktop app — Electron (React/HTML/CSS) renderer. Chosen over native Swift because the backend is all TS/Node (reuse + shared types + hosting the backend as a child process); it's also the industry default for non-terminal AI editors (Cursor/Windsurf/VS Code forks). The chat UI is written once and is host-agnostic — only the per-host bridge adapter changes for future platforms.
 Backend / Middleware: A local Node server (the existing MCP bridge + agent loop) hosted by the Electron main process. It opens the WebSocket bridge on 127.0.0.1:17923; the thin headless CEP extension inside AE connects as the worker client and runs ExtendScript via evalScript. The agent loop reaches AE as just another client on the same bridge. The wire protocol (`{id, command, args}` ↔ `{id, ok, result}`) is the stable contract between app and host.
 MCP logic was written out by someone else, we gotta verify it works as intended: https://github.com/Dakkshin/after-effects-mcp
-LLM Integration: A single, highly capable model (e.g., Claude 3.5 Sonnet) hardcoded for the MVP to ensure stability and simplify development.
+LLM Integration: A single, highly capable model for the MVP. In the shipped build the model is selectable at runtime via the `CUBIC_MODEL` env var (alias `sonnet|haiku|opus` or a full id), defaulting to `claude-sonnet-4-6` — read at call time so it flips without a rebuild. (Full provider-swap, e.g. non-Claude models, remains Post-MVP — see §5.)
 
 5. Post-MVP (The Backlog)
 These features are confirmed for the roadmap but excluded from the initial MVP build to ensure a fast launch:

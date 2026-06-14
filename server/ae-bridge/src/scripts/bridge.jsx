@@ -1,7 +1,7 @@
 // bridge.jsx
 // Pure-function dispatch module — no UI, no file I/O, no polling.
-// Concatenated with domain files by build-uxp-plugin.mjs at build time.
-// Called by the UXP plugin via app.executeScript.
+// Concatenated with domain files by build-cep-extension.mjs at build time.
+// Called by the CEP panel via CSInterface.evalScript.
 
 
 // ============================================================

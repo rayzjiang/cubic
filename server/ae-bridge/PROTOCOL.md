@@ -5,13 +5,14 @@ Effects CEP worker; future: Premiere/DaVinci/etc.). **A host adapter only needs 
 implement what's on this page** — nothing else in the codebase is part of the contract.
 
 > Source of truth for the shapes: `src/bridge/wsBridge.ts` (`ChatInbound`, command
-> routing), `server/ai/src/agent/events.ts` (`AgentEvent`), `src/scripts/mcp-bridge.jsx`
+> routing), `server/ai/src/agent/events.ts` (`AgentEvent`), `src/scripts/bridge.jsx`
 > (`ERROR_CODES`). If those drift from this doc, those win — update this doc.
 
 ## Transport
 
 - **One WebSocket server** on `127.0.0.1:17923` (fixed; no fallback). Opened by the
-  backend (`bridge.start()` in `wsBridge.ts`, spawned via `src/index.ts`). A port
+  backend (`bridge.start()` in `wsBridge.ts`, via the shared `startBackend()` — the app
+  spawns `src/serve.ts`; the MCP dev entrypoint is `src/index.ts`). A port
   conflict is a hard error — only one backend runs at a time.
 - Every message is a single JSON object, one per WS frame. Messages are dispatched by
   shape (see *Routing* below), not by a wrapping envelope.
@@ -19,7 +20,7 @@ implement what's on this page** — nothing else in the codebase is part of the 
   | Client | Role | Identifies itself by |
   |---|---|---|
   | CEP worker (the AE panel) | **Role B** — runs `evalScript`, the only client that executes commands in AE | sends `{type:"hello"}` on connect |
-  | `server/ai` loopback (`mcpClient`) | the agent loop fetching live state / running tool calls | sends `{id,command,args}` |
+  | `server/ai` loopback (`bridgeClient`) | the agent loop fetching live state / running tool calls | sends `{id,command,args}` |
   | Electron renderer (Phase 4) | the chat UI | sends chat-channel messages (`userChat`…) |
 
   > The Electron renderer learns the port from the app's main process via a
@@ -52,7 +53,7 @@ Response (worker → backend):
 - `command` names come from `src/commands.ts` (the `COMMANDS` registry). The special
   `listCommands` is answered **node-side** by the backend (returns the registry) — it
   never round-trips to the worker.
-- Default command timeout: 10s (`mcpClient`) / 30s (external route in `routeExternalCommand`).
+- Default command timeout: 10s (`bridgeClient`) / 30s (external route in `routeExternalCommand`).
 
 ### Structured handler errors (inside a successful `ok:true` response)
 A command can *succeed at the transport level* (`ok:true`) but report a domain error in

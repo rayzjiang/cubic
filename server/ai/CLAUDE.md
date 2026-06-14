@@ -31,7 +31,7 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 
 ## Module map (`src/`)
 - `bridge/client.ts` — `BridgeClient` / `bridgeClient` singleton: WS connection + `callRunScript(command, args)`.
-- `bridge/tools.ts` — typed read wrappers + return types: `getProjectInfo`, `listCompositions`, `getCurrentTime`, `getSelectedLayers`.
+- `bridge/tools.ts` — typed read wrappers + return types: `getProjectInfo`, `listCompositions`, `getCurrentTime`, `getSelectedLayers`, `getSelectionDetails` (selected-property detail).
 - `context/buildContext.ts` — assembles `LiveAEState` per turn.
 - `context/cache.ts` — `SessionCache` / `sessionCache`: caches `getProjectInfo` + `getCompositionsList`; `invalidate()`.
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
@@ -40,14 +40,14 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
 - `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
 - `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).
-- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`backupProject` call), `events.ts` (`AgentEvent` union streamed to the panel).
+- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`snapshotProject()` — calls the bridge `backupProject` command), `events.ts` (`AgentEvent` union streamed to the panel).
 - `index.ts` — public barrel export.
 
 ## Agent loop (`src/agent/`)
 - **Shape:** bounded while-loop (`DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn via deps), not a formal state machine. One model call per iteration; tools execute in order; their `tool_result` blocks become the next user message.
 - **Self-healing:** tool errors return as `tool_result(is_error)` so the model reasons + retries forward, bounded by the iteration budget. `RENDER_FAILED` retries once (transient flush race). Transport failures surface as a `BRIDGE_ERROR` result, never a thrown turn.
-- **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `bridgeClient`). A failed snapshot warns and proceeds.
-- **Compaction:** `loop.ts` watches `Session.lastContextTokens` (the true prefill size of the last `chat()`); at `COMPACT_THRESHOLD` (90% of the model's context window) it calls `compactSession` (`compaction.ts`) to summarize older turns into one message while keeping `KEEP_RECENT_TURNS` (3) verbatim; `HARD_CEILING` (97%) is an emergency pause when even compaction can't fit. The summary is itself a Claude call (extra cost — visible under `CUBIC_LLM_DEBUG`).
+- **Revert point:** a pre-turn filesystem copy of the `.aep` to `.cubic-backups/<sessionId>/` via the internal-only `backupProject` command (deliberately NOT in the registry/catalog — invisible to the model; reached only through `bridgeClient`). A failed snapshot warns and proceeds. The model-facing counterpart is `restoreProject` ("undo that"): a catalogued command whose `sessionId` the server injects in `executeTool` (the model can't choose it); each call walks back one turn through the session's snapshots (`noop` at the earliest point).
+- **Compaction:** `loop.ts` watches `Session.lastContextTokens` (the true prefill size of the last `chat()`); at `COMPACT_THRESHOLD` (90% of the model's context window) it calls `compactSession` (`compaction.ts`) to summarize older turns into one message while keeping `KEEP_RECENT_TURNS` (3) verbatim; `HARD_CEILING` (97%) is an emergency pause when even compaction can't fit. A real API context-overflow (a `model_context_window_exceeded` stop reason or a thrown "prompt is too long" error) also raises the same `context_full` pause, not just the 97% ceiling. The summary is itself a Claude call (extra cost — visible under `CUBIC_LLM_DEBUG`).
 - **Narration:** per-iteration `AgentEvent` push (assistant text, then `tool_start`/`tool_end`). Token-level streaming is a later swap (`chat()`→`stream()`) with no change to the loop.
 - **Concurrency:** single in-flight run per `Session`; `cancelRequested` and the `pendingMessages` queue (FIFO `{id,text}[]` steer queue) are checked at iteration boundaries — mirrors Claude Code. The whole queue drains in order at each tool-result boundary (never just the last → no silent drop). Messages left after the final boundary run as one combined follow-up turn. (Editing/removing a queued steer before it fires is a transport concern owned by `server/ae-bridge`'s `agentChat.ts`.)
 - **Consumed by `server/ae-bridge`:** that package folds this loop into its process (`cubic-ai` as a `file:../ai` dep) and owns the panel↔loop wiring, session persistence, and steer-queue editing — see `server/ae-bridge/CLAUDE.md`. Build note: rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
@@ -59,7 +59,7 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - Requires AE open **with the MCP Bridge panel connected**; a bare bridge with no panel replies with empty/blank state.
 
 ## Context pipeline (per turn)
-- Per-turn volatile fetches (parallel): `getSelectedLayers`, `getCurrentTime`.
+- Per-turn volatile fetches (parallel): `getSelectedLayers`, `getCurrentTime`, `getSelectionDetails` (its `selectedProperties` are merged into the selected-layers list).
 - Cached per session: `getProjectInfo`, `getCompositionsList`. Call `sessionCache.invalidate()` after any mutation turn.
 - Active comp dims are resolved from the cached compositions list by comp name (from `selectedLayers.activeComp` or `currentTime.compName`).
 - **Graceful degradation:** every fetch in `buildContext()` is `.catch(() => null)` so a disconnected bridge yields an empty state instead of throwing. Live tests bypass this (call the raw client) to fail loudly.
@@ -74,7 +74,7 @@ All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@ant
 
 ## Agent tool-surface rule (encoded in `STATIC_RULES`)
 The model drives AE through a small parameterized tool set, **not** one tool per feature:
-- `runScript({ script, parameters })` is the primary tool; `batch` runs multiple commands in one turn (always with a `groupLabel` for one-Cmd+Z revert); `createComposition` is the only other tool. **No `getHelp`** — per-command params are always present in the `<command_catalog>` (generated from `command-params.ts`), so the model never fetches docs and never guesses args.
+- `runScript({ script, parameters })` is the primary tool; `batch` runs multiple commands in one turn (the model is told to always set a `groupLabel` for one-Cmd+Z revert, though the schema makes it optional); `createComposition` is the only other tool. **No `getHelp`** — per-command params are always present in the `<command_catalog>` (generated from `command-params.ts`), so the model never fetches docs and never guesses args.
 - Never call programmatic undo; self-heal forward on tool errors. (Full operating rules live in `prompt/rules.ts`.)
 - Note: this is the model's tool surface. The internal context pipeline still calls typed reads directly via `callRunScript`.
 
