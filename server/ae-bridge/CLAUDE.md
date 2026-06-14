@@ -134,6 +134,7 @@ All handler `catch` blocks now return `{ status:"error", errorCode, message, lin
 - **`Date.toISOString()` missing in ES3:** Build ISO strings manually with `getFullYear()` etc.
 - **`"EvalScript error."` = bundle-level syntax failure**, not a handler error (those are caught by the footer's try/catch and returned as structured JSON).
 - **Layer indices are 1-based.** Lower index = renders on top.
+- **`app.fonts.allFonts` is an array of per-family ARRAYS of FontObjects**, not a flat list — iterate two levels (`allFonts[i][j]`). Each FontObject has `postScriptName`/`familyName`/`styleName`/`fullName`. `TextDocument.font` wants the `postScriptName` (e.g. "ComicSansMS"), not a display name — `fonts.jsx` `_resolveFont()` does this mapping.
 
 ## Engineering constraints
 **No sleeps or polling waits.** The WS bridge is synchronous request/response — commands return results directly. Never add `$.sleep()`, `setTimeout`, or retry loops to make broken code work. If something appears to need a wait, find the real root cause (stale cache, async API, wrong check) and fix that instead.
