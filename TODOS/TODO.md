@@ -99,6 +99,9 @@
 - [ ] §B6 — Connection-state UX (connected / open AE / reconnecting / not-installed / port-in-use)
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
+# THEN REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
+# MAYBE BUILD OUT TEASER DEMO VID BEFORE PHASE 5?? POST ON TWITTER??
+
 ### notes
 - **§0 is a decision, not code.** Its `[x]` means the transport is *decided* (direct WS + one `getBackendPort()` IPC + re-attach-by-`sessionId`). The code gets built later: IPC → ②, re-attach backend half → ③, re-attach renderer half → ⑥.
 - **Within a worktree:** plan all its items as one design, implement in *dependency order, not doc-bullet order*.
