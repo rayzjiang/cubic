@@ -374,6 +374,15 @@ function setLayerProperties(args) {
         var layer = resolved.layer;
         var overwriteKeyframes = args.overwriteKeyframes === true;
 
+        // Validate-first: reject any invalid enum / unresolvable font BEFORE mutating, so a bad
+        // arg can't leave a partial update. Resolve to the values the mutation code reuses below.
+        var blendModeVal = null, matteTypeVal = null, qualityVal = null, autoOrientVal = null, resolvedFontFamily = null;
+        if (args.blendMode !== undefined && args.blendMode !== null) { blendModeVal = _requireEnum(args.blendMode, BLEND_MODES, "blendMode"); }
+        if (args.trackMatteType !== undefined && args.trackMatteType !== null) { matteTypeVal = _requireEnum(args.trackMatteType, MATTE_TYPES, "trackMatteType"); }
+        if (args.quality !== undefined && args.quality !== null) { qualityVal = _requireEnum(args.quality, QUALITY_MAP, "quality"); }
+        if (args.autoOrient !== undefined && args.autoOrient !== null) { autoOrientVal = _requireEnum(args.autoOrient, AUTO_ORIENT_MAP, "autoOrient"); }
+        if (layer instanceof TextLayer && args.fontFamily !== undefined && args.fontFamily !== null) { resolvedFontFamily = _resolveFont(args.fontFamily); }
+
         // Capture prior state for revert (only for fields the args touch)
         var previousValues = {};
         if (args.enabled !== undefined && args.enabled !== null) { previousValues.enabled = layer.enabled; }
@@ -427,13 +436,10 @@ function setLayerProperties(args) {
                     changedProperties.push("text");
                     updated = true;
                 }
-                if (fontFamily !== undefined && fontFamily !== null) {
-                    var resolvedFont = _resolveFont(fontFamily);
-                    if (currentTextDocument.font !== resolvedFont) {
-                        currentTextDocument.font = resolvedFont;
-                        changedProperties.push("fontFamily");
-                        updated = true;
-                    }
+                if (resolvedFontFamily !== null && currentTextDocument.font !== resolvedFontFamily) {
+                    currentTextDocument.font = resolvedFontFamily;
+                    changedProperties.push("fontFamily");
+                    updated = true;
                 }
                 if (fontSize !== undefined && fontSize !== null && currentTextDocument.fontSize !== fontSize) {
                     currentTextDocument.fontSize = fontSize;
@@ -458,19 +464,9 @@ function setLayerProperties(args) {
         if (args.enabled !== undefined && args.enabled !== null) { layer.enabled = !!args.enabled; changedProperties.push("enabled"); }
         if (args.selected !== undefined && args.selected !== null) { layer.selected = !!args.selected; changedProperties.push("selected"); }
 
-        if (args.blendMode !== undefined && args.blendMode !== null) {
-            if (BLEND_MODES[args.blendMode] !== undefined) {
-                layer.blendingMode = BLEND_MODES[args.blendMode];
-                changedProperties.push("blendMode");
-            }
-        }
+        if (blendModeVal !== null) { layer.blendingMode = blendModeVal; changedProperties.push("blendMode"); }
 
-        if (args.trackMatteType !== undefined && args.trackMatteType !== null) {
-            if (MATTE_TYPES[args.trackMatteType] !== undefined) {
-                layer.trackMatteType = MATTE_TYPES[args.trackMatteType];
-                changedProperties.push("trackMatteType");
-            }
-        }
+        if (matteTypeVal !== null) { layer.trackMatteType = matteTypeVal; changedProperties.push("trackMatteType"); }
 
         if (args.threeDLayer !== undefined && args.threeDLayer !== null) { layer.threeDLayer = !!args.threeDLayer; changedProperties.push("threeDLayer"); }
         if (args.motionBlur !== undefined && args.motionBlur !== null) { layer.motionBlur = !!args.motionBlur; changedProperties.push("motionBlur"); }
@@ -479,13 +475,9 @@ function setLayerProperties(args) {
         if (args.solo !== undefined && args.solo !== null) { layer.solo = !!args.solo; changedProperties.push("solo"); }
         if (args.guideLayer !== undefined && args.guideLayer !== null) { layer.guideLayer = !!args.guideLayer; changedProperties.push("guideLayer"); }
 
-        if (args.quality !== undefined && args.quality !== null) {
-            if (QUALITY_MAP[args.quality] !== undefined) { layer.quality = QUALITY_MAP[args.quality]; changedProperties.push("quality"); }
-        }
+        if (qualityVal !== null) { layer.quality = qualityVal; changedProperties.push("quality"); }
 
-        if (args.autoOrient !== undefined && args.autoOrient !== null) {
-            if (AUTO_ORIENT_MAP[args.autoOrient] !== undefined) { layer.autoOrient = AUTO_ORIENT_MAP[args.autoOrient]; changedProperties.push("autoOrient"); }
-        }
+        if (autoOrientVal !== null) { layer.autoOrient = autoOrientVal; changedProperties.push("autoOrient"); }
 
         if (args.label !== undefined && args.label !== null) { layer.label = args.label; changedProperties.push("label"); }
         if (args.comment !== undefined && args.comment !== null) { layer.comment = args.comment; changedProperties.push("comment"); }
@@ -640,6 +632,15 @@ function batchSetLayerProperties(args) {
             if (!layer) { results.push({ layerIndex: op.layerIndex, layerName: op.layerName, status: "error", errorCode: ERROR_CODES.LAYER_NOT_FOUND, message: "Layer not found" }); continue; }
 
             try {
+                // Validate-first (per op): reject invalid enums / unresolvable font before any
+                // mutation so one bad op fails cleanly (recorded as an error result) without a
+                // partial update. Reuse the resolved values in the mutation code below.
+                var opBlendModeVal = null, opQualityVal = null, opAutoOrientVal = null, opResolvedFont = null;
+                if (op.blendMode !== undefined && op.blendMode !== null) { opBlendModeVal = _requireEnum(op.blendMode, BLEND_MODES, "blendMode"); }
+                if (op.quality !== undefined && op.quality !== null) { opQualityVal = _requireEnum(op.quality, QUALITY_MAP, "quality"); }
+                if (op.autoOrient !== undefined && op.autoOrient !== null) { opAutoOrientVal = _requireEnum(op.autoOrient, AUTO_ORIENT_MAP, "autoOrient"); }
+                if (layer instanceof TextLayer && op.fontFamily !== undefined && op.fontFamily !== null) { opResolvedFont = _resolveFont(op.fontFamily); }
+
                 // Capture prior state for revert (only for fields this op touches)
                 var prevVals = {};
                 if (layer instanceof TextLayer) {
@@ -675,7 +676,7 @@ function batchSetLayerProperties(args) {
                         var td = sourceTextProp.value;
                         var tdUpdated = false;
                         if (op.text !== undefined && op.text !== null) { td.text = op.text; changed.push("text"); tdUpdated = true; }
-                        if (op.fontFamily !== undefined && op.fontFamily !== null) { td.font = _resolveFont(op.fontFamily); changed.push("fontFamily"); tdUpdated = true; }
+                        if (opResolvedFont !== null) { td.font = opResolvedFont; changed.push("fontFamily"); tdUpdated = true; }
                         if (op.fontSize !== undefined && op.fontSize !== null) { td.fontSize = op.fontSize; changed.push("fontSize"); tdUpdated = true; }
                         if (op.fillColor !== undefined && op.fillColor !== null) { td.fillColor = op.fillColor; changed.push("fillColor"); tdUpdated = true; }
                         if (tdUpdated) { sourceTextProp.setValue(td); }
@@ -715,9 +716,7 @@ function batchSetLayerProperties(args) {
                     changed.push("anchorPoint");
                 }
 
-                if (op.blendMode !== undefined && op.blendMode !== null) {
-                    if (BLEND_MODES[op.blendMode] !== undefined) { layer.blendingMode = BLEND_MODES[op.blendMode]; changed.push("blendMode"); }
-                }
+                if (opBlendModeVal !== null) { layer.blendingMode = opBlendModeVal; changed.push("blendMode"); }
                 if (op.startTime !== undefined && op.startTime !== null) { layer.startTime = op.startTime; changed.push("startTime"); }
                 if (op.duration !== undefined && op.duration !== null && op.duration > 0) {
                     var opStartTime = (op.startTime !== undefined && op.startTime !== null) ? op.startTime : layer.startTime;
@@ -731,12 +730,8 @@ function batchSetLayerProperties(args) {
                 if (op.shy !== undefined && op.shy !== null) { layer.shy = !!op.shy; changed.push("shy"); }
                 if (op.solo !== undefined && op.solo !== null) { layer.solo = !!op.solo; changed.push("solo"); }
                 if (op.guideLayer !== undefined && op.guideLayer !== null) { layer.guideLayer = !!op.guideLayer; changed.push("guideLayer"); }
-                if (op.quality !== undefined && op.quality !== null) {
-                    if (QUALITY_MAP[op.quality] !== undefined) { layer.quality = QUALITY_MAP[op.quality]; changed.push("quality"); }
-                }
-                if (op.autoOrient !== undefined && op.autoOrient !== null) {
-                    if (AUTO_ORIENT_MAP[op.autoOrient] !== undefined) { layer.autoOrient = AUTO_ORIENT_MAP[op.autoOrient]; changed.push("autoOrient"); }
-                }
+                if (opQualityVal !== null) { layer.quality = opQualityVal; changed.push("quality"); }
+                if (opAutoOrientVal !== null) { layer.autoOrient = opAutoOrientVal; changed.push("autoOrient"); }
                 if (op.label !== undefined && op.label !== null) { layer.label = op.label; changed.push("label"); }
                 if (op.comment !== undefined && op.comment !== null) { layer.comment = op.comment; changed.push("comment"); }
 

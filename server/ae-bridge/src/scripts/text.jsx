@@ -341,6 +341,15 @@ function setTextAnimatorRangeSelector(args) {
 
         var selector = selectors.property(rangeSelectorIndex);
 
+        // Validate-first: reject invalid units/basedOn/shape BEFORE mutating any selector property.
+        var UNIT_MAP = { "percentage": 1, "index": 2 };
+        var BASED_ON_MAP = { "characters": 1, "charactersExcludingSpaces": 2, "words": 3, "lines": 4 };
+        var SHAPE_MAP = { "square": 1, "rampUp": 2, "rampDown": 3, "triangle": 4, "round": 5, "smooth": 6 };
+        var unitsVal = null, basedOnVal = null, shapeVal = null;
+        if (args.units !== undefined && args.units !== null)     { unitsVal   = _requireEnum(args.units, UNIT_MAP, "units"); }
+        if (args.basedOn !== undefined && args.basedOn !== null) { basedOnVal = _requireEnum(args.basedOn, BASED_ON_MAP, "basedOn"); }
+        if (args.shape !== undefined && args.shape !== null)     { shapeVal   = _requireEnum(args.shape, SHAPE_MAP, "shape"); }
+
         // Capture prior state for revert (only for fields the args touch)
         var previousValues = {};
         if (args.start !== undefined)  { previousValues.start  = selector.property("Start").value;  }
@@ -362,34 +371,25 @@ function setTextAnimatorRangeSelector(args) {
         var advanced = null;
         try { advanced = selector.property("ADBE Text Range Advanced"); } catch(e) {}
         if (advanced) {
-            if (args.units !== undefined) {
-                var unitMap = { "percentage": 1, "index": 2 };
-                if (unitMap[args.units] !== undefined) {
-                    advanced.property("ADBE Text Range Units").setValue(unitMap[args.units]);
-                    changed.push("units");
-                }
+            if (unitsVal !== null) {
+                advanced.property("ADBE Text Range Units").setValue(unitsVal);
+                changed.push("units");
             }
-            if (args.basedOn !== undefined) {
-                var basedOnMap = { "characters": 1, "charactersExcludingSpaces": 2, "words": 3, "lines": 4 };
-                if (basedOnMap[args.basedOn] !== undefined) {
-                    // AE uses "ADBE Text Selector Based On" (not "Range") — inconsistent naming; scan by display name as fallback.
-                    var basedOnProp = null;
-                    try { basedOnProp = advanced.property("ADBE Text Selector Based On"); } catch(e) {}
-                    if (!basedOnProp) { try { basedOnProp = advanced.property("ADBE Text Range Based On"); } catch(e) {} }
-                    if (!basedOnProp) {
-                        for (var bi = 1; bi <= advanced.numProperties; bi++) {
-                            try { if (advanced.property(bi).name === "Based On") { basedOnProp = advanced.property(bi); break; } } catch(e) {}
-                        }
+            if (basedOnVal !== null) {
+                // AE uses "ADBE Text Selector Based On" (not "Range") — inconsistent naming; scan by display name as fallback.
+                var basedOnProp = null;
+                try { basedOnProp = advanced.property("ADBE Text Selector Based On"); } catch(e) {}
+                if (!basedOnProp) { try { basedOnProp = advanced.property("ADBE Text Range Based On"); } catch(e) {} }
+                if (!basedOnProp) {
+                    for (var bi = 1; bi <= advanced.numProperties; bi++) {
+                        try { if (advanced.property(bi).name === "Based On") { basedOnProp = advanced.property(bi); break; } } catch(e) {}
                     }
-                    if (basedOnProp) { basedOnProp.setValue(basedOnMap[args.basedOn]); changed.push("basedOn"); }
                 }
+                if (basedOnProp) { basedOnProp.setValue(basedOnVal); changed.push("basedOn"); }
             }
-            if (args.shape !== undefined) {
-                var shapeMap = { "square": 1, "rampUp": 2, "rampDown": 3, "triangle": 4, "round": 5, "smooth": 6 };
-                if (shapeMap[args.shape] !== undefined) {
-                    advanced.property("ADBE Text Range Shape").setValue(shapeMap[args.shape]);
-                    changed.push("shape");
-                }
+            if (shapeVal !== null) {
+                advanced.property("ADBE Text Range Shape").setValue(shapeVal);
+                changed.push("shape");
             }
         }
 

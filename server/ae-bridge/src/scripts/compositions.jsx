@@ -152,6 +152,17 @@ function setCompositionProperties(args) {
             if (waStart + waDur > compDur) { throw _err(ERROR_CODES.INVALID_ARGS, "workAreaStart + workAreaDuration (" + (waStart + waDur) + "s) exceeds composition duration (" + compDur + "s)"); }
         }
 
+        // Pre-parse + validate resolutionFactor before any mutation — a malformed value would
+        // otherwise throw mid-sequence after name/duration/etc. were already applied.
+        var rfParsed = null;
+        if (args.resolutionFactor !== undefined && args.resolutionFactor !== null) {
+            rfParsed = args.resolutionFactor;
+            if (typeof rfParsed === "string") { try { rfParsed = eval("(" + rfParsed + ")"); } catch (e) { rfParsed = null; } }
+            if (!rfParsed || typeof rfParsed.length !== "number" || rfParsed.length < 2) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "resolutionFactor must be a 2-element array, e.g. [1,1] (full) or [2,2] (half).");
+            }
+        }
+
         // Capture prior state for revert (only for fields the args touch)
         var previousValues = {};
         if (args.name !== undefined && args.name !== null) { previousValues.name = comp.name; }
@@ -180,12 +191,7 @@ function setCompositionProperties(args) {
         if (hasWorkAreaStart)    { comp.workAreaStart    = parseFloat(args.workAreaStart);    changed.push("workAreaStart"); }
         if (hasWorkAreaDuration) { comp.workAreaDuration = parseFloat(args.workAreaDuration); changed.push("workAreaDuration"); }
         if (args.displayStartTime !== undefined && args.displayStartTime !== null) { comp.displayStartTime = parseFloat(args.displayStartTime); changed.push("displayStartTime"); }
-        if (args.resolutionFactor !== undefined && args.resolutionFactor !== null) {
-            var rf = args.resolutionFactor;
-            if (typeof rf === "string") { try { rf = eval("(" + rf + ")"); } catch(e) {} }
-            comp.resolutionFactor = rf;
-            changed.push("resolutionFactor");
-        }
+        if (rfParsed !== null) { comp.resolutionFactor = rfParsed; changed.push("resolutionFactor"); }
         if (args.shutterAngle !== undefined && args.shutterAngle !== null) {
             comp.shutterAngle = Math.max(0, Math.min(720, parseInt(args.shutterAngle)));
             changed.push("shutterAngle");

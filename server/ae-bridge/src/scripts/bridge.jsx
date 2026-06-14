@@ -78,6 +78,18 @@ function _err(code, message) {
     return e;
 }
 
+// Validate-first helper: returns map[value], or throws a self-healing INVALID_ARGS listing the
+// valid keys if `value` isn't one of them. Use BEFORE mutating so a bad enum can't leave a
+// partial update (and the model learns the valid options instead of a silent no-op).
+function _requireEnum(value, map, label) {
+    if (map[value] === undefined) {
+        var keys = [];
+        for (var k in map) { if (map.hasOwnProperty(k)) { keys.push(k); } }
+        throw _err(ERROR_CODES.INVALID_ARGS, label + " '" + value + "' is invalid. Valid: " + keys.join(", ") + ".");
+    }
+    return map[value];
+}
+
 
 // ============================================================
 // SHARED HELPERS

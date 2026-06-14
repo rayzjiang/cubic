@@ -71,6 +71,13 @@ function setLayerMask(args) {
         var maskPath      = args.maskPath;
         var maskRect      = args.maskRect;
         var maskMode      = args.maskMode || "add";
+        // Validate-first: reject an invalid maskMode before any mutation (the path setValue below).
+        var MASK_MODES = {
+            "none": MaskMode.NONE, "add": MaskMode.ADD, "subtract": MaskMode.SUBTRACT,
+            "intersect": MaskMode.INTERSECT, "lighten": MaskMode.LIGHTEN,
+            "darken": MaskMode.DARKEN, "difference": MaskMode.DIFFERENCE
+        };
+        var maskModeVal = _requireEnum(maskMode, MASK_MODES, "maskMode");
         var maskFeather   = args.maskFeather;
         var maskOpacity   = args.maskOpacity;
         var maskExpansion = args.maskExpansion;
@@ -141,12 +148,7 @@ function setLayerMask(args) {
             changed.push("newMask");
         }
 
-        var modes = {
-            "none": MaskMode.NONE, "add": MaskMode.ADD, "subtract": MaskMode.SUBTRACT,
-            "intersect": MaskMode.INTERSECT, "lighten": MaskMode.LIGHTEN,
-            "darken": MaskMode.DARKEN, "difference": MaskMode.DIFFERENCE
-        };
-        if (modes[maskMode] !== undefined) { mask.maskMode = modes[maskMode]; changed.push("maskMode"); }
+        mask.maskMode = maskModeVal; changed.push("maskMode");
         if (maskFeather   !== undefined && maskFeather   !== null) { mask.property("Mask Feather").setValue(maskFeather);     changed.push("maskFeather"); }
         if (maskOpacity   !== undefined && maskOpacity   !== null) { mask.property("Mask Opacity").setValue(maskOpacity);     changed.push("maskOpacity"); }
         if (maskExpansion !== undefined && maskExpansion !== null) { mask.property("Mask Expansion").setValue(maskExpansion); changed.push("maskExpansion"); }
