@@ -187,7 +187,7 @@ var READ_ONLY_COMMANDS = {
     getSelectedLayers: 1, getSelectionDetails: 1, listProjectItems: 1,
     getLayerProperty: 1,
     listMarkers: 1, getCurrentTime: 1, getProjectPath: 1,
-    getCompositionInfo: 1
+    getCompositionInfo: 1, listFonts: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -257,6 +257,8 @@ function _dispatchSwitch(command, args) {
         case "distributeLayers3D":       return distributeLayers3D(args);
         // text.jsx
         case "createTextLayer":          return createTextLayer(args);
+        // fonts.jsx
+        case "listFonts":                return listFonts(args);
         case "addTextAnimator":          return addTextAnimator(args);
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);

@@ -18,7 +18,9 @@ function createTextLayer(args) {
         var color = args.color || [1, 1, 1];
         var startTime = args.startTime || 0;
         var duration = args.duration || 5;
-        var fontFamily = args.fontFamily || "Arial";
+        // Resolve to a real PostScript name BEFORE creating the layer, so a bad font name
+        // fails here (textLayer still null → no orphan) rather than after addText.
+        var fontFamily = _resolveFont(args.fontFamily || "Arial");
         var alignment = args.alignment || "center";
 
         if (!position) { position = [comp.width / 2, comp.height / 2]; }

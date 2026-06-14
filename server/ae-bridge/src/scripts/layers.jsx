@@ -427,10 +427,13 @@ function setLayerProperties(args) {
                     changedProperties.push("text");
                     updated = true;
                 }
-                if (fontFamily !== undefined && fontFamily !== null && currentTextDocument.font !== fontFamily) {
-                    currentTextDocument.font = fontFamily;
-                    changedProperties.push("fontFamily");
-                    updated = true;
+                if (fontFamily !== undefined && fontFamily !== null) {
+                    var resolvedFont = _resolveFont(fontFamily);
+                    if (currentTextDocument.font !== resolvedFont) {
+                        currentTextDocument.font = resolvedFont;
+                        changedProperties.push("fontFamily");
+                        updated = true;
+                    }
                 }
                 if (fontSize !== undefined && fontSize !== null && currentTextDocument.fontSize !== fontSize) {
                     currentTextDocument.fontSize = fontSize;
@@ -672,7 +675,7 @@ function batchSetLayerProperties(args) {
                         var td = sourceTextProp.value;
                         var tdUpdated = false;
                         if (op.text !== undefined && op.text !== null) { td.text = op.text; changed.push("text"); tdUpdated = true; }
-                        if (op.fontFamily !== undefined && op.fontFamily !== null) { td.font = op.fontFamily; changed.push("fontFamily"); tdUpdated = true; }
+                        if (op.fontFamily !== undefined && op.fontFamily !== null) { td.font = _resolveFont(op.fontFamily); changed.push("fontFamily"); tdUpdated = true; }
                         if (op.fontSize !== undefined && op.fontSize !== null) { td.fontSize = op.fontSize; changed.push("fontSize"); tdUpdated = true; }
                         if (op.fillColor !== undefined && op.fillColor !== null) { td.fillColor = op.fillColor; changed.push("fillColor"); tdUpdated = true; }
                         if (tdUpdated) { sourceTextProp.setValue(td); }

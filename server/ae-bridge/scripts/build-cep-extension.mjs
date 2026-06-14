@@ -19,6 +19,7 @@ const distCsxsDir = path.join(distDir, 'CSXS');
 // Domain files in load order (dependencies first, dispatch last)
 const domainFiles = [
   'compositions.jsx',
+  'fonts.jsx',        // font resolution helpers (_resolveFont) + listFonts
   'layers.jsx',
   'text.jsx',         // text layers + animators (was in layers.jsx)
   'shapes.jsx',       // shape layers + vector operators (was in layers.jsx)

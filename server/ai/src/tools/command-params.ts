@@ -97,7 +97,7 @@ export const COMMAND_PARAMS = {
       // solid / adjustment
       color: '[r,g,b] 0-1', size: '[w,h] px', isAdjustment: 'bool (solid->adjustment)',
       // text
-      text: 'string', fontSize: 'float pt', fontFamily: 'string', alignment: 'left|center|right', fillColor: '[r,g,b] 0-1',
+      text: 'string', fontSize: 'float pt', fontFamily: 'string — installed font; common display names auto-resolve, see listFonts', alignment: 'left|center|right', fillColor: '[r,g,b] 0-1',
       // shape
       shapeType: 'rectangle|ellipse|polygon|star', strokeColor: '[r,g,b] 0-1', strokeWidth: 'float px', roundness: 'float px', points: 'int (polygon/star)',
       // null
@@ -124,7 +124,7 @@ export const COMMAND_PARAMS = {
       autoOrient: 'off|alongPath|cameraOrPOI|charactersTowardsCamera', label: 'int (color index)', comment: 'string',
       position: '[x,y] or [x,y,z]', scale: '[x,y,z] % (100=1:1)', rotation: 'float deg', opacity: 'float 0-100', anchorPoint: '[x,y]',
       startTime: 'float seconds', duration: 'float seconds', stretch: 'float % time-stretch',
-      text: 'string (text layer)', fontFamily: 'string (text layer)', fontSize: 'float pt (text layer)', fillColor: '[r,g,b] 0-1 (text layer)',
+      text: 'string (text layer)', fontFamily: 'string (text layer) — installed font; common display names auto-resolve, see listFonts', fontSize: 'float pt (text layer)', fillColor: '[r,g,b] 0-1 (text layer)',
       cameraOptions: 'object {zoom,depthOfField,focusDistance,aperture,blurLevel}', lightOptions: 'object {intensity,color,coneAngle,coneFeather,falloff,radius,falloffDistance,castsShadows,shadowDarkness,shadowDiffusion}',
       overwriteKeyframes: 'bool — clear existing keys before setting transforms',
     },
@@ -282,6 +282,7 @@ export const COMMAND_PARAMS = {
     required: ['animatorIndex'],
   },
   explodeTextLayer: { domain: 'Text', summary: 'Split a text layer into per-unit layers.', params: { splitMethod: 'CHARACTERS|WORDS|LINES (default CHARACTERS)' } },
+  listFonts: { domain: 'Text', summary: 'List installed font families (optional substring filter). Common display names auto-resolve when you set fontFamily; call this to pick a real installed font for vague requests ("a fun font").', params: { filter: 'string — case-insensitive substring to narrow families' } },
 
   // ── Shapes ────────────────────────────────────────────────────────────────
   addShapeOperator: {
