@@ -33,6 +33,8 @@ export interface ConversationMeta {
 }
 
 const TITLE_MAX = 60;
+/** Placeholder auto-title for a chat with no first message yet (brand-new, or emptied by a restore). */
+const NEW_CONVERSATION_TITLE = 'New conversation';
 
 /** Root of the conversation store. Overridable via `CUBIC_SESSIONS_DIR` (tests point it at a tmp dir). */
 function sessionsRoot(): string {
@@ -83,9 +85,24 @@ function writeIndex(entries: ConversationMeta[]): void {
 /** Placeholder title from the first string user message, whitespace-collapsed + truncated. */
 function deriveTitle(messages: Message[]): string {
   const firstUser = messages.find((m) => m.role === 'user' && typeof m.content === 'string');
-  const raw = firstUser && typeof firstUser.content === 'string' ? firstUser.content : 'New conversation';
+  const raw = firstUser && typeof firstUser.content === 'string' ? firstUser.content : NEW_CONVERSATION_TITLE;
   const text = raw.trim().replace(/\s+/g, ' ');
   return text.length > TITLE_MAX ? `${text.slice(0, TITLE_MAX)}…` : text;
+}
+
+/**
+ * Re-derive an AUTO title (one the user hasn't manually renamed) from `messages` — used after a restore
+ * rewrites which message comes first, including resetting to the "New conversation" placeholder when the
+ * chat is now empty. Never overrides a manual rename (`renamed`), and no-ops if the title is unchanged.
+ */
+function retitleIfAuto(id: string, messages: Message[]): void {
+  const entries = readIndex();
+  const entry = entries.find((e) => e.id === id);
+  if (!entry || entry.renamed) return;
+  const title = deriveTitle(messages);
+  if (entry.title === title) return;
+  entry.title = title;
+  writeIndex(entries);
 }
 
 function upsertIndex(id: string, projectPath: string, newMessages: Message[]): void {
@@ -95,6 +112,9 @@ function upsertIndex(id: string, projectPath: string, newMessages: Message[]): v
   if (existing) {
     existing.lastActivity = now;
     existing.projectPath = projectPath; // stays in sync with the file's location (see rekey)
+    // A chat emptied by "restore to before this request" had its auto-title reset to the placeholder;
+    // this turn is effectively its new first message, so re-derive (never overriding a manual rename).
+    if (!existing.renamed && existing.title === NEW_CONVERSATION_TITLE) existing.title = deriveTitle(newMessages);
   } else {
     entries.push({ id, title: deriveTitle(newMessages), projectPath, lastActivity: now, renamed: false });
   }
@@ -145,6 +165,13 @@ export function truncateToBeforeTurn(id: string, projectPath: string, turnId: st
   if (cut < 0) return false;
   const kept = lines.slice(0, cut);
   fs.writeFileSync(file, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
+  // The title may have been derived from a message we just cut — re-derive the auto-title from what
+  // remains (or reset to the placeholder if the chat is now empty), so the sidebar never shows a title
+  // for a message that no longer exists. Manual renames are preserved.
+  const keptMessages = kept
+    .map((line) => { try { return JSON.parse(line) as Message; } catch { return null; } })
+    .filter((m): m is Message => m !== null);
+  retitleIfAuto(id, keptMessages);
   return true;
 }
 
