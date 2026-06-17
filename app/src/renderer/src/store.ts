@@ -16,14 +16,16 @@ import {
 } from './ws'
 import { track } from './analytics'
 
-// ── Persisted navigation (survives a renderer reload / window reopen) ──
-// We remember the active conversation + view so a reload lands back where the user was and can
-// re-attach to an in-flight turn. Only the pointers are stored; history/live state reload from the backend.
+// ── Persisted navigation (survives an in-window reload, NOT a fresh launch) ──
+// We remember the active conversation + view so a ⌘R / window reload lands back where the user was and
+// can re-attach to an in-flight turn. Stored in sessionStorage on purpose: it persists across a reload
+// but starts empty for a brand-new window/process — so a fresh app launch lands on Home, while a reload
+// restores. Only the pointers are stored; history/live state reload from the backend.
 const NAV_KEY = { session: 'cubic.sessionId', view: 'cubic.view' } as const
 function loadNav(): { sessionId: string | null; view: 'home' | 'chat' } {
   try {
-    const sessionId = localStorage.getItem(NAV_KEY.session)
-    const view = localStorage.getItem(NAV_KEY.view) === 'chat' && sessionId ? 'chat' : 'home'
+    const sessionId = sessionStorage.getItem(NAV_KEY.session)
+    const view = sessionStorage.getItem(NAV_KEY.view) === 'chat' && sessionId ? 'chat' : 'home'
     return { sessionId, view }
   } catch {
     return { sessionId: null, view: 'home' }
@@ -31,9 +33,9 @@ function loadNav(): { sessionId: string | null; view: 'home' | 'chat' } {
 }
 function saveNav(sessionId: string | null, view: 'home' | 'chat'): void {
   try {
-    if (sessionId) localStorage.setItem(NAV_KEY.session, sessionId)
-    else localStorage.removeItem(NAV_KEY.session)
-    localStorage.setItem(NAV_KEY.view, view)
+    if (sessionId) sessionStorage.setItem(NAV_KEY.session, sessionId)
+    else sessionStorage.removeItem(NAV_KEY.session)
+    sessionStorage.setItem(NAV_KEY.view, view)
   } catch {
     /* storage unavailable — non-fatal, we just don't restore on reload */
   }
