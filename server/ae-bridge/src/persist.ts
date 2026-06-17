@@ -28,7 +28,7 @@ export interface ConversationMeta {
   projectPath: string;
   /** Epoch ms of the last appended turn — the sort key for the list. */
   lastActivity: number;
-  /** Reserved: true once a user renames the title (no rename UI in v1 → always false). */
+  /** True once a user renames the title via the sidebar (vs. the auto-derived first-message title). */
   renamed: boolean;
 }
 
@@ -197,6 +197,24 @@ export function deleteSessionBackups(projectPath: string, sessionId: string): vo
   const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '-');
   const dir = path.join(path.dirname(projectPath), '.cubic-backups', safeId);
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ }
+}
+
+/**
+ * Rename a conversation: set a user-chosen title and mark it `renamed`. The title is sanitized the same
+ * way as auto-titles (whitespace-collapsed, capped at TITLE_MAX) so a manual title can never break the
+ * single-line list layout. No-op if the id isn't present or the cleaned title is empty — the renderer
+ * already reverts on empty, this is the defensive backstop. Metadata-only: never touches the JSONL, so
+ * it's safe to call mid-turn (unlike delete, which drops the live session).
+ */
+export function renameConversation(id: string, title: string): void {
+  const clean = title.trim().replace(/\s+/g, ' ').slice(0, TITLE_MAX);
+  if (!clean) return;
+  const entries = readIndex();
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return;
+  entry.title = clean;
+  entry.renamed = true;
+  writeIndex(entries);
 }
 
 /** Delete a conversation: remove its JSONL + drop its index entry. Idempotent; keyed by id alone. */

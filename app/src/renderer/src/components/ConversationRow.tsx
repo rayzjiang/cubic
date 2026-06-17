@@ -1,16 +1,59 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ConversationMeta } from '../protocol'
 import { useChatStore } from '../store'
 
 /**
- * One conversation in the home list / sidebar. Click opens it. A hover-revealed kebab (⋯) opens a
- * small menu whose only action is Delete, which raises the confirm MODAL (delete is permanent — the
- * store does optimistic-remove + rollback-on-refusal, and shows a toast on success). Optional badge.
+ * One conversation in the home list / sidebar. Click opens it. A hover-revealed kebab (⋯) opens a small
+ * menu with Rename + Delete. Rename edits the title in place (ChatGPT-style): Enter/blur saves, Esc
+ * cancels, an empty result reverts — the store updates the row optimistically + persists (no ack). Delete
+ * raises the confirm MODAL (permanent; optimistic-remove + rollback-on-refusal + success toast). Optional badge.
  */
 export function ConversationRow({ conv, active, badge }: { conv: ConversationMeta; active?: boolean; badge?: string }) {
   const openChat = useChatStore((s) => s.openChat)
   const requestDelete = useChatStore((s) => s.requestDelete)
+  const renameConversation = useChatStore((s) => s.renameConversation)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  // Set when Esc cancels, so the unmount-triggered blur skips the save (Enter/blur are the save paths).
+  const cancelledRef = useRef(false)
+
+  function startRename() {
+    setMenuOpen(false)
+    setDraft(conv.title)
+    setEditing(true)
+  }
+
+  function commit() {
+    setEditing(false)
+    const clean = draft.trim().replace(/\s+/g, ' ')
+    // Skip the write when blank (revert) or unchanged — only persist a real new title.
+    if (clean && clean !== conv.title) renameConversation(conv.id, clean)
+  }
+
+  if (editing) {
+    return (
+      <div className={`group relative flex items-center rounded-md ${active ? 'bg-white/10' : ''}`}>
+        <input
+          value={draft}
+          autoFocus
+          maxLength={60}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } // blur is the single save path
+            else if (e.key === 'Escape') { e.preventDefault(); cancelledRef.current = true; e.currentTarget.blur() }
+          }}
+          onBlur={() => {
+            if (cancelledRef.current) { cancelledRef.current = false; setEditing(false); return }
+            commit()
+          }}
+          className="mx-1 my-0.5 min-w-0 flex-1 rounded bg-black/30 px-2 py-1.5 text-[13px] text-white/90 outline-none ring-1 ring-white/20"
+          aria-label="Rename conversation"
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={`group relative flex items-center rounded-md ${active ? 'bg-white/10' : 'hover:bg-white/[0.06]'}`}>
@@ -30,6 +73,12 @@ export function ConversationRow({ conv, active, badge }: { conv: ConversationMet
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
           <div className="absolute right-1 top-9 z-20 w-32 rounded-md border border-white/10 bg-neutral-800 py-1 shadow-lg">
+            <button
+              onClick={startRename}
+              className="block w-full px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
+            >
+              Rename chat
+            </button>
             <button
               onClick={() => {
                 setMenuOpen(false)

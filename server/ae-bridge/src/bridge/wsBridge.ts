@@ -27,18 +27,20 @@ type BridgeEvent = 'connect' | 'disconnect';
  *  one); `list` requests the current project's conversation list; `loadHistory` fetches one
  *  conversation's committed history as renderable display items. */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename';
   sessionId?: string;
   text?: string;
   /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
   id?: string;
   /** Pre-turn snapshot id to revert to (restore: "restore to before this request"). */
   turnId?: string;
+  /** New conversation title (rename). */
+  title?: string;
 }
 
 /** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
 const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
-  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore',
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore', 'rename',
 ]);
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;

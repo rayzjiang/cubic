@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, truncateToBeforeTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
+import { appendTurn, truncateToBeforeTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -135,6 +135,14 @@ export function registerAgentChat(): void {
       // the current AE state so a renderer that connects while AE is already up/down starts correct.
       sendAeStatus(ws);
       await sendConversations(ws);
+      return;
+    }
+
+    // Rename a conversation (sidebar kebab → inline edit). Pure index.json metadata, so — unlike delete —
+    // it's allowed mid-turn and needs no Session: handle it before the per-session hydration below. The
+    // renderer updates the row optimistically; no ack is sent (the next `list` confirms the persisted title).
+    if (msg.type === "rename") {
+      if (msg.sessionId && msg.title) renameConversation(msg.sessionId, msg.title);
       return;
     }
 

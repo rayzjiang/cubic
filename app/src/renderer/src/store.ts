@@ -9,6 +9,7 @@ import {
   sendLoadHistory,
   sendQueue,
   sendRemoveQueue,
+  sendRename,
   sendRestore,
   sendUserChat,
 } from './ws'
@@ -107,6 +108,7 @@ interface ChatState {
   confirmDelete: () => void
   cancelDelete: () => void
   deleteConversation: (id: string) => void
+  renameConversation: (id: string, title: string) => void
   requestRestore: (turnId: string) => void
   confirmRestore: () => void
   cancelRestore: () => void
@@ -396,6 +398,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     track('conversation_deleted')
     sendDelete(id)
     if (s.sessionId === id) get().newChat() // deleting the open chat → drop into a fresh New chat
+  },
+
+  renameConversation: (id, title) => {
+    // Trim + collapse whitespace to mirror the backend's title rules; an empty result is a cancel (the
+    // row keeps its current title). Optimistically repaint the row + mark it renamed, then persist —
+    // no ack needed (mirrors delete; the next `list` confirms). The input caps length at 60.
+    const clean = title.trim().replace(/\s+/g, ' ')
+    if (!clean) return
+    set((s) => ({ conversations: s.conversations.map((c) => (c.id === id ? { ...c, title: clean, renamed: true } : c)) }))
+    track('conversation_renamed')
+    sendRename(id, clean)
   },
 
   addToast: (text) => set((s) => ({ toasts: [...s.toasts, { id: crypto.randomUUID(), text }] })),

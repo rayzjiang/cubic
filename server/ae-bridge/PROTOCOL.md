@@ -80,6 +80,7 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "list" }
 { "type": "loadHistory", "sessionId": "<uuid>" }
 { "type": "restore",     "sessionId": "<uuid>", "turnId": "<ms-timestamp>" }
+{ "type": "rename",      "sessionId": "<uuid>", "title": "<new title>" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
@@ -102,6 +103,9 @@ Inbound (UI → backend), the `ChatInbound` union:
   backup AND rewind the saved transcript to before that turn (one-way — newer backups pruned, history
   truncated). `turnId` comes from the prompt's `DisplayItem.user.turnId` (or the live `snapshot` event).
   Refused while a turn is in flight. Replied with one `restored` envelope (below).
+- `rename`: set a conversation's `title` (index.json metadata only). Sanitized server-side
+  (whitespace-collapsed, capped at 60) and marks the entry `renamed`. Allowed mid-turn (no Session
+  touched). No reply — the renderer updates the row optimistically; the next `list` confirms.
 
 Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json
@@ -157,5 +161,5 @@ A new **host adapter** (Role B worker) must:
   `{id,ok:false,error}`. Emit the structured-error shape above on domain failures.
 - Reconnect automatically on socket close. It does **not** touch the chat channel.
 
-A new **UI client** speaks Channel 2 only (`userChat`/`cancel`/`queue`/`attach`/`delete`/`list`/
+A new **UI client** speaks Channel 2 only (`userChat`/`cancel`/`queue`/`attach`/`delete`/`rename`/`list`/
 `loadHistory` in; `agentEvent`/`attached`/`conversations`/`history`/`aeStatus` out).

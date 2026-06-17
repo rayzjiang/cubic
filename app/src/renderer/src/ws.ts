@@ -59,6 +59,7 @@ export const sendUserChat = (sessionId: string, text: string): void => wsSend({ 
 export const sendQueue = (sessionId: string, text: string, id: string): void => wsSend({ type: 'queue', sessionId, text, id })
 export const sendRemoveQueue = (sessionId: string, id: string): void => wsSend({ type: 'removeQueue', sessionId, id })
 export const sendDelete = (sessionId: string): void => wsSend({ type: 'delete', sessionId })
+export const sendRename = (sessionId: string, title: string): void => wsSend({ type: 'rename', sessionId, title })
 export const sendCancel = (sessionId: string): void => wsSend({ type: 'cancel', sessionId })
 export const sendAttach = (sessionId: string): void => wsSend({ type: 'attach', sessionId })
 export const sendRestore = (sessionId: string, turnId: string): void => wsSend({ type: 'restore', sessionId, turnId })

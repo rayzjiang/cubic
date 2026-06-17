@@ -54,6 +54,7 @@ export type ClientMessage =
   | { type: 'removeQueue'; sessionId: string; id: string }
   | { type: 'attach'; sessionId: string }
   | { type: 'delete'; sessionId: string }
+  | { type: 'rename'; sessionId: string; title: string }
   | { type: 'list' }
   | { type: 'loadHistory'; sessionId: string }
   | { type: 'restore'; sessionId: string; turnId: string }
