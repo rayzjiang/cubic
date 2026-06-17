@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { BackendStatus } from '@shared/ipc'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
@@ -62,6 +63,9 @@ interface ChatState {
   // Live AE (CEP worker) connectivity, pushed by the backend (`aeStatus`). Distinct from `connection`
   // (the renderer↔backend link): drives the always-on After Effects status dot.
   aeConnected: boolean
+  // Backend-link status, pushed by main over IPC (distinct from `connection`, the renderer's own WS):
+  // covers backend crash/reconnect/port-in-use/install — states the WS can't carry when it's down.
+  backendStatus: BackendStatus
   view: 'home' | 'chat'
   projectPath: string
   // sidebar/home list
@@ -94,6 +98,7 @@ interface ChatState {
   restoreDraft: string | null
   // actions
   setConnection: (c: Connection) => void
+  setBackendStatus: (s: BackendStatus) => void
   toggleSidebar: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
@@ -139,6 +144,7 @@ const blankConversation = (): Pick<
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
   aeConnected: false,
+  backendStatus: { phase: 'starting', install: 'ok' },
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
   projectPath: '',
@@ -153,6 +159,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   restoreDraft: null,
 
   setConnection: (c) => set({ connection: c }),
+  setBackendStatus: (s) => set({ backendStatus: s }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   handleServerMessage: (msg) => {

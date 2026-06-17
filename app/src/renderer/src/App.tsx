@@ -5,6 +5,7 @@ import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
 import { LoadingScreen } from './components/LoadingScreen'
+import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { Toasts } from './components/Toasts'
 import { AeStatus } from './components/AeStatus'
@@ -18,11 +19,16 @@ export function App() {
   const connection = useChatStore((s) => s.connection)
   const listLoaded = useChatStore((s) => s.listLoaded)
   const view = useChatStore((s) => s.view)
+  const backendPhase = useChatStore((s) => s.backendStatus.phase)
 
   useEffect(() => {
     const store = useChatStore.getState()
     bindWs(store.handleServerMessage, store.setConnection)
     connectBackend()
+    // Backend-link status from main (over IPC, not the WS): snapshot first (covers a late mount/reload),
+    // then subscribe to live pushes (the only way the dot learns "reconnecting" while the WS is down).
+    void window.cubic.getBackendStatus().then(store.setBackendStatus).catch(() => {})
+    return window.cubic.onBackendStatus(store.setBackendStatus)
   }, [])
 
   useEffect(() => {
@@ -35,7 +41,10 @@ export function App() {
   }, [connection])
 
   let body
-  if (!listLoaded && connection !== 'disconnected') {
+  if (backendPhase === 'port-in-use' || backendPhase === 'stopped') {
+    // Non-functional backend the user must resolve — full takeover (not just the dot).
+    body = <BackendBlockedScreen phase={backendPhase} />
+  } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
   } else if (view === 'home') {
     body = <HomeView />

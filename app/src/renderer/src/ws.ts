@@ -2,8 +2,10 @@
  * Backend WebSocket transport (single socket). The renderer learns the port from main via the
  * `getBackendPort()` IPC, then opens a browser `WebSocket` directly to the backend (renderer stays
  * sandboxed — no `ws`/`fs`). Inbound server messages are handed to a bound dispatch fn; outbound
- * messages go through the typed send helpers. Full reconnect/connection-state UX is worktree ⑦;
- * here we keep the one-shot startup retry from the original useBackendStatus proof.
+ * messages go through the typed send helpers. The socket reconnects indefinitely with a bounded
+ * backoff so a backend restart (the supervisor in main bounded-restarts the child — §B6) self-heals:
+ * the renderer keeps showing "connecting" and rejoins automatically, and App.tsx's `connection`
+ * effect re-fires `sendList()` + `reattachActive()` on each successful reconnect.
  */
 import type { ClientMessage, ServerMessage } from './protocol'
 
@@ -19,12 +21,19 @@ export function bindWs(d: (msg: ServerMessage) => void, s: (status: Connection) 
   onStatus = s
 }
 
+// Reconnect backoff: quick at first (backend may just be (re)binding the port), capped so we keep
+// retrying forever at a steady cadence without hammering.
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 3000]
+
 export function connectBackend(): void {
-  let retried = false
+  let attempt = 0
   const open = async (): Promise<void> => {
     const port = await window.cubic.getBackendPort()
     socket = new WebSocket(`ws://127.0.0.1:${port}`)
-    socket.onopen = () => onStatus('open')
+    socket.onopen = () => {
+      attempt = 0 // healthy connection → reset backoff
+      onStatus('open')
+    }
     socket.onmessage = (e) => {
       try {
         dispatch(JSON.parse(e.data as string) as ServerMessage)
@@ -34,16 +43,14 @@ export function connectBackend(): void {
     }
     socket.onclose = () => {
       socket = null
-      if (!retried) {
-        // Backend may not have bound the port yet on first paint — try once more.
-        retried = true
-        onStatus('connecting')
-        setTimeout(() => void open(), 500)
-      } else {
-        onStatus('disconnected')
-      }
+      // Keep retrying indefinitely so a backend restart (§B6) reconnects on its own; the dot stays
+      // "connecting" throughout (the actionable cause — reconnecting/port-in-use — comes from main).
+      onStatus('connecting')
+      const delay = RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)]
+      attempt++
+      setTimeout(() => void open(), delay)
     }
-    // onerror is followed by onclose; let onclose drive the retry/disconnect transition.
+    // onerror is followed by onclose; let onclose drive the reconnect.
   }
   onStatus('connecting')
   void open()
