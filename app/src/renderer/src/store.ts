@@ -58,6 +58,9 @@ interface ChatState {
   // transient UI: confirm-delete modal target + auto-dismissing toasts
   pendingDeleteConfirm: ConversationMeta | null
   toasts: { id: string; text: string }[]
+  // Set when a turn is discarded (stopped before any output) — the composer picks this up and puts the
+  // un-sent text back in the input, then clears it.
+  restoreDraft: string | null
   // actions
   setConnection: (c: Connection) => void
   toggleSidebar: () => void
@@ -75,6 +78,7 @@ interface ChatState {
   deleteConversation: (id: string) => void
   addToast: (text: string) => void
   dismissToast: (id: string) => void
+  clearRestoreDraft: () => void
   retry: () => void
   dismissError: () => void
 }
@@ -108,6 +112,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
   toasts: [],
+  restoreDraft: null,
 
   setConnection: (c) => set({ connection: c }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -205,6 +210,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         track('turn_error')
         break
       case 'cancelled':
+        if (event.discarded) {
+          // Stopped before any output → throw the turn away: pull the optimistic user prompt back out
+          // of the transcript and return its text to the composer (as if never sent). No divider, and
+          // nothing was persisted so the sidebar doesn't need a refresh.
+          set({
+            items: s.items[s.items.length - 1]?.kind === 'user' ? s.items.slice(0, -1) : s.items,
+            restoreDraft: s.lastUserText,
+            running: false,
+            cancelling: false,
+            progressWord: null,
+          })
+          break
+        }
         // The authoritative stop: drop the muted "Stopped" divider into the transcript (mirrors the
         // persisted marker, so live + reload match) and refresh the sidebar (the turn was committed).
         set({ items: [...s.items, { kind: 'interrupted' }], running: false, cancelling: false, progressWord: null })
@@ -288,6 +306,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addToast: (text) => set((s) => ({ toasts: [...s.toasts, { id: crypto.randomUUID(), text }] })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  clearRestoreDraft: () => set({ restoreDraft: null }),
 
   retry: () => {
     const s = get()

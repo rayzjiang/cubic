@@ -95,9 +95,16 @@ export async function runAgentTurn(
     onCommit?.(msg);
   };
 
-  /** End a stopped turn: record the interruption in history (so it persists + the model sees it) and
-   *  notify the UI. Called from every cancel exit so the behavior is identical wherever the stop lands. */
-  const cancelTurn = (): void => {
+  /** End a stopped turn. If the stop landed BEFORE any output was produced (`discarded`), throw the
+   *  turn away entirely — pop the just-committed user prompt so it never reaches history, and tell the
+   *  UI to restore it to the composer (as if never sent — Claude Code's behavior). Otherwise record an
+   *  interruption marker so the partial turn persists + the model sees it was cut short. */
+  const cancelTurn = (discarded: boolean): void => {
+    if (discarded) {
+      session.messages.pop(); // remove the user prompt committed at turn start (nothing else ran)
+      emit({ type: 'cancelled', discarded: true });
+      return;
+    }
     commit({ role: 'assistant', content: INTERRUPTED_MARKER });
     emit({ type: 'cancelled' });
   };
@@ -108,6 +115,9 @@ export async function runAgentTurn(
   // waiting for the next iteration boundary (Claude Code-style interrupt).
   const abort = new AbortController();
   session.abortController = abort;
+  // Has this turn committed any assistant output yet? Drives discard-vs-mark on cancel: a stop before
+  // the first assistant message means nothing was shown → discard the turn entirely (see cancelTurn).
+  let rendered = false;
 
   try {
     // Context-window management at the turn boundary (history always ends on a complete turn here,
@@ -143,7 +153,7 @@ export async function runAgentTurn(
       // Cancel is honored at iteration boundaries — the history always ends on a valid
       // user/tool_result message here, so a later turn can resume cleanly.
       if (session.cancelRequested) {
-        cancelTurn();
+        cancelTurn(!rendered);
         return;
       }
 
@@ -159,11 +169,12 @@ export async function runAgentTurn(
       // Cancel landed while the response was already in flight (abort didn't beat it): drop the
       // response before committing, so history ends cleanly on the prior user/tool_result message.
       if (session.cancelRequested) {
-        cancelTurn();
+        cancelTurn(!rendered);
         return;
       }
 
       commit({ role: 'assistant', content: assistantContent(response.content, response.toolUses) });
+      rendered = true; // first assistant message of the turn → a later stop keeps it + shows the marker
 
       if (response.content) emit({ type: 'text', text: response.content });
 
@@ -220,7 +231,7 @@ export async function runAgentTurn(
       // Tools committed with valid results (real or synthetic) → history is consistent. If the user
       // cancelled during the batch, stop now rather than looping into another model call.
       if (session.cancelRequested) {
-        cancelTurn();
+        cancelTurn(!rendered);
         return;
       }
       iter++;
@@ -232,7 +243,7 @@ export async function runAgentTurn(
     // pending is a clean interruption, not an error: record the stop + notify (history was untouched
     // by the aborted call, so the marker lands on the prior valid message).
     if (session.cancelRequested) {
-      cancelTurn();
+      cancelTurn(!rendered);
       return;
     }
     const message = e instanceof Error ? e.message : String(e);

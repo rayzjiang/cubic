@@ -13,7 +13,18 @@ export function InputBar() {
   const cancelRun = useChatStore((s) => s.cancelRun)
   const queuedSteers = useChatStore((s) => s.queuedSteers)
   const cancelSteer = useChatStore((s) => s.cancelSteer)
+  const restoreDraft = useChatStore((s) => s.restoreDraft)
+  const clearRestoreDraft = useChatStore((s) => s.clearRestoreDraft)
   const [draft, setDraft] = useState('')
+
+  // A discarded turn (stopped before any output) returns its text to the composer — as if never sent.
+  // Don't clobber anything the user typed in the brief stop window.
+  useEffect(() => {
+    if (restoreDraft !== null) {
+      setDraft((d) => d || restoreDraft)
+      clearRestoreDraft()
+    }
+  }, [restoreDraft, clearRestoreDraft])
 
   // Global Esc interrupts a running turn (Claude Code-style); inert when nothing is running so it
   // never swallows Esc elsewhere. Reads `running` live from the store to avoid a stale closure.

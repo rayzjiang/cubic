@@ -17,7 +17,9 @@ export type AgentEvent =
   // `noop` = succeeded but changed nothing; `label` is the outcome-accurate label replacing tool_start's.
   | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean; noop?: boolean; label?: string }
   | { type: 'steer'; id: string; text: string }
-  | { type: 'cancelled' }
+  // `discarded` = stopped before any output → the turn is thrown away (prompt returns to the composer,
+  // no "Stopped" marker). Otherwise a partial turn was kept and the marker is shown.
+  | { type: 'cancelled'; discarded?: boolean }
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
   | { type: 'context_full'; message: string }
   | { type: 'error'; message: string }

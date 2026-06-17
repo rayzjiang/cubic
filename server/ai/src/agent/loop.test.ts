@@ -121,9 +121,9 @@ describe('runAgentTurn', () => {
     expect(session.running).toBe(false);
   });
 
-  it('interrupts cleanly (no error) when a cancel aborts the in-flight model request', async () => {
+  it('discards the turn (as if never sent) when stopped before any output — abort on the first model call', async () => {
     const session = new Session();
-    // Simulate Stop pressed mid-request: the cancel flag is set and the SDK rejects with an abort.
+    // Stop pressed mid-request before anything rendered: cancel set + the SDK rejects with an abort.
     const provider: LLMProvider = {
       chat: async () => { session.cancelRequested = true; throw new Error('Request was aborted.'); },
       // eslint-disable-next-line require-yield
@@ -134,11 +134,35 @@ describe('runAgentTurn', () => {
 
     await runAgentTurn(session, 'go', (e) => events.push(e), baseDeps(provider));
 
-    expect(events.map((e) => e.type)).toContain('cancelled');
     expect(events.map((e) => e.type)).not.toContain('error');
-    // Nothing partial committed beyond the user prompt + the interruption marker (no dangling
-    // assistant/tool_use) → history is valid to resume from.
-    expect(session.messages[0]).toEqual({ role: 'user', content: 'go' });
+    const cancelled = events.find((e) => e.type === 'cancelled') as { type: 'cancelled'; discarded?: boolean };
+    expect(cancelled.discarded).toBe(true);
+    // The user prompt was rolled back → history untouched, nothing to persist (as if never sent).
+    expect(session.messages).toHaveLength(0);
+    expect(session.running).toBe(false);
+  });
+
+  it('keeps a partial turn + marker (not discarded) when the stop lands after output was shown', async () => {
+    const session = new Session();
+    let call = 0;
+    // First call yields a tool (output rendered); the cancel aborts the SECOND model call.
+    const provider: LLMProvider = {
+      chat: async () => {
+        call += 1;
+        if (call === 1) return toolResponse([runScriptCall('t1', 'createLayer')]);
+        session.cancelRequested = true;
+        throw new Error('Request was aborted.');
+      },
+      // eslint-disable-next-line require-yield
+      stream: async function* () { yield { type: 'done' as const }; },
+      contextWindow: () => 200_000,
+    };
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'go', (e) => events.push(e), baseDeps(provider));
+
+    const cancelled = events.find((e) => e.type === 'cancelled') as { type: 'cancelled'; discarded?: boolean };
+    expect(cancelled.discarded).toBeFalsy(); // output was shown → keep the turn
     expect(session.messages[session.messages.length - 1]).toEqual({ role: 'assistant', content: INTERRUPTED_MARKER });
     expect(session.running).toBe(false);
   });

@@ -67,7 +67,15 @@ async function sendConversations(ws: WebSocket): Promise<void> {
 async function runTurnAndPersist(session: Session, text: string, emit: (e: AgentEvent) => void): Promise<void> {
   resetBuffer(session.id); // fresh buffer for this turn (drops any stale between-turn events)
   const committed: Message[] = [];
-  await runAgentTurn(session, text, emit, { onCommit: (m) => committed.push(m) });
+  // A turn stopped before any output is DISCARDED (as if never sent): the loop pops the user prompt
+  // from session.messages, and we persist nothing — so the conversation isn't polluted.
+  let discarded = false;
+  const capture = (e: AgentEvent): void => {
+    if (e.type === "cancelled" && e.discarded) discarded = true;
+    emit(e);
+  };
+  await runAgentTurn(session, text, capture, { onCommit: (m) => committed.push(m) });
+  if (discarded) { clearBuffer(session.id); return; }
   if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)
   const projectPath = await resolveProjectPath();
   const stored = getConversation(session.id);

@@ -17,7 +17,10 @@ export type AgentEvent =
   // carries the finalized, outcome-accurate label that replaces the optimistic tool_start one.
   | { type: 'tool_end'; id: string; ok: boolean; errorCode?: string; retried?: boolean; noop?: boolean; label?: string }
   | { type: 'steer'; id: string; text: string }
-  | { type: 'cancelled' }
+  // `discarded` = the stop landed before any output was produced → the turn is thrown away entirely
+  // (prompt returns to the composer, nothing persisted, no "Stopped" marker). Otherwise a partial turn
+  // was kept and a marker is shown.
+  | { type: 'cancelled'; discarded?: boolean }
   // History compaction: older turns summarized to stay under the context window. 'done' also
   // covers a /clear (reason: 'cleared'). 'failed' is a soft notice — the turn still proceeds.
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
