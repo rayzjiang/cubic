@@ -25,7 +25,12 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (connection === 'open') sendList()
+    if (connection === 'open') {
+      sendList()
+      // Restore the conversation the user was in (persisted across reload) + re-attach to any
+      // in-flight turn. No-op when the landing view is Home.
+      useChatStore.getState().reattachActive()
+    }
   }, [connection])
 
   let body

@@ -58,6 +58,8 @@ export type ClientMessage =
 // ── Backend → renderer ──
 export type ServerMessage =
   | { type: 'agentEvent'; sessionId: string; event: AgentEvent }
-  | { type: 'attached'; sessionId: string; running: boolean; events: AgentEvent[] }
+  // `userText` = the in-flight turn's prompt (only when running) — it isn't committed to history yet
+  // and isn't an event, so the reattaching renderer needs it to show the prompt bubble.
+  | { type: 'attached'; sessionId: string; running: boolean; events: AgentEvent[]; userText?: string }
   | { type: 'conversations'; projectPath: string; conversations: ConversationMeta[] }
   | { type: 'history'; sessionId: string; items: DisplayItem[]; running: boolean }

@@ -101,7 +101,7 @@ Inbound (UI → backend), the `ChatInbound` union:
 Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json
 { "type": "agentEvent",    "sessionId": "<uuid>", "event": <AgentEvent> }
-{ "type": "attached",      "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ] }
+{ "type": "attached",      "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ], "userText": "<in-flight prompt | omitted>" }
 { "type": "conversations", "projectPath": "<path>", "conversations": [ <ConversationMeta>, ... ] }
 { "type": "history",       "sessionId": "<uuid>", "items": [ <DisplayItem>, ... ], "running": false }
 ```
@@ -112,7 +112,9 @@ source of truth `src/displayItems.ts`); the renderer's live `agentEvent` reducer
 shape so history + live turn share one render path. `history.running` flags an in-flight turn.
 `agentEvent` fans out to every socket attached to the session (the original sender + any reloaded
 renderer). `attached` is the direct reply to an `attach`: `running` drives the spinner/Stop button,
-`events` replays the in-flight turn so the renderer catches up with no gap and no dup.
+`events` replays the in-flight turn so the renderer catches up with no gap and no dup, and `userText`
+(present only while running) is the in-flight turn's prompt — not yet committed to history nor an
+event, so the reloaded renderer needs it to render the prompt bubble above the replayed events.
 `AgentEvent` (`server/ai/src/agent/events.ts`) is a tagged union:
 | `event.type` | meaning / key fields |
 |---|---|

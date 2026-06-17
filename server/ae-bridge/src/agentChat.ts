@@ -64,6 +64,17 @@ async function sendConversations(ws: WebSocket): Promise<void> {
  * re-key the file if it changed (unsaved → saved), then append the turn's messages. Per-turn
  * append is the crash-safe unit — a crash loses at most this in-flight turn.
  */
+/** The in-flight turn's prompt: the most recent string-content user message (tool_result user turns
+ *  carry ContentBlock[] and are skipped). Surfaced in the `attached` reply so a renderer that reloaded
+ *  mid-turn can show the prompt bubble even though the turn isn't committed to history yet. */
+function lastUserString(session: Session): string | undefined {
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const m = session.messages[i];
+    if (m.role === "user" && typeof m.content === "string") return m.content;
+  }
+  return undefined;
+}
+
 async function runTurnAndPersist(session: Session, text: string, emit: (e: AgentEvent) => void): Promise<void> {
   resetBuffer(session.id); // fresh buffer for this turn (drops any stale between-turn events)
   const committed: Message[] = [];
@@ -122,7 +133,10 @@ export function registerAgentChat(): void {
     // Re-attach: a reloaded renderer rejoins a still-running turn. Reply with the run state + the
     // live-turn events it missed (committed history loads separately via the resume path above).
     if (msg.type === "attach") {
-      ws.send(JSON.stringify({ type: "attached", sessionId: id, running: session.running, events: bufferFor(id) }));
+      // Include the in-flight turn's prompt (only while running): it isn't committed to history yet
+      // and isn't an agentEvent, so a reloaded renderer needs it to render the prompt bubble.
+      const userText = session.running ? lastUserString(session) : undefined;
+      ws.send(JSON.stringify({ type: "attached", sessionId: id, running: session.running, events: bufferFor(id), userText }));
       return;
     }
 

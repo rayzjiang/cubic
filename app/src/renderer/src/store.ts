@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
+  sendAttach,
   sendCancel,
   sendDelete,
   sendList,
@@ -11,6 +12,29 @@ import {
   sendUserChat,
 } from './ws'
 import { track } from './analytics'
+
+// ── Persisted navigation (survives a renderer reload / window reopen) ──
+// We remember the active conversation + view so a reload lands back where the user was and can
+// re-attach to an in-flight turn. Only the pointers are stored; history/live state reload from the backend.
+const NAV_KEY = { session: 'cubic.sessionId', view: 'cubic.view' } as const
+function loadNav(): { sessionId: string | null; view: 'home' | 'chat' } {
+  try {
+    const sessionId = localStorage.getItem(NAV_KEY.session)
+    const view = localStorage.getItem(NAV_KEY.view) === 'chat' && sessionId ? 'chat' : 'home'
+    return { sessionId, view }
+  } catch {
+    return { sessionId: null, view: 'home' }
+  }
+}
+function saveNav(sessionId: string | null, view: 'home' | 'chat'): void {
+  try {
+    if (sessionId) localStorage.setItem(NAV_KEY.session, sessionId)
+    else localStorage.removeItem(NAV_KEY.session)
+    localStorage.setItem(NAV_KEY.view, view)
+  } catch {
+    /* storage unavailable — non-fatal, we just don't restore on reload */
+  }
+}
 
 // ── Friendly transient-error mapping (raw SDK/transport text → plain English) ──
 function mapError(raw: string): string {
@@ -66,6 +90,7 @@ interface ChatState {
   toggleSidebar: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
+  reattachActive: () => void
   newChat: () => void
   openChat: (id: string) => void
   goHome: () => void
@@ -102,12 +127,12 @@ const blankConversation = (): Pick<
 
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
-  view: 'home',
+  // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
+  ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
   projectPath: '',
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
-  sessionId: null,
   ...blankConversation(),
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
@@ -144,9 +169,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().foldEvent(msg.event)
         break
       }
-      case 'attached':
-        // Re-attach renderer half is worktree ⑥ — ignored here.
+      case 'attached': {
+        // Re-attach to a still-running turn after a reload. `history` (sent just before this on the same
+        // socket) already painted the committed transcript; here we add the in-flight prompt bubble
+        // (not yet in history) and replay the buffered live events so the view catches up + resumes.
+        if (msg.sessionId !== get().sessionId) break
+        if (msg.running && msg.userText) {
+          set({ items: [...get().items, { kind: 'user', text: msg.userText }] })
+        }
+        set({ running: msg.running })
+        for (const ev of msg.events) get().foldEvent(ev)
         break
+      }
     }
   },
 
@@ -238,18 +272,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  reattachActive: () => {
+    // On (re)connect, if a conversation was open, reload its committed history then attach to any
+    // in-flight turn. Same socket → backend replies history-then-attached in order, so the committed
+    // transcript paints first and the live turn replays on top (no gap, no dup).
+    const { sessionId, view } = get()
+    if (view === 'chat' && sessionId) {
+      sendLoadHistory(sessionId)
+      sendAttach(sessionId)
+    }
+  },
+
   newChat: () => {
-    set({ sessionId: crypto.randomUUID(), view: 'chat', ...blankConversation() })
+    const sessionId = crypto.randomUUID()
+    set({ sessionId, view: 'chat', ...blankConversation() })
+    saveNav(sessionId, 'chat')
     track('new_chat')
   },
 
   openChat: (id) => {
     set({ sessionId: id, view: 'chat', ...blankConversation() })
+    saveNav(id, 'chat')
     sendLoadHistory(id)
   },
 
   goHome: () => {
     set({ view: 'home' })
+    saveNav(get().sessionId, 'home')
     sendList()
   },
 
