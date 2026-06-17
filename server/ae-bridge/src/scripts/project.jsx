@@ -72,13 +72,17 @@ function backupProject(args) {
 
         // Prune to the most recent N backups for THIS chat (default 10) — the folder is already
         // session-scoped. turnId is a fixed-width ms timestamp, so a name sort is also chronological.
+        // ALWAYS keep the OLDEST backup (the chat's original-state snapshot, index length-1): it's the
+        // "restore to before the first request" point — a full reset of every Cubic change — which must
+        // stay available no matter how long the chat runs. Only the middle band [keep .. length-2] is
+        // pruned. (Deeper per-turn rewind beyond N is the separately-tracked size/diff limitation.)
         var keep = (args && args.keep) ? parseInt(args.keep, 10) : 10;
         var prefix = base + ".";
         var backups = backupDir.getFiles(function (f) {
             return (f instanceof File) && f.name.indexOf(prefix) === 0 && /\.aep$/i.test(f.name);
         });
         backups.sort(function (a, b) { return a.name < b.name ? 1 : (a.name > b.name ? -1 : 0); });
-        for (var i = keep; i < backups.length; i++) {
+        for (var i = keep; i < backups.length - 1; i++) {
             backups[i].remove();
         }
 

@@ -89,9 +89,10 @@
 - ↳ **Backend footprint (⑤ wasn't frontend-only):** new `list`→`conversations` + `loadHistory`→`history` wire (`wsBridge.ts`/`agentChat.ts`/`PROTOCOL.md`); `displayItems.ts` (Message[]→DisplayItem transform); friendly `describeToolCall` labels (`cubic-ai/events.ts`); `.env` loading at backend boot (`startBackend.ts`); public `bridge.waitForWorker`.
 
 **⑥ WT-CONTROLS** — run controls + the renderer halves that need ⑤'s reducer. Needs ⑤ + ③'s wire + ④'s handler.
-- [ ] §D — Stop/cancel button (+ Esc) → `{type:'cancel'}`
-- [ ] §C — Re-attach on reload (renderer half): on (re)connect send `{type:'attach',sessionId}`, feed buffered `events` through the reducer
-- [ ] §E — "Restore to before this request" button (snapshot list + confirm-before-overwrite)
+- [x] §D — Stop/cancel button (+ Esc) → `{type:'cancel'}`
+- [x] §C — Re-attach on reload (renderer half): on (re)connect send `{type:'attach',sessionId}`, feed buffered `events` through the reducer
+- [x] §E — "Restore to before this request" button (snapshot list + confirm-before-overwrite)
+  - [ ] **BUG (6/16/26) - If someone modifies something in a different piece, the rewind will rewind the ENTIRE project state instead of only the changes that the ai made.. grill to determine if theres a better way to do the backups or if i should js ship mvp v1 like this?**
 
 **⑦ WT-CONNECT** — provisioning + connection. Needs ② merged.
 - [ ] §B2 (deferred rename — **do FIRST in this worktree**): bundle id `com.cubic.ae-mcp-bridge`→`com.cubic.ae-bridge`; rename `~/.ae-mcp-bridge` port dir (writer `wsBridge.ts` + reader `bridge/client.ts` **together**); "MCP Bridge" CEP panel display name in `manifest.xml`
