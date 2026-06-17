@@ -4,6 +4,7 @@ import { createWindow } from './window.js'
 import { buildAppMenu } from './menu.js'
 import { registerIpc } from './ipc.js'
 import { BackendSupervisor } from './backend.js'
+import { provisionBridge } from './installBridge.js'
 
 // Single-instance lock FIRST — load-bearing: a 2nd instance would spawn a 2nd backend that
 // hard-fails binding the fixed port 17923 (no fallback). The 2nd process quits immediately;
@@ -14,10 +15,8 @@ if (!app.requestSingleInstanceLock()) {
   const config = loadConfig()
   const backend = new BackendSupervisor(config)
 
-  // Observability only — no auto-restart here (worktree ⑦ owns recovery + connection UX).
-  backend.on('died', (exit) =>
-    console.error('[main] backend died; not restarting (worktree ⑦):', exit),
-  )
+  // Backend crash recovery + connection-state UX now live in the supervisor (§B6): it bounded-restarts
+  // and emits `status` (broadcast to the renderer by registerIpc). Keep only spawn-error logging here.
   backend.on('error', (err: Error) => console.error('[main] backend error:', err.message))
 
   app.on('second-instance', () => {
@@ -28,8 +27,12 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
-  app.whenReady().then(() => {
-    registerIpc(config)
+  app.whenReady().then(async () => {
+    // §B5 — provision the AE bridge (idempotent, content-hash gated) BEFORE the backend/UI come up.
+    // Never throws; a failure only degrades AE connectivity (the status dot), never blocks launch.
+    const install = await provisionBridge()
+    registerIpc(config, backend) // subscribe to status before markInstall/start so pushes broadcast
+    backend.markInstall(install)
     buildAppMenu()
     backend.start()
     createWindow()
