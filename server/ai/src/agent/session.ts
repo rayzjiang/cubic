@@ -32,6 +32,9 @@ export class Session {
   running = false;
   /** Set by a cancel request; checked at each iteration boundary. */
   cancelRequested = false;
+  /** Per-turn abort handle. A cancel/Stop aborts it to interrupt the in-flight model request
+   *  immediately (Claude Code-style), rather than waiting for the next iteration boundary. */
+  abortController?: AbortController;
   /** Queued steering messages (FIFO). Stacked while a turn runs; drained in order
    *  at each tool-result boundary. Replaces the old single-slot pendingMessage so a
    *  second queued message never silently overwrites a prior one. */

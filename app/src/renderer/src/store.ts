@@ -43,6 +43,9 @@ interface ChatState {
   sessionId: string | null
   items: DisplayItem[]
   running: boolean
+  // True from the moment Stop/Esc is pressed until the turn actually ends — drives the "Stopping…"
+  // affordance so the click has immediate feedback even while the backend finishes the current step.
+  cancelling: boolean
   liveToolIds: Set<string>
   progressWord: string | null
   compacting: boolean
@@ -79,10 +82,11 @@ interface ChatState {
 /** Fresh per-conversation state (used by newChat/openChat). */
 const blankConversation = (): Pick<
   ChatState,
-  'items' | 'running' | 'liveToolIds' | 'progressWord' | 'compacting' | 'contextFull' | 'error' | 'lastUserText' | 'queuedSteers'
+  'items' | 'running' | 'cancelling' | 'liveToolIds' | 'progressWord' | 'compacting' | 'contextFull' | 'error' | 'lastUserText' | 'queuedSteers'
 > => ({
   items: [],
   running: false,
+  cancelling: false,
   liveToolIds: new Set(),
   progressWord: null,
   compacting: false,
@@ -145,7 +149,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const s = get()
     switch (event.type) {
       case 'turn_start':
-        set({ running: true, progressWord: pickWord(), error: null })
+        set({ running: true, cancelling: false, progressWord: pickWord(), error: null })
         break
       case 'text':
         set({ items: [...s.items, { kind: 'assistant', text: event.text }], progressWord: null })
@@ -188,17 +192,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ compacting: event.status === 'start' })
         break
       case 'context_full':
-        set({ contextFull: { message: event.message }, running: false, progressWord: null })
+        set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
         break
       case 'error':
-        set({ error: { friendly: mapError(event.message), raw: event.message }, running: false, progressWord: null })
+        set({ error: { friendly: mapError(event.message), raw: event.message }, running: false, cancelling: false, progressWord: null })
         track('turn_error')
         break
       case 'cancelled':
-        set({ running: false, progressWord: null })
+        set({ running: false, cancelling: false, progressWord: null })
         break
       case 'done':
-        set({ running: false, progressWord: null })
+        set({ running: false, cancelling: false, progressWord: null })
         track('turn_done')
         sendList() // refresh the sidebar (new row / updated title + lastActivity)
         break
@@ -244,9 +248,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   cancelRun: () => {
-    // Stop button UI is worktree ⑥; the action lives here so ⑥ can wire a button to it.
+    // Stop/Esc → abort the in-flight turn. Flip `cancelling` immediately for instant feedback; the
+    // backend aborts the model request and emits `cancelled`, which clears running + cancelling.
     const s = get()
-    if (s.sessionId) sendCancel(s.sessionId)
+    if (!s.running || s.cancelling || !s.sessionId) return
+    set({ cancelling: true })
+    sendCancel(s.sessionId)
   },
 
   requestDelete: (conv) => set({ pendingDeleteConfirm: conv }),

@@ -145,6 +145,7 @@ export function registerAgentChat(): void {
 
     if (msg.type === "cancel") {
       session.cancelRequested = true;
+      session.abortController?.abort(); // interrupt the in-flight model request now (don't wait for the next boundary)
       return;
     }
     // Queue ops. The loop drains the queue synchronously at iteration boundaries, so

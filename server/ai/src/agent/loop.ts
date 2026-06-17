@@ -97,6 +97,10 @@ export async function runAgentTurn(
 
   session.running = true;
   session.cancelRequested = false;
+  // Per-turn abort handle: a cancel/Stop aborts the in-flight model request immediately instead of
+  // waiting for the next iteration boundary (Claude Code-style interrupt).
+  const abort = new AbortController();
+  session.abortController = abort;
 
   try {
     // Context-window management at the turn boundary (history always ends on a complete turn here,
@@ -136,12 +140,19 @@ export async function runAgentTurn(
         return;
       }
 
-      const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model });
+      const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model, signal: abort.signal });
       session.lastContextTokens = contextTokensOf(response.usage);
 
       // The model itself reports the prompt was too large to process — pause honestly.
       if (response.stopReason === 'model_context_window_exceeded') {
         emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
+        return;
+      }
+
+      // Cancel landed while the response was already in flight (abort didn't beat it): drop the
+      // response before committing, so history ends cleanly on the prior user/tool_result message.
+      if (session.cancelRequested) {
+        emit({ type: 'cancelled' });
         return;
       }
 
@@ -175,6 +186,13 @@ export async function runAgentTurn(
       // next no-tool boundary (above), so an in-progress task can't be hijacked by a mid-flight message.
       const toolResults: ContentBlock[] = [];
       for (const tool of response.toolUses) {
+        // Cancelled mid-batch: don't start further tools. Satisfy each remaining tool_use with a
+        // synthetic interrupted result so the committed assistant message stays valid for resume
+        // (every tool_use must have a matching tool_result) — Claude Code's interrupt convention.
+        if (session.cancelRequested) {
+          toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: '[Request interrupted by user for tool use]', is_error: true });
+          continue;
+        }
         emit({ type: 'tool_start', id: tool.id, name: tool.name, label: describeToolCall(tool.name, tool.input) });
         const exec = await execute(tool, session.id);
         emit({
@@ -192,11 +210,23 @@ export async function runAgentTurn(
         toolResults.push(exec.block);
       }
       commit({ role: 'user', content: toolResults });
+      // Tools committed with valid results (real or synthetic) → history is consistent. If the user
+      // cancelled during the batch, stop now rather than looping into another model call.
+      if (session.cancelRequested) {
+        emit({ type: 'cancelled' });
+        return;
+      }
       iter++;
     }
 
     emit({ type: 'error', message: `Stopped after ${maxIterations} iterations without completing.` });
   } catch (e) {
+    // A cancel/Stop aborts the in-flight model request → the SDK rejects. Any throw while a cancel is
+    // pending is a clean interruption, not an error: stop quietly (history was untouched by the call).
+    if (session.cancelRequested) {
+      emit({ type: 'cancelled' });
+      return;
+    }
     const message = e instanceof Error ? e.message : String(e);
     // A real context-length error from the API is the same situation as the hard ceiling — pause
     // and ask for a fresh conversation rather than surfacing it as a generic failure.
@@ -208,5 +238,6 @@ export async function runAgentTurn(
   } finally {
     session.running = false;
     session.cancelRequested = false;
+    session.abortController = undefined;
   }
 }

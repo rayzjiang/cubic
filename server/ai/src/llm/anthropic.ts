@@ -172,7 +172,10 @@ export class AnthropicProvider implements LLMProvider {
       params.tool_choice = { type: 'auto' };
     }
 
-    const response = await this.client.messages.create(params);
+    const response = await this.client.messages.create(
+      params,
+      opts.signal ? { signal: opts.signal } : undefined,
+    );
 
     // Join all text blocks → content; collect all tool_use blocks → toolUses.
     let content = '';

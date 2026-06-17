@@ -117,6 +117,46 @@ describe('runAgentTurn', () => {
     expect(session.running).toBe(false);
   });
 
+  it('interrupts cleanly (no error) when a cancel aborts the in-flight model request', async () => {
+    const session = new Session();
+    // Simulate Stop pressed mid-request: the cancel flag is set and the SDK rejects with an abort.
+    const provider: LLMProvider = {
+      chat: async () => { session.cancelRequested = true; throw new Error('Request was aborted.'); },
+      // eslint-disable-next-line require-yield
+      stream: async function* () { yield { type: 'done' as const }; },
+      contextWindow: () => 200_000,
+    };
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'go', (e) => events.push(e), baseDeps(provider));
+
+    expect(events.map((e) => e.type)).toContain('cancelled');
+    expect(events.map((e) => e.type)).not.toContain('error');
+    // Nothing partial committed beyond the user prompt → history is valid to resume from.
+    expect(session.messages[session.messages.length - 1].role).toBe('user');
+    expect(session.running).toBe(false);
+  });
+
+  it('synthesizes interrupted tool_results for the rest of a batch when cancelled mid-batch', async () => {
+    // One assistant turn requests two tools; the cancel arrives while the first is executing.
+    const { provider } = mockLLM([toolResponse([runScriptCall('t1', 'createLayer'), runScriptCall('t2', 'createLayer')])]);
+    const session = new Session();
+    const execute = vi.fn(async (t: ToolUse) => { session.cancelRequested = true; return okExec(t); });
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'go', (e) => events.push(e), baseDeps(provider, { executeTool: execute }));
+
+    // Only the first tool actually ran; the second was never started.
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(events.map((e) => e.type)).toContain('cancelled');
+    // Every tool_use still has a matching tool_result (t1 real, t2 synthetic-interrupted) → valid history.
+    const last = session.messages[session.messages.length - 1].content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: string }>;
+    expect(last).toHaveLength(2);
+    expect(last[0]).toMatchObject({ type: 'tool_result', tool_use_id: 't1' });
+    expect(last[1]).toMatchObject({ type: 'tool_result', tool_use_id: 't2', is_error: true });
+    expect(last[1].content).toContain('interrupted');
+  });
+
   it('defers a queued steer to the next no-tool boundary (its own turn, after the task completes)', async () => {
     const { provider, seen } = mockLLM([
       toolResponse([runScriptCall('t1', 'createLayer')]),

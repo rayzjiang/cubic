@@ -80,6 +80,9 @@ export interface ChatOptions {
   temperature?: number;
   /** When provided, the request includes these tools with tool_choice:auto. */
   tools?: ToolDefinition[];
+  /** Aborts the in-flight request (cancel/Stop). The SDK rejects with an abort error,
+   *  which the agent loop treats as a clean cancellation (Claude Code-style interrupt). */
+  signal?: AbortSignal;
 }
 
 export interface ChatResponse {
