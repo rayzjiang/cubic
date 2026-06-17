@@ -55,8 +55,8 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 ## Bridge transport (BridgeClient)
 - **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `BridgeClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
 - **`npm start` is NOT needed** when Claude Code is running — the bridge is already up. Run `npm start` only when running `server/ai` standalone outside Claude Code.
-- Port discovery: read `~/.ae-mcp-bridge/port`, then fall back to scanning `17923–17927`. `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
-- Requires AE open **with the MCP Bridge panel connected**; a bare bridge with no panel replies with empty/blank state.
+- Port discovery: read `~/.cubic/port`, then fall back to scanning `17923–17927`. `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
+- Requires AE open **with the Cubic panel connected**; a bare bridge with no panel replies with empty/blank state.
 
 ## Context pipeline (per turn)
 - Per-turn volatile fetches (parallel): `getSelectedLayers`, `getCurrentTime`, `getSelectionDetails` (its `selectedProperties` are merged into the selected-layers list).

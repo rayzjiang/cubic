@@ -29,7 +29,7 @@ cubic/
 │       └── tests/               # Per-domain integration tests (require live AE + panel)
 ```
 
-> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. The code-identifier rename is done (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`). Two **path/bundle** names still say "mcp" and are deferred to the §B install-flow item (they force a reinstall/migration): the `com.cubic.ae-mcp-bridge` bundle id and the `~/.ae-mcp-bridge/port` home dir.
+> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. Both the code-identifier rename (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`) AND the path/bundle rename (§B2, done 6/16/26) are complete: bundle id is now `com.cubic.ae-bridge`, the CEP panel displays as **Cubic**, and the port file lives at `~/.cubic/port` (alongside `~/.cubic/sessions/`).
 
 ## Commands
 ```bash
@@ -45,7 +45,7 @@ npm run build:serve    # Compile src/serve.ts → build/serve.js
 ## When to restart what
 | What changed | What to run | What to reload |
 |---|---|---|
-| Any `src/scripts/*.jsx` | `npm run build:plugin` + `npm run install-plugin` | Close + reopen MCP Bridge panel in AE |
+| Any `src/scripts/*.jsx` | `npm run build:plugin` + `npm run install-plugin` | Close + reopen the Cubic panel in AE |
 | `src/index.ts` or `wsBridge.ts` | `npm run build:server` | Restart Claude Code |
 | Both | `npm run build` + `npm run install-plugin` | Both of the above |
 
@@ -146,8 +146,8 @@ All handler `catch` blocks now return `{ status:"error", errorCode, message, lin
 ## Troubleshooting (full reset)
 If commands hang or tests time out — the WS chain is broken. Full reset:
 1. `npm run build` + `npm run install-plugin`
-2. Restart AE → open **Window → Extensions → MCP Bridge** → wait for "Connected"
+2. Restart AE → open **Window → Extensions → Cubic** → wait for "Connected"
 3. `npm start` in one terminal, run tests in another
 
-**macOS CEP install path:** `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-mcp-bridge/`
+**macOS CEP install path:** `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/`
 Enable AE scripting: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**
