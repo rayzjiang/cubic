@@ -8,7 +8,6 @@ import { useChatStore } from '../store'
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
-  const cancelling = useChatStore((s) => s.cancelling)
   const isEmpty = useChatStore((s) => s.items.length === 0)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const cancelRun = useChatStore((s) => s.cancelRun)
@@ -38,6 +37,9 @@ export function InputBar() {
   const submit = () => {
     const text = draft.trim()
     if (!text) return
+    // A stop is still finalizing on the backend (sub-second). Hold the send — and keep the draft —
+    // so we don't fire a fresh turn before the cancelled one has unwound ("already running").
+    if (useChatStore.getState().cancelling) return
     sendMessage(text)
     setDraft('')
   }
@@ -74,13 +76,12 @@ export function InputBar() {
         {running && (
           <button
             onClick={cancelRun}
-            disabled={cancelling}
-            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2.5 text-[12px] font-medium text-white/70 hover:bg-white/20 hover:text-white/90 disabled:opacity-60"
+            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2.5 text-[12px] font-medium text-white/70 hover:bg-white/20 hover:text-white/90"
             aria-label="Stop"
             title="Stop (Esc)"
           >
             <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
-            {cancelling ? 'Stopping…' : 'Stop'}
+            Stop
           </button>
         )}
       </div>

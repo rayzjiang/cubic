@@ -29,6 +29,14 @@ export type AgentEvent =
 
 export type EmitFn = (event: AgentEvent) => void;
 
+/**
+ * Sentinel committed (as an assistant turn) when the user stops a turn, so the interruption is part
+ * of the saved history: it survives reload, tells the model the turn was cut short, and is rendered
+ * as a muted "Stopped" marker (not a normal assistant bubble) by the display-item transform. Assistant
+ * role keeps user/assistant alternation valid no matter where the stop lands. Claude Code's convention.
+ */
+export const INTERRUPTED_MARKER = '[Request interrupted by user]';
+
 type Params = Record<string, unknown>;
 
 /** File basename from an abs path (handles / and \). */

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runAgentTurn, type AgentDeps } from './loop.js';
 import { Session } from './session.js';
+import { INTERRUPTED_MARKER } from './events.js';
 import type { ChatResponse, LLMProvider, ToolUse, Message } from '../llm/types.js';
 import type { AgentEvent } from './events.js';
 import type { ToolExecution } from './executeTool.js';
@@ -112,8 +113,11 @@ describe('runAgentTurn', () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.type)).toContain('cancelled');
-    // History ends on a user(tool_result) message — valid to resume from.
-    expect(session.messages[session.messages.length - 1].role).toBe('user');
+    // The stop is recorded as an assistant-role interruption marker (keeps alternation valid for
+    // resume); the tool_result user turn it follows is intact just before it.
+    const msgs = session.messages;
+    expect(msgs[msgs.length - 1]).toEqual({ role: 'assistant', content: INTERRUPTED_MARKER });
+    expect(msgs[msgs.length - 2].role).toBe('user');
     expect(session.running).toBe(false);
   });
 
@@ -132,8 +136,10 @@ describe('runAgentTurn', () => {
 
     expect(events.map((e) => e.type)).toContain('cancelled');
     expect(events.map((e) => e.type)).not.toContain('error');
-    // Nothing partial committed beyond the user prompt → history is valid to resume from.
-    expect(session.messages[session.messages.length - 1].role).toBe('user');
+    // Nothing partial committed beyond the user prompt + the interruption marker (no dangling
+    // assistant/tool_use) → history is valid to resume from.
+    expect(session.messages[0]).toEqual({ role: 'user', content: 'go' });
+    expect(session.messages[session.messages.length - 1]).toEqual({ role: 'assistant', content: INTERRUPTED_MARKER });
     expect(session.running).toBe(false);
   });
 
@@ -149,12 +155,15 @@ describe('runAgentTurn', () => {
     // Only the first tool actually ran; the second was never started.
     expect(execute).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.type)).toContain('cancelled');
-    // Every tool_use still has a matching tool_result (t1 real, t2 synthetic-interrupted) → valid history.
-    const last = session.messages[session.messages.length - 1].content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: string }>;
-    expect(last).toHaveLength(2);
-    expect(last[0]).toMatchObject({ type: 'tool_result', tool_use_id: 't1' });
-    expect(last[1]).toMatchObject({ type: 'tool_result', tool_use_id: 't2', is_error: true });
-    expect(last[1].content).toContain('interrupted');
+    // History ends on the interruption marker; the tool_result turn is just before it, and every
+    // tool_use still has a matching tool_result (t1 real, t2 synthetic-interrupted) → valid history.
+    const msgs = session.messages;
+    expect(msgs[msgs.length - 1]).toEqual({ role: 'assistant', content: INTERRUPTED_MARKER });
+    const toolMsg = msgs[msgs.length - 2].content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: string }>;
+    expect(toolMsg).toHaveLength(2);
+    expect(toolMsg[0]).toMatchObject({ type: 'tool_result', tool_use_id: 't1' });
+    expect(toolMsg[1]).toMatchObject({ type: 'tool_result', tool_use_id: 't2', is_error: true });
+    expect(toolMsg[1].content).toContain('interrupted');
   });
 
   it('defers a queued steer to the next no-tool boundary (its own turn, after the task completes)', async () => {

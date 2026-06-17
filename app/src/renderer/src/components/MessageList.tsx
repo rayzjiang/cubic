@@ -49,6 +49,15 @@ export function MessageList() {
               </div>
             )
           }
+          if (it.kind === 'interrupted') {
+            return (
+              <div key={i} className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
+                <span className="h-px flex-1 bg-white/10" />
+                Stopped
+                <span className="h-px flex-1 bg-white/10" />
+              </div>
+            )
+          }
           return (
             <div key={i} className="mt-1.5">
               <ToolActionRow label={it.label} status={it.status} />

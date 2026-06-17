@@ -147,6 +147,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   foldEvent: (event) => {
     const s = get()
+    // While stopping, the turn's incremental content is frozen — ignore anything still in flight for it
+    // (the model abort means little arrives, but a tool_start/text could already be queued). tool_end is
+    // allowed through so an in-flight tool row resolves; terminal events still clear state below.
+    if (s.cancelling && (event.type === 'text' || event.type === 'tool_start' || event.type === 'steer' || event.type === 'snapshot')) {
+      return
+    }
     switch (event.type) {
       case 'turn_start':
         set({ running: true, cancelling: false, progressWord: pickWord(), error: null })
@@ -199,7 +205,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         track('turn_error')
         break
       case 'cancelled':
-        set({ running: false, cancelling: false, progressWord: null })
+        // The authoritative stop: drop the muted "Stopped" divider into the transcript (mirrors the
+        // persisted marker, so live + reload match) and refresh the sidebar (the turn was committed).
+        set({ items: [...s.items, { kind: 'interrupted' }], running: false, cancelling: false, progressWord: null })
+        sendList()
         break
       case 'done':
         set({ running: false, cancelling: false, progressWord: null })
@@ -248,11 +257,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   cancelRun: () => {
-    // Stop/Esc → abort the in-flight turn. Flip `cancelling` immediately for instant feedback; the
-    // backend aborts the model request and emits `cancelled`, which clears running + cancelling.
+    // Stop/Esc → instant stop (Claude Code-style): drop the spinner immediately and raise the
+    // `cancelling` gate so any events already in flight for this turn stop rendering. The backend
+    // aborts the model request and emits `cancelled`, which lands the "Stopped" marker + clears state.
     const s = get()
     if (!s.running || s.cancelling || !s.sessionId) return
-    set({ cancelling: true })
+    set({ running: false, cancelling: true, progressWord: null })
     sendCancel(s.sessionId)
   },
 

@@ -1,4 +1,4 @@
-import { describeToolCall, describeToolNoop, describeToolResult, type Message, type ContentBlock } from "cubic-ai";
+import { describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MARKER, type Message, type ContentBlock } from "cubic-ai";
 
 /**
  * Display-model contract shared with the renderer (mirrored in app/src/renderer/src/protocol.ts —
@@ -12,7 +12,9 @@ export type ToolStatus = "running" | "ok" | "fail" | "noop";
 export type DisplayItem =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
-  | { kind: "tool"; id: string; label: string; status: ToolStatus };
+  | { kind: "tool"; id: string; label: string; status: ToolStatus }
+  // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
+  | { kind: "interrupted" };
 
 type ToolOutcome = { status: "ok" | "fail" | "noop"; result?: unknown };
 
@@ -57,6 +59,12 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
     if (typeof m.content === "string") {
       const text = m.content.trim();
       if (!text) continue;
+      // A stopped turn was committed as an assistant-role interruption sentinel → render the muted
+      // "Stopped" divider instead of an assistant bubble.
+      if (m.role === "assistant" && text === INTERRUPTED_MARKER) {
+        items.push({ kind: "interrupted" });
+        continue;
+      }
       // The synthetic compaction summary is an in-memory artifact; the JSONL store is the full
       // untrimmed history so it shouldn't appear, but guard against it (never render it as a prompt).
       if (m.role === "user" && text.startsWith("<conversation_summary>")) continue;

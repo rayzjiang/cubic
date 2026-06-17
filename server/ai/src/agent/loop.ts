@@ -4,7 +4,7 @@ import { buildContext as defaultBuildContext } from '../context/buildContext.js'
 import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSystemPrompt.js';
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
-import { describeToolCall, describeToolNoop, describeToolResult, type EmitFn } from './events.js';
+import { describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MARKER, type EmitFn } from './events.js';
 import { compactSession, contextTokensOf, COMPACT_THRESHOLD, HARD_CEILING } from './compaction.js';
 import type { Session } from './session.js';
 import type { LLMProvider, ContentBlock, ToolUse, SystemPromptInput, Message } from '../llm/types.js';
@@ -95,6 +95,13 @@ export async function runAgentTurn(
     onCommit?.(msg);
   };
 
+  /** End a stopped turn: record the interruption in history (so it persists + the model sees it) and
+   *  notify the UI. Called from every cancel exit so the behavior is identical wherever the stop lands. */
+  const cancelTurn = (): void => {
+    commit({ role: 'assistant', content: INTERRUPTED_MARKER });
+    emit({ type: 'cancelled' });
+  };
+
   session.running = true;
   session.cancelRequested = false;
   // Per-turn abort handle: a cancel/Stop aborts the in-flight model request immediately instead of
@@ -136,7 +143,7 @@ export async function runAgentTurn(
       // Cancel is honored at iteration boundaries — the history always ends on a valid
       // user/tool_result message here, so a later turn can resume cleanly.
       if (session.cancelRequested) {
-        emit({ type: 'cancelled' });
+        cancelTurn();
         return;
       }
 
@@ -152,7 +159,7 @@ export async function runAgentTurn(
       // Cancel landed while the response was already in flight (abort didn't beat it): drop the
       // response before committing, so history ends cleanly on the prior user/tool_result message.
       if (session.cancelRequested) {
-        emit({ type: 'cancelled' });
+        cancelTurn();
         return;
       }
 
@@ -213,7 +220,7 @@ export async function runAgentTurn(
       // Tools committed with valid results (real or synthetic) → history is consistent. If the user
       // cancelled during the batch, stop now rather than looping into another model call.
       if (session.cancelRequested) {
-        emit({ type: 'cancelled' });
+        cancelTurn();
         return;
       }
       iter++;
@@ -222,9 +229,10 @@ export async function runAgentTurn(
     emit({ type: 'error', message: `Stopped after ${maxIterations} iterations without completing.` });
   } catch (e) {
     // A cancel/Stop aborts the in-flight model request → the SDK rejects. Any throw while a cancel is
-    // pending is a clean interruption, not an error: stop quietly (history was untouched by the call).
+    // pending is a clean interruption, not an error: record the stop + notify (history was untouched
+    // by the aborted call, so the marker lands on the prior valid message).
     if (session.cancelRequested) {
-      emit({ type: 'cancelled' });
+      cancelTurn();
       return;
     }
     const message = e instanceof Error ? e.message : String(e);

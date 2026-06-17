@@ -16,7 +16,7 @@ export { COMMAND_PARAMS } from "./tools/command-params.js";
 export type { CommandName, CommandSpec } from "./tools/command-params.js";
 
 // Agent loop / self-healing loop (Phase 2 item 4)
-export { runAgentTurn, Session, nextQueueId, executeTool, snapshotProject, describeToolCall, describeToolNoop, describeToolResult } from "./agent/index.js";
+export { runAgentTurn, Session, nextQueueId, executeTool, snapshotProject, describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MARKER } from "./agent/index.js";
 export type { AgentDeps, ToolExecution, SnapshotResult, AgentEvent, EmitFn, QueuedMessage } from "./agent/index.js";
 // History compaction (Phase 2 item 7)
 export { compactSession, contextTokensOf, findCompactionCut, COMPACT_THRESHOLD, HARD_CEILING, KEEP_RECENT_TURNS } from "./agent/index.js";

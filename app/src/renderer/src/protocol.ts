@@ -29,6 +29,8 @@ export type DisplayItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; id: string; label: string; status: ToolStatus }
+  // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
+  | { kind: 'interrupted' }
 
 // ── Conversation metadata (drives the sidebar/home list) ──
 export interface ConversationMeta {
