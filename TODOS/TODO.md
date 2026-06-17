@@ -93,7 +93,7 @@
 - [x] §C — Re-attach on reload (renderer half): on (re)connect send `{type:'attach',sessionId}`, feed buffered `events` through the reducer
 - [x] §E — "Restore to before this request" button (snapshot list + confirm-before-overwrite)
   - [ ] **BUG (6/16/26) - If someone modifies something in a different piece, the rewind will rewind the ENTIRE project state instead of only the changes that the ai made.. grill to determine if theres a better way to do the backups or if i should js ship mvp v1 like this?**
-  - [ ] **not urgent BUG (6/16/26) - if a chat is fully restored (even original message), the title of the chat is still off..**
+  - [x] ADDRESSED bc its self healing already basically, switched to be new conversation temp name- not urgent BUG (6/16/26) - if a chat is fully restored (even original message), the title of the chat is still off..
 - [x] add a send button to the ui
 - [x] add a ae panel connectivity status on all pages of the ui (gotta decide where to put it, i think simple colored status dot + brief word is good)
 - [x] in the same area where you can delete a message, add a new option to rename the chat
