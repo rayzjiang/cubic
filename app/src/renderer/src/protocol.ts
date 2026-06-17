@@ -11,7 +11,7 @@
 // ── Live turn events (backend → renderer, wrapped in an `agentEvent` envelope) ──
 export type AgentEvent =
   | { type: 'turn_start' }
-  | { type: 'snapshot'; ok: boolean; path?: string; reason?: string }
+  | { type: 'snapshot'; ok: boolean; path?: string; turnId?: string; reason?: string }
   | { type: 'text'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
   // `noop` = succeeded but changed nothing; `label` is the outcome-accurate label replacing tool_start's.
@@ -28,7 +28,9 @@ export type AgentEvent =
 // ── Display model (one shape for history + live turn) ──
 export type ToolStatus = 'running' | 'ok' | 'fail' | 'noop'
 export type DisplayItem =
-  | { kind: 'user'; text: string }
+  // `turnId` (when present) ties this prompt to its pre-turn backup → the "restore to before this
+  // request" affordance. Absent on steers + old/untagged turns.
+  | { kind: 'user'; text: string; turnId?: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; id: string; label: string; status: ToolStatus }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
@@ -54,6 +56,7 @@ export type ClientMessage =
   | { type: 'delete'; sessionId: string }
   | { type: 'list' }
   | { type: 'loadHistory'; sessionId: string }
+  | { type: 'restore'; sessionId: string; turnId: string }
 
 // ── Backend → renderer ──
 export type ServerMessage =
@@ -63,3 +66,5 @@ export type ServerMessage =
   | { type: 'attached'; sessionId: string; running: boolean; events: AgentEvent[]; userText?: string }
   | { type: 'conversations'; projectPath: string; conversations: ConversationMeta[] }
   | { type: 'history'; sessionId: string; items: DisplayItem[]; running: boolean }
+  // Reply to a `restore`: ok → the project + transcript were rewound; !ok → `message` says why.
+  | { type: 'restored'; sessionId: string; ok: boolean; message?: string }

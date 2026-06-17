@@ -106,12 +106,46 @@ function upsertIndex(id: string, projectPath: string, newMessages: Message[]): v
  * upsert its index entry. The whole turn is appended in a single write so a crash can only lose an
  * uncommitted in-flight turn — never split a tool_use/tool_result pair. No-op for an empty turn.
  */
-export function appendTurn(id: string, projectPath: string, newMessages: Message[]): void {
+export function appendTurn(id: string, projectPath: string, newMessages: Message[], turnId?: string): void {
   if (newMessages.length === 0) return;
   fs.mkdirSync(projectDir(projectPath), { recursive: true });
-  const lines = newMessages.map((m) => JSON.stringify(m)).join('\n') + '\n';
+  // Tag the turn's prompt line (its first string-content user message) with the pre-turn snapshot's
+  // `turnId`, so the renderer can offer "restore to before this request" durably (survives reload).
+  // The extra field is ignored by the LLM path (anthropic.ts only sends {role, content}); display
+  // reads it via messagesToDisplayItems. Untagged old turns simply have no restore target.
+  let tagged = false;
+  const lines = newMessages.map((m) => {
+    if (!tagged && turnId && m.role === 'user' && typeof m.content === 'string') {
+      tagged = true;
+      return JSON.stringify({ ...m, _turnId: turnId });
+    }
+    return JSON.stringify(m);
+  }).join('\n') + '\n';
   fs.appendFileSync(sessionFile(projectPath, id), lines, 'utf8');
   upsertIndex(id, projectPath, newMessages);
+}
+
+/**
+ * Truncate a conversation's JSONL to BEFORE the turn tagged with `turnId` (the "restore to before this
+ * request" rewind): drop that turn's prompt line and everything after it. One-way — there is no redo
+ * (mirrors the backup pruning). Returns true if the turn was found + cut, false if the id wasn't present.
+ */
+export function truncateToBeforeTurn(id: string, projectPath: string, turnId: string): boolean {
+  const file = sessionFile(projectPath, id);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return false;
+  }
+  const lines = raw.split('\n').filter((line) => line.trim());
+  const cut = lines.findIndex((line) => {
+    try { return (JSON.parse(line) as { _turnId?: string })._turnId === turnId; } catch { return false; }
+  });
+  if (cut < 0) return false;
+  const kept = lines.slice(0, cut);
+  fs.writeFileSync(file, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
+  return true;
 }
 
 /** Read a conversation's full history back into a fresh `Session`. Returns null if no JSONL exists. */

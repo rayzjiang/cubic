@@ -38,7 +38,7 @@ export function MessageList() {
           if (it.kind === 'user') {
             return (
               <div key={i} className={i === 0 ? '' : 'mt-7'}>
-                <UserPrompt text={it.text} />
+                <UserPrompt text={it.text} turnId={it.turnId} />
               </div>
             )
           }

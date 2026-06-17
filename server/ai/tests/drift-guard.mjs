@@ -37,7 +37,9 @@ const HELPER_FNS = ['_resolveComp', '_resolveCompAndLayer', '_resolveAnimProp', 
 // Server-injected meta fields — set by the agent (executeTool), not model-facing params,
 // so they're absent from the registry/catalog by design. The bridge reads them for plumbing
 // (e.g. __undoLabel → the Edit > Undo entry name) but the model never supplies them.
-const INJECTED_META = ['__undoLabel'];
+// `prune` (restoreProject) is set only by the UI "restore to before this request" path, never the
+// model — so it's server-injected too, kept out of the model-facing catalog.
+const INJECTED_META = ['__undoLabel', 'prune'];
 // createLayer dispatches by args.type to these sub-handlers; their reads count as createLayer's.
 const SCAN_TARGETS = {
   createLayer: ['createLayer', 'createSolidLayer', 'createTextLayer', 'createShapeLayer', 'createCamera', 'createLightLayer', 'createNullLayer'],

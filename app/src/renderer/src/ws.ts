@@ -61,3 +61,4 @@ export const sendRemoveQueue = (sessionId: string, id: string): void => wsSend({
 export const sendDelete = (sessionId: string): void => wsSend({ type: 'delete', sessionId })
 export const sendCancel = (sessionId: string): void => wsSend({ type: 'cancel', sessionId })
 export const sendAttach = (sessionId: string): void => wsSend({ type: 'attach', sessionId })
+export const sendRestore = (sessionId: string, turnId: string): void => wsSend({ type: 'restore', sessionId, turnId })

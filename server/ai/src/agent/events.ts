@@ -9,7 +9,9 @@ import type { ToolUse } from '../llm/types.js';
 
 export type AgentEvent =
   | { type: 'turn_start' }
-  | { type: 'snapshot'; ok: boolean; path?: string; reason?: string }
+  // `turnId` (ms timestamp) keys this turn's pre-turn backup + its persisted history line, so the UI
+  // can restore to before this exact request.
+  | { type: 'snapshot'; ok: boolean; path?: string; turnId?: string; reason?: string }
   | { type: 'text'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
   // `noop` = the call succeeded but changed nothing (handler returned status:"noop", e.g. "undo that"

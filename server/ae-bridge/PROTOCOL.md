@@ -79,6 +79,7 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "delete",      "sessionId": "<uuid>" }
 { "type": "list" }
 { "type": "loadHistory", "sessionId": "<uuid>" }
+{ "type": "restore",     "sessionId": "<uuid>", "turnId": "<ms-timestamp>" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
@@ -97,6 +98,10 @@ Inbound (UI → backend), the `ChatInbound` union:
 - `loadHistory`: fetch one conversation's committed history (by `sessionId`) as renderable
   `DisplayItem[]`. Read from the JSONL store (full untrimmed transcript). Replied with one `history`
   envelope (below).
+- `restore` ("restore to before this request"): revert the AE project to the `turnId`'s pre-turn
+  backup AND rewind the saved transcript to before that turn (one-way — newer backups pruned, history
+  truncated). `turnId` comes from the prompt's `DisplayItem.user.turnId` (or the live `snapshot` event).
+  Refused while a turn is in flight. Replied with one `restored` envelope (below).
 
 Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json
@@ -104,6 +109,7 @@ Outbound (backend → UI) — streamed per iteration as the turn runs, plus the 
 { "type": "attached",      "sessionId": "<uuid>", "running": true, "events": [ <AgentEvent>, ... ], "userText": "<in-flight prompt | omitted>" }
 { "type": "conversations", "projectPath": "<path>", "conversations": [ <ConversationMeta>, ... ] }
 { "type": "history",       "sessionId": "<uuid>", "items": [ <DisplayItem>, ... ], "running": false }
+{ "type": "restored",      "sessionId": "<uuid>", "ok": true, "message": "<reason when ok:false>" }
 ```
 `conversations` is scoped to the current project, newest-first (`ConversationMeta` = id, title,
 projectPath, lastActivity, renamed — see `src/persist.ts`). `history.items` is a flat

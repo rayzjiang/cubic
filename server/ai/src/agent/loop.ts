@@ -141,8 +141,11 @@ export async function runAgentTurn(
     // Pre-turn revert point. A failed snapshot warns but never blocks the turn —
     // the user still has per-command ⌘Z.
     if (takeSnapshot) {
-      const snap = await snapshot(session.id, String(Date.now()));
-      emit({ type: 'snapshot', ok: snap.ok, path: snap.path, reason: snap.reason });
+      const turnId = String(Date.now());
+      const snap = await snapshot(session.id, turnId);
+      // turnId ties this turn to its backup (filename) + its persisted history line, so the UI can
+      // "restore to before this request" by exact turn (see persist.ts / the `restore` wire).
+      emit({ type: 'snapshot', ok: snap.ok, path: snap.path, turnId, reason: snap.reason });
     }
 
     const state = await buildContext();

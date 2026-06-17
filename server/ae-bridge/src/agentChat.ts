@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
+import { appendTurn, truncateToBeforeTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -81,7 +81,11 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   // A turn stopped before any output is DISCARDED (as if never sent): the loop pops the user prompt
   // from session.messages, and we persist nothing — so the conversation isn't polluted.
   let discarded = false;
+  // The pre-turn snapshot's turnId, captured from the snapshot event → tags the persisted prompt line
+  // so the UI can "restore to before this request" durably.
+  let turnId: string | undefined;
   const capture = (e: AgentEvent): void => {
+    if (e.type === "snapshot" && e.turnId) turnId = e.turnId;
     if (e.type === "cancelled" && e.discarded) discarded = true;
     emit(e);
   };
@@ -93,7 +97,7 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
     rekey(session.id, stored.projectPath, projectPath);
   }
-  appendTurn(session.id, projectPath, committed);
+  appendTurn(session.id, projectPath, committed, turnId);
   clearBuffer(session.id); // committed → now in history; clear so a later attach sees no dup
 }
 
@@ -168,6 +172,35 @@ export function registerAgentChat(): void {
     if (msg.type === "cancel") {
       session.cancelRequested = true;
       session.abortController?.abort(); // interrupt the in-flight model request now (don't wait for the next boundary)
+      return;
+    }
+
+    // "Restore to before this request": revert the .aep to that turn's pre-turn backup AND rewind the
+    // conversation to before it (one-way — newer backups pruned, history truncated). Refused mid-turn.
+    if (msg.type === "restore") {
+      if (!msg.turnId) return; // malformed — a restore must name the turn to revert to
+      if (session.running) {
+        ws.send(JSON.stringify({ type: "restored", sessionId: id, ok: false, message: "Can't restore while Cubic is working — stop it first." }));
+        return;
+      }
+      const turnId = msg.turnId;
+      try {
+        const raw = await bridge.sendCommand("restoreProject", { turnId, sessionId: id, prune: true }, 30000);
+        const result = JSON.parse(raw) as { status?: string; message?: string };
+        if (result.status === "error") {
+          ws.send(JSON.stringify({ type: "restored", sessionId: id, ok: false, message: result.message ?? "Couldn't restore the project." }));
+          return;
+        }
+        // .aep reverted → rewind the saved transcript to before this turn and drop the live session so
+        // the next message lazily rehydrates from the truncated history (matches the resume path above).
+        const conv = getConversation(id);
+        if (conv) truncateToBeforeTurn(id, conv.projectPath, turnId);
+        sessions.delete(id);
+        ws.send(JSON.stringify({ type: "restored", sessionId: id, ok: true }));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        ws.send(JSON.stringify({ type: "restored", sessionId: id, ok: false, message }));
+      }
       return;
     }
     // Queue ops. The loop drains the queue synchronously at iteration boundaries, so

@@ -153,6 +153,10 @@ function restoreProject(args) {
                     if (backups[i].name.length >= needle.length &&
                         backups[i].name.substring(backups[i].name.length - needle.length) === needle) {
                         backupFile = backups[i];
+                        // args.prune (set by the UI "restore to before this request"): discard the
+                        // backups NEWER than the target too, so the rewind is one-way (no redo) like
+                        // the no-args undo. The agent never sets prune (it uses the no-args undo).
+                        if (args.prune) prune = backups.slice(0, i);
                         break;
                     }
                 }

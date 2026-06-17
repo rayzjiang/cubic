@@ -10,7 +10,9 @@ import { describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MAR
 export type ToolStatus = "running" | "ok" | "fail" | "noop";
 
 export type DisplayItem =
-  | { kind: "user"; text: string }
+  // `turnId` (when present) ties this prompt to its pre-turn backup → the "restore to before this
+  // request" affordance. Absent on steers + old/untagged turns (no restore target).
+  | { kind: "user"; text: string; turnId?: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; label: string; status: ToolStatus }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
@@ -68,7 +70,13 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
       // The synthetic compaction summary is an in-memory artifact; the JSONL store is the full
       // untrimmed history so it shouldn't appear, but guard against it (never render it as a prompt).
       if (m.role === "user" && text.startsWith("<conversation_summary>")) continue;
-      items.push({ kind: m.role === "user" ? "user" : "assistant", text });
+      if (m.role === "user") {
+        // Carry the persisted turnId (appendTurn tags the prompt line) onto the prompt → restore target.
+        const turnId = (m as { _turnId?: string })._turnId;
+        items.push(turnId ? { kind: "user", text, turnId } : { kind: "user", text });
+        continue;
+      }
+      items.push({ kind: "assistant", text });
       continue;
     }
     for (const block of m.content as ContentBlock[]) {

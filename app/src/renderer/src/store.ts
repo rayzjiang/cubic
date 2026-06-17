@@ -9,6 +9,7 @@ import {
   sendLoadHistory,
   sendQueue,
   sendRemoveQueue,
+  sendRestore,
   sendUserChat,
 } from './ws'
 import { track } from './analytics'
@@ -81,6 +82,8 @@ interface ChatState {
   pendingDeletes: Set<string>
   // transient UI: confirm-delete modal target + auto-dismissing toasts
   pendingDeleteConfirm: ConversationMeta | null
+  // confirm-restore modal target ("restore to before this request" — irreversible)
+  pendingRestoreConfirm: { turnId: string } | null
   toasts: { id: string; text: string }[]
   // Set when a turn is discarded (stopped before any output) — the composer picks this up and puts the
   // un-sent text back in the input, then clears it.
@@ -101,6 +104,9 @@ interface ChatState {
   confirmDelete: () => void
   cancelDelete: () => void
   deleteConversation: (id: string) => void
+  requestRestore: (turnId: string) => void
+  confirmRestore: () => void
+  cancelRestore: () => void
   addToast: (text: string) => void
   dismissToast: (id: string) => void
   clearRestoreDraft: () => void
@@ -136,6 +142,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...blankConversation(),
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
+  pendingRestoreConfirm: null,
   toasts: [],
   restoreDraft: null,
 
@@ -169,6 +176,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().foldEvent(msg.event)
         break
       }
+      case 'restored':
+        if (msg.ok) {
+          // Project + transcript were rewound one-way → reload the now-truncated history + refresh sidebar.
+          if (msg.sessionId === get().sessionId) sendLoadHistory(msg.sessionId)
+          sendList()
+          get().addToast('Restored to before that request')
+        } else {
+          get().addToast(msg.message ?? "Couldn't restore the project.")
+        }
+        break
       case 'attached': {
         // Re-attach to a still-running turn after a reload. `history` (sent just before this on the same
         // socket) already painted the committed transcript; here we add the in-flight prompt bubble
@@ -267,8 +284,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         track('turn_done')
         sendList() // refresh the sidebar (new row / updated title + lastActivity)
         break
-      case 'snapshot':
-        break // pre-turn backup — not rendered
+      case 'snapshot': {
+        // Tag the most-recent prompt with its backup turnId so "restore to before this request" works
+        // immediately (the live path; reload reads the persisted turnId off history instead).
+        if (!event.ok || !event.turnId) break
+        const items = [...s.items]
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i]
+          if (it.kind === 'user') { items[i] = { kind: 'user', text: it.text, turnId: event.turnId }; break }
+        }
+        set({ items })
+        break
+      }
     }
   },
 
@@ -335,6 +362,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   requestDelete: (conv) => set({ pendingDeleteConfirm: conv }),
   cancelDelete: () => set({ pendingDeleteConfirm: null }),
+
+  requestRestore: (turnId) => set({ pendingRestoreConfirm: { turnId } }),
+  cancelRestore: () => set({ pendingRestoreConfirm: null }),
+  confirmRestore: () => {
+    const { pendingRestoreConfirm, sessionId } = get()
+    if (!pendingRestoreConfirm || !sessionId) return
+    set({ pendingRestoreConfirm: null })
+    // The backend reverts the .aep + truncates history, then replies `restored` → we reload history.
+    sendRestore(sessionId, pendingRestoreConfirm.turnId)
+  },
   confirmDelete: () => {
     const conv = get().pendingDeleteConfirm
     if (!conv) return
