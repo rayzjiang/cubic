@@ -21,7 +21,7 @@ if (!fs.existsSync(distDir)) {
   process.exit(1);
 }
 
-const extensionId = 'com.cubic.ae-mcp-bridge';
+const extensionId = 'com.cubic.ae-bridge';
 
 const destDir = isMac
   ? path.join(os.homedir(), 'Library', 'Application Support', 'Adobe', 'CEP', 'extensions', extensionId)
@@ -34,7 +34,7 @@ if (!destDir) {
   process.exit(1);
 }
 
-console.log('=== MCP Bridge CEP Extension — Installation ===\n');
+console.log('=== Cubic CEP Extension — Installation ===\n');
 console.log(`Source: ${distDir}`);
 console.log(`Dest:   ${destDir}`);
 
@@ -99,7 +99,7 @@ printManualNotes();
 function printManualNotes() {
   console.log('\nNext steps:');
   console.log('  1. Restart After Effects.');
-  console.log('  2. Open: Window → Extensions → MCP Bridge');
+  console.log('  2. Open: Window → Extensions → Cubic');
   console.log('  3. The panel should show "Connecting…" then "Connected" once "npm start" is running.\n');
 
   console.log('IMPORTANT: After Effects scripting permissions');

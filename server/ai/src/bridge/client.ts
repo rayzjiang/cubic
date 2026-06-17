@@ -6,7 +6,7 @@ import * as path from 'path';
 // wsBridge.ts writes the actual bound port here, but the file can be stale if a
 // manually-started instance overwrote it and then died. We try the file's port first,
 // then scan the fallback range that bindWithFallback uses (17923–17927).
-const PORT_FILE = path.join(os.homedir(), '.ae-mcp-bridge', 'port');
+const PORT_FILE = path.join(os.homedir(), '.cubic', 'port');
 const PORT_SCAN_RANGE = [17923, 17924, 17925, 17926, 17927];
 
 function candidatePorts(): number[] {

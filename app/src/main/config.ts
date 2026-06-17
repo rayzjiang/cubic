@@ -2,7 +2,7 @@
 //
 // Main SPAWNS the backend, so it already knows the port; it passes the value to the
 // child (as AE_BRIDGE_PORT) AND answers getBackendPort() with the same value. We never
-// read ~/.ae-mcp-bridge/port back — that file exists for the independently-launched CEP
+// read ~/.cubic/port back — that file exists for the independently-launched CEP
 // worker + loopback client, which must discover the port; main is upstream of the
 // decision. (The bridge hard-binds this port with no fallback — see wsBridge.ts.)
 

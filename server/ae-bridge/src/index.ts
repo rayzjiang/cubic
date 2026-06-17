@@ -212,7 +212,7 @@ server.registerTool(
 
 ## Workflow
 1. Run \`npm start\` to start the MCP server (hosts WS bridge on 127.0.0.1:${AE_BRIDGE_PORT}).
-2. Open After Effects and open the **MCP Bridge** CEP panel (Window → Extensions → MCP Bridge).
+2. Open After Effects and open the **Cubic** CEP panel (Window → Extensions → Cubic).
 3. Call any tool — results are returned synchronously, no \`getResults\` needed.
 4. Use \`runScript\` with \`batch\` to run multiple commands in one call.
 

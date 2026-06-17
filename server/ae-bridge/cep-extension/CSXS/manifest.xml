@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="6.0"
-                   ExtensionBundleId="com.cubic.ae-mcp-bridge"
+                   ExtensionBundleId="com.cubic.ae-bridge"
                    ExtensionBundleVersion="2.0.0"
-                   ExtensionBundleName="MCP Bridge">
+                   ExtensionBundleName="Cubic">
   <ExtensionList>
-    <Extension Id="com.cubic.ae-mcp-bridge.panel" Version="2.0.0" />
+    <Extension Id="com.cubic.ae-bridge.panel" Version="2.0.0" />
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
@@ -16,7 +16,7 @@
     </RequiredRuntimeList>
   </ExecutionEnvironment>
   <DispatchInfoList>
-    <Extension Id="com.cubic.ae-mcp-bridge.panel">
+    <Extension Id="com.cubic.ae-bridge.panel">
       <DispatchInfo>
         <Resources>
           <MainPath>./index.html</MainPath>
@@ -26,7 +26,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>MCP Bridge</Menu>
+          <Menu>Cubic</Menu>
           <Geometry>
             <Size><Height>200</Height><Width>260</Width></Size>
           </Geometry>

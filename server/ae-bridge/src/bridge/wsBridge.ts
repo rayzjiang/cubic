@@ -64,7 +64,8 @@ class AEBridge {
    */
   async start(port: number): Promise<void> {
     await this.bind(port);
-    const bridgeDir = path.join(os.homedir(), '.ae-mcp-bridge');
+    // All Cubic runtime state lives under one home dir (~/.cubic also holds sessions/ — see persist.ts).
+    const bridgeDir = path.join(os.homedir(), '.cubic');
     try {
       fs.mkdirSync(bridgeDir, { recursive: true });
       fs.writeFileSync(path.join(bridgeDir, 'port'), String(port), 'utf8');
@@ -82,7 +83,10 @@ class AEBridge {
       });
       wss.once('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {
-          reject(new Error(
+          // Tagged PORT_IN_USE so serve.ts can map it to the distinct EXIT_PORT_IN_USE exit code,
+          // letting Electron main show the "another copy of Cubic is running" state without scraping
+          // stderr. (Root fix = hardening #2 dynamic free port; deferred.)
+          reject(new BridgeError('PORT_IN_USE',
             `A Cubic backend is already running on 127.0.0.1:${port} — close it first. ` +
             `Only one backend may run at a time (it owns the single AE bridge connection).`
           ));
@@ -187,7 +191,7 @@ class AEBridge {
           done = true;
           reject(new BridgeError(
             'AE_NOT_CONNECTED',
-            'AE plugin not connected — open the MCP Bridge panel in After Effects'
+            'AE plugin not connected — open the Cubic panel in After Effects'
           ));
         }
       }, ms);

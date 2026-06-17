@@ -9,6 +9,11 @@ import { registerAgentChat } from "./agentChat.js";
 // canonical 17923 (the bridge hard-binds this with no fallback — see wsBridge.ts).
 export const AE_BRIDGE_PORT = parseInt(process.env.AE_BRIDGE_PORT ?? "17923", 10);
 
+// Distinct (non-1) exit code serve.ts uses when the port is already taken (the bridge threw a
+// BridgeError('PORT_IN_USE')). Electron main maps this exact code to the blocking "another copy of
+// Cubic is running" state, vs a generic crash (exit 1) which triggers bounded auto-restart.
+export const EXIT_PORT_IN_USE = 17;
+
 /**
  * Local-dev convenience: load the single shared `server/.env` (ANTHROPIC_API_KEY + optional
  * CUBIC_MODEL) at boot so the app (`npm run dev`), `npm run serve`, and the server/ai tests all read
