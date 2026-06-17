@@ -100,7 +100,7 @@
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
 ---
-# THEN REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
+# THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
 # MAYBE BUILD OUT TEASER DEMO VID BEFORE PHASE 5?? POST ON TWITTER??
 ---
 
