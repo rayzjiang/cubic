@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useChatStore } from '../store'
 
 /**
- * Composer. Enter sends, Shift+Enter newlines. Sending mid-turn is allowed — the store queues it as a
- * steer and shows a removable "queued" chip here (it fires at the next boundary). While a turn runs,
- * the composer also shows a Stop button (and a global Esc cancels) — both call cancelRun() (§D).
+ * Composer. Enter or the send button (↑) submit — both call submit(). Shift+Enter newlines. Sending
+ * mid-turn is allowed — the store queues it as a steer and shows a removable "queued" chip here (it
+ * fires at the next boundary). While a turn runs, the send button becomes a Stop button (and a global
+ * Esc cancels) — both call cancelRun() (§D).
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
@@ -84,7 +85,7 @@ export function InputBar() {
           placeholder={placeholder}
           className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
         />
-        {running && (
+        {running ? (
           <button
             onClick={cancelRun}
             className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2.5 text-[12px] font-medium text-white/70 hover:bg-white/20 hover:text-white/90"
@@ -93,6 +94,18 @@ export function InputBar() {
           >
             <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
             Stop
+          </button>
+        ) : (
+          <button
+            onClick={submit}
+            disabled={!draft.trim()}
+            className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-900 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
+            aria-label="Send"
+            title="Send (Enter)"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 13V3M4 7l4-4 4 4" />
+            </svg>
           </button>
         )}
       </div>
