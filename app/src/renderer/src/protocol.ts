@@ -68,3 +68,7 @@ export type ServerMessage =
   | { type: 'history'; sessionId: string; items: DisplayItem[]; running: boolean }
   // Reply to a `restore`: ok → the project + transcript were rewound; !ok → `message` says why.
   | { type: 'restored'; sessionId: string; ok: boolean; message?: string }
+  // Live After Effects bridge (CEP worker) connectivity. Pushed once on connect (alongside the `list`
+  // reply) so a fresh renderer has a correct value, then on every bridge connect/disconnect. Drives the
+  // always-on status dot — distinct from `connection` (the renderer↔backend link in ws.ts).
+  | { type: 'aeStatus'; connected: boolean }

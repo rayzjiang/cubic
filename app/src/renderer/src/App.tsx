@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { LoadingScreen } from './components/LoadingScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { Toasts } from './components/Toasts'
+import { AeStatus } from './components/AeStatus'
 
 /**
  * Root: wires the WS transport to the store and routes between the home landing view and the active
@@ -52,6 +53,7 @@ export function App() {
   return (
     <div className="h-full bg-neutral-900 text-white/90">
       {body}
+      <AeStatus />
       <ConfirmModal />
       <Toasts />
     </div>

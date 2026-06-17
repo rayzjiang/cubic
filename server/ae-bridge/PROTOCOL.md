@@ -110,12 +110,16 @@ Outbound (backend → UI) — streamed per iteration as the turn runs, plus the 
 { "type": "conversations", "projectPath": "<path>", "conversations": [ <ConversationMeta>, ... ] }
 { "type": "history",       "sessionId": "<uuid>", "items": [ <DisplayItem>, ... ], "running": false }
 { "type": "restored",      "sessionId": "<uuid>", "ok": true, "message": "<reason when ok:false>" }
+{ "type": "aeStatus",      "connected": true }
 ```
 `conversations` is scoped to the current project, newest-first (`ConversationMeta` = id, title,
 projectPath, lastActivity, renamed — see `src/persist.ts`). `history.items` is a flat
 `DisplayItem[]` (`{kind:'user'|'assistant',text}` or `{kind:'tool',id,label,status:'ok'|'fail'}`,
 source of truth `src/displayItems.ts`); the renderer's live `agentEvent` reducer produces the same
 shape so history + live turn share one render path. `history.running` flags an in-flight turn.
+`aeStatus` reports live AE (CEP worker) connectivity for the always-on status dot: pushed once on the
+`list` handshake (so a fresh renderer starts correct) and re-broadcast to every chat socket on each
+bridge connect/disconnect. App-global (no `sessionId`) — distinct from a renderer's own backend link.
 `agentEvent` fans out to every socket attached to the session (the original sender + any reloaded
 renderer). `attached` is the direct reply to an `attach`: `running` drives the spinner/Stop button,
 `events` replays the in-flight turn so the renderer catches up with no gap and no dup, and `userText`
@@ -154,4 +158,4 @@ A new **host adapter** (Role B worker) must:
 - Reconnect automatically on socket close. It does **not** touch the chat channel.
 
 A new **UI client** speaks Channel 2 only (`userChat`/`cancel`/`queue`/`attach`/`delete`/`list`/
-`loadHistory` in; `agentEvent`/`attached`/`conversations`/`history` out).
+`loadHistory` in; `agentEvent`/`attached`/`conversations`/`history`/`aeStatus` out).

@@ -58,6 +58,9 @@ function pickWord(): string {
 interface ChatState {
   // connection + navigation
   connection: Connection
+  // Live AE (CEP worker) connectivity, pushed by the backend (`aeStatus`). Distinct from `connection`
+  // (the renderer↔backend link): drives the always-on After Effects status dot.
+  aeConnected: boolean
   view: 'home' | 'chat'
   projectPath: string
   // sidebar/home list
@@ -133,6 +136,7 @@ const blankConversation = (): Pick<
 
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
+  aeConnected: false,
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
   projectPath: '',
@@ -176,6 +180,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().foldEvent(msg.event)
         break
       }
+      case 'aeStatus':
+        // Live AE connectivity → status dot. Always apply (not session-scoped): it's app-global state.
+        set({ aeConnected: msg.connected })
+        break
       case 'restored':
         if (msg.ok) {
           // Project + transcript were rewound one-way → reload the now-truncated history + refresh sidebar.

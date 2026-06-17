@@ -58,6 +58,15 @@ async function sendConversations(ws: WebSocket): Promise<void> {
   } catch { /* socket gone */ }
 }
 
+/** Push the live AE (CEP worker) connectivity to one socket — drives the renderer's always-on status
+ *  dot. Sent on the `list` handshake (so a fresh renderer starts correct) and re-broadcast to every
+ *  chat socket on each bridge connect/disconnect (below). Separate from the renderer↔backend link. */
+function sendAeStatus(ws: WebSocket): void {
+  try {
+    ws.send(JSON.stringify({ type: "aeStatus", connected: bridge.isConnected() }));
+  } catch { /* socket gone */ }
+}
+
 /**
  * Run one agent turn and persist it. `onCommit` accumulates exactly the real messages the loop
  * commits this turn (never the compaction summary); after the turn we resolve the project path,
@@ -108,14 +117,23 @@ export function registerAgentChat(): void {
   });
   // When the AE worker (re)connects the real project path becomes resolvable — push a fresh list to
   // every chat client so a cold-start list (worker not yet connected) fills in without a manual refresh.
+  // Also flip every renderer's status dot to connected.
   bridge.on("connect", () => {
-    for (const ws of chatSockets) void sendConversations(ws);
+    for (const ws of chatSockets) { void sendConversations(ws); sendAeStatus(ws); }
+  });
+  // AE worker dropped → flip every renderer's status dot to disconnected (the dot is the always-on
+  // companion to the on-failure "After Effects isn't connected" turn error).
+  bridge.on("disconnect", () => {
+    for (const ws of chatSockets) sendAeStatus(ws);
   });
   bridge.onChat(async (ws, msg) => {
     chatSockets.add(ws);
     // List the current project's conversations (sidebar/home). No sessionId — handled before the
     // per-session setup below so it never spins up a bogus "default" session or joins a fan-out set.
     if (msg.type === "list") {
+      // `list` is the renderer's connection handshake (fired on socket open) → seed its status dot with
+      // the current AE state so a renderer that connects while AE is already up/down starts correct.
+      sendAeStatus(ws);
       await sendConversations(ws);
       return;
     }
