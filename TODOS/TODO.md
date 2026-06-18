@@ -55,7 +55,7 @@
   threaded → `backupProject` (`snapshot.ts`/`loop.ts`) + injected into `restoreProject` server-side
   (`executeTool.ts`); keep 10/chat (prune in `project.jsx`); folder deleted on conversation-delete AND
   `/clear` (`deleteSessionBackups` in `persist.ts`, called from `agentChat.ts`).
-- [ ] **BUG (6/16/26) - on new chat start, the sidebar isnt showing a loading animation/displaying the new chat in the sidebar, unless u go back to home and click the new chat**
+- [x] **BUG (6/16/26) - on new chat start, the sidebar isnt showing a loading animation/displaying the new chat in the sidebar, unless u go back to home and click the new chat**
 - [ ] **BUG/LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
   Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
   options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo
