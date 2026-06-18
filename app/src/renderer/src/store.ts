@@ -270,7 +270,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         })
         break
       case 'compaction':
-        set({ compacting: event.status === 'start' })
+        // A successful compaction with a real recap leaves a collapsible "View summary" row in the
+        // transcript (live-session only). Start shows the pill; done/failed clears it. A no-op/clear
+        // 'done' has no `summary`, so nothing is added (matches the silent failure/no-op behavior).
+        if (event.status === 'done' && event.summary) {
+          set({ compacting: false, items: [...s.items, { kind: 'compaction', summary: event.summary }] })
+        } else {
+          set({ compacting: event.status === 'start' })
+        }
         break
       case 'context_full':
         set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })

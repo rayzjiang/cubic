@@ -15,6 +15,10 @@ export type DisplayItem =
   | { kind: "user"; text: string; turnId?: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; label: string; status: ToolStatus }
+  // A successful auto-compaction left a viewable recap of the trimmed-away earlier turns. LIVE-SESSION
+  // ONLY: the JSONL store keeps the full untrimmed history, so messagesToDisplayItems never emits this
+  // (it's produced solely by the renderer's live `compaction` event reducer).
+  | { kind: "compaction"; summary: string }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
   | { kind: "interrupted" };
 

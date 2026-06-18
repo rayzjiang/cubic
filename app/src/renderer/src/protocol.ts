@@ -20,7 +20,7 @@ export type AgentEvent =
   // `discarded` = stopped before any output → the turn is thrown away (prompt returns to the composer,
   // no "Stopped" marker). Otherwise a partial turn was kept and the marker is shown.
   | { type: 'cancelled'; discarded?: boolean }
-  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
+  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string }
   | { type: 'context_full'; message: string }
   | { type: 'error'; message: string }
   | { type: 'done'; stopReason: string }
@@ -33,6 +33,9 @@ export type DisplayItem =
   | { kind: 'user'; text: string; turnId?: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; id: string; label: string; status: ToolStatus }
+  // A successful auto-compaction left a viewable recap — collapsible "View summary" row. Live-session
+  // only (mirrors displayItems.ts: the untrimmed JSONL never reproduces it on reload).
+  | { kind: 'compaction'; summary: string }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
   | { kind: 'interrupted' }
 

@@ -116,8 +116,40 @@ describe('compactSession', () => {
     expect(session.messages[0].content).toContain('<conversation_summary>');
     expect(session.messages).toHaveLength(1 + 4); // summary + kept (q2 a2 q3 a3)
     expect(session.lastContextTokens).toBe(0);    // reset; next real chat re-measures
-    // The summary call only saw the older messages, with the summarization system prompt.
-    expect(seen[0]).toHaveLength(4);
+    // The summary call sees ONE user message — the older turns flattened into a text transcript — so
+    // the request ends on a user turn (see the trailing-assistant guard below).
+    expect(seen[0]).toHaveLength(1);
+    expect(seen[0][0].role).toBe('user');
+    expect(seen[0][0].content).toContain('q0'); // the older prompts are in the transcript
+  });
+
+  it('sends the older turns as a single user-role transcript — never ending on an assistant turn', async () => {
+    // Regression guard for the empty-summary bug: a turn-boundary cut's prefix ends on an ASSISTANT
+    // message. Forwarded raw, the API treats that trailing assistant turn as a prefill and Claude
+    // returns an empty continuation instead of a summary. The fix flattens it to a user transcript.
+    const seen: Message[][] = [];
+    const llm = provider(async (messages) => { seen.push(messages); return textResponse('## Goal\nx'); });
+    const session = new Session();
+    session.messages = plainHistory(4); // cut prefix = q0 a0 q1 a1 → ends on assistant a1
+    await compactSession(session, { llm, keepRecentTurns: 2 });
+
+    const sent = seen[0];
+    expect(sent.every((m) => m.role === 'user')).toBe(true);          // no assistant turn at all…
+    expect(sent[sent.length - 1].role).toBe('user');                  // …so the request ends on user
+    expect(sent[0].content).toContain('Assistant: a1');               // a1 is folded into the transcript text
+  });
+
+  it('treats a blank summary as a failure and leaves history intact (no context destruction)', async () => {
+    const llm = provider(async () => textResponse('   ')); // whitespace-only → effectively empty
+    const session = new Session();
+    session.messages = plainHistory(4);
+    const before = structuredClone(session.messages);
+
+    const res = await compactSession(session, { llm, keepRecentTurns: 2 });
+
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('empty-summary');
+    expect(session.messages).toEqual(before); // older turns NOT replaced by a blank summary
   });
 
   it('retries the summary call once, then succeeds', async () => {

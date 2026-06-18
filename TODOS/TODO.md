@@ -102,7 +102,7 @@
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
 - [x] §C — Chat UI (agentEvent reducer + message history) — Zustand store `foldEvent` reducer; one `DisplayItem[]` display-model shared by live events + loaded history; Cursor-style transcript (boxed prompt, full-width assistant text, compact per-action tool rows w/ status icons).
 - [x] §C — Render compaction/context events — "Tidying up earlier steps…" pill + friendly `context_full` "start a new chat" CTA card.
-- [x] §C — Markdown rendering (`react-markdown` + `remark-gfm`, no `rehype-raw`; `.md-body` styles).
+- [ ] §C — View compaction summary (Claude-Code-style) — on a successful compaction, leave a collapsible "Tidied up earlier steps · View summary" row in the transcript; expanding shows the AI's `<conversation_summary>` rendered as Markdown (reuse `AssistantMessage`). **Live-session only** (Cubic's JSONL stays untrimmed, so reload shows the full history and the summary is an ephemeral context-trim artifact — no persistence). Plumb the summary text through the `compaction:done` event → store → a new `compaction` `DisplayItem`. Failed/no-op compactions stay **silent** (no marker), matching today's behavior.
 - [x] §C — Friendly transient-error rendering — mapped plain-English message + "Try again" (resend) + raw "Details" expander; delete-refusal surfaces as a toast.
 - [x] §C — Command surface (buttons/icons, no slash commands) — New chat + per-row delete kebab; `/clear`,`/compact` stay backend-only.
 - [x] §C — Good UX (spinner + progress words) — motion-themed gerunds cycled in reasoning gaps; per-tool spinners; loading splash; delete confirm modal + toasts.
@@ -132,6 +132,7 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
   - **Backend crash:** `BackendSupervisor` does **bounded auto-restart** (3 tries, backoff `[400,1000,2000]`, counter reset after a 3s "settled" window) → renderer shows "Reconnecting…" + keeps retrying its WS (change `ws.ts` from one-shot to infinite bounded-backoff) → on reconnect the §C reattach path rejoins the in-flight turn; after exhaustion → blocking "Cubic stopped — reopen it".
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
+- [ ] **feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
 - [ ] **BUG - when a new chat is switched mid message, the new chat disappears. when an existing chat is switched mid message, and then switched back, its almost as if the new message was never sent + the loading for the new message is gone, the only way to see it back is by clicking home and returning back. grill me to fix all edge cases regarding this issue/related issues**
 ---
 # THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5

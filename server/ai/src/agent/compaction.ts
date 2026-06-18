@@ -1,5 +1,5 @@
 import { getLLM } from '../llm/index.js';
-import type { LLMProvider, Message, ChatResponse } from '../llm/types.js';
+import type { LLMProvider, Message, ChatResponse, ContentBlock } from '../llm/types.js';
 import type { Session } from './session.js';
 
 // ─── Policy ────────────────────────────────────────────────────────────────────
@@ -78,6 +78,42 @@ export function buildSummaryMessage(summaryText: string): Message {
   return { role: 'user', content: `<conversation_summary>\n${summaryText}\n</conversation_summary>` };
 }
 
+/** Max chars of a single tool_result kept in the transcript — enough to carry the concrete values
+ *  (layer indices, property values) the summary prompt asks for, without one huge dump bloating the call. */
+const MAX_RESULT_CHARS = 800;
+
+/**
+ * Flatten the to-summarize turns into a plain-text transcript. CRITICAL: this is sent as a single
+ * USER message so the summary request ends on a user turn. A turn-boundary cut's prefix always ends
+ * on an ASSISTANT message; forwarding those raw, the API treats that trailing assistant turn as a
+ * prefill to continue and Claude returns an EMPTY continuation instead of a summary (the compaction
+ * bug). Includes tool calls + (truncated) results so the recap can cite real values, not just prose.
+ */
+export function renderTranscript(messages: Message[]): string {
+  const lines: string[] = [];
+  for (const m of messages) {
+    const who = m.role === 'user' ? 'User' : 'Assistant';
+    if (typeof m.content === 'string') {
+      const text = m.content.trim();
+      if (text) lines.push(`${who}: ${text}`);
+      continue;
+    }
+    for (const block of m.content as ContentBlock[]) {
+      if (block.type === 'text') {
+        const text = block.text.trim();
+        if (text) lines.push(`${who}: ${text}`);
+      } else if (block.type === 'tool_use') {
+        lines.push(`Assistant ran ${block.name}(${JSON.stringify(block.input)})`);
+      } else if (block.type === 'tool_result') {
+        const raw = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+        const clipped = raw.length > MAX_RESULT_CHARS ? `${raw.slice(0, MAX_RESULT_CHARS)}…(truncated)` : raw;
+        lines.push(`Result${block.is_error ? ' (error)' : ''}: ${clipped}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
 /**
  * Summarizes older turns into one synthetic message, keeping the last `keepRecentTurns` verbatim.
  * Retries the summary call once. On success, rewrites session.messages in place and resets
@@ -88,22 +124,33 @@ export function buildSummaryMessage(summaryText: string): Message {
 export async function compactSession(
   session: Session,
   opts: { llm?: LLMProvider; keepRecentTurns?: number; model?: string } = {},
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: boolean; reason?: string; summary?: string }> {
   const keepRecentTurns = opts.keepRecentTurns ?? KEEP_RECENT_TURNS;
   const cut = findCompactionCut(session.messages, keepRecentTurns);
   if (!cut) return { ok: true, reason: 'nothing-to-compact' };
 
   const llm = opts.llm ?? getLLM();
+  // The older turns flattened to text and sent as ONE user message → the request ends on a user turn
+  // (see renderTranscript). XML-wrapped per the repo's context-injection convention.
+  const transcript = renderTranscript(cut.toSummarize);
+  const summaryRequest: Message[] = [
+    { role: 'user', content: `Summarize the conversation below so another assistant can continue it seamlessly.\n\n<conversation_transcript>\n${transcript}\n</conversation_transcript>` },
+  ];
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await llm.chat(cut.toSummarize, {
+      const res = await llm.chat(summaryRequest, {
         systemPrompt: SUMMARY_SYSTEM_PROMPT,
         model: opts.model,
         maxTokens: 2048,
       });
-      session.messages = [buildSummaryMessage(res.content), ...cut.toKeep];
+      const summary = res.content.trim();
+      // Guard: never replace real history with a blank summary — that silently destroys context (the
+      // bug's worst symptom). A blank result is a failed attempt: retry, then leave history untouched.
+      if (!summary) { if (attempt === 1) return { ok: false, reason: 'empty-summary' }; continue; }
+      session.messages = [buildSummaryMessage(summary), ...cut.toKeep];
       session.lastContextTokens = 0;
-      return { ok: true };
+      // Return the summary text so the loop can surface it to the UI (the "View summary" row).
+      return { ok: true, summary };
     } catch (e) {
       if (attempt === 1) return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }

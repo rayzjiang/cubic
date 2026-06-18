@@ -5,6 +5,7 @@ import { AssistantMessage } from './AssistantMessage'
 import { ToolActionRow } from './ToolActionRow'
 import { ProgressIndicator } from './ProgressIndicator'
 import { CompactionPill } from './CompactionPill'
+import { CompactionSummary } from './CompactionSummary'
 
 /**
  * The transcript. One flat DisplayItem[] (history + live share the shape) rendered in order: each
@@ -55,6 +56,13 @@ export function MessageList() {
                 <span className="h-px flex-1 bg-white/10" />
                 Stopped
                 <span className="h-px flex-1 bg-white/10" />
+              </div>
+            )
+          }
+          if (it.kind === 'compaction') {
+            return (
+              <div key={i} className="mt-3">
+                <CompactionSummary summary={it.summary} />
               </div>
             )
           }

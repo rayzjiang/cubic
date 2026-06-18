@@ -25,7 +25,9 @@ export type AgentEvent =
   | { type: 'cancelled'; discarded?: boolean }
   // History compaction: older turns summarized to stay under the context window. 'done' also
   // covers a /clear (reason: 'cleared'). 'failed' is a soft notice — the turn still proceeds.
-  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string }
+  // `summary` carries the AI's recap text on a real 'done' (absent for no-op/clear/failed) so the
+  // panel can render a collapsible "View summary" row.
+  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string }
   // Hard ceiling: compaction can't free enough room, so the turn is paused. A call-to-action
   // (start a new conversation), NOT an error — the panel renders it differently.
   | { type: 'context_full'; message: string }
