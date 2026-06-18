@@ -322,16 +322,39 @@ describe('runAgentTurn — context-window management', () => {
     expect(seen[0].length).toBeLessThan(session.messages.length);
   });
 
-  it('pauses with context_full at the hard ceiling without starting the turn', async () => {
+  it('over the hard ceiling WITH history to summarize, compacts and continues (no dead-end card)', async () => {
+    const { provider } = mockLLM([
+      textResponse('## Goal\nbouncy logo'), // the summary call
+      textResponse('continuing'),           // the turn proceeds normally
+    ]);
+    const session = new Session();
+    session.messages = chatHistory(4);          // 4 safe boundaries → a real cut exists
+    session.lastContextTokens = 200_000 * 0.98; // OVER the 97% hard ceiling
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e), baseDeps(provider));
+
+    const kinds = events.map((e) => e.type);
+    // Claude Code-style: it summarizes and CONTINUES rather than dead-ending at the ceiling.
+    expect(kinds).toContain('compaction');
+    expect(kinds).toContain('turn_start');
+    expect(kinds).not.toContain('context_full');
+    expect(session.messages[0].content).toContain('<conversation_summary>');
+  });
+
+  it('pauses with context_full at the hard ceiling ONLY when compaction can\'t free room', async () => {
     const m = mockLLM([textResponse('should never run')]);
     const session = new Session();
     session.lastContextTokens = 200_000 * 0.98; // over the 97% hard ceiling
+    // session.messages is empty → nothing older than the kept recent turns → compaction is a no-op.
 
     const events: AgentEvent[] = [];
     await runAgentTurn(session, 'next', (e) => events.push(e), baseDeps(m.provider));
 
-    expect(events).toEqual([{ type: 'context_full', message: expect.stringContaining('start a new one') }]);
-    expect(m.calls()).toBe(0);          // no model call, no spend
+    // It TRIES to compact first, finds nothing to cut, THEN pauses honestly.
+    expect(events.map((e) => e.type)).toEqual(['compaction', 'compaction', 'context_full']);
+    expect(events.at(-1)).toMatchObject({ type: 'context_full', message: expect.stringContaining('start a new one') });
+    expect(m.calls()).toBe(0);          // nothing-to-compact short-circuits before any model/summary call
     expect(session.messages).toHaveLength(0); // user message was never pushed
     expect(session.running).toBe(false);
   });

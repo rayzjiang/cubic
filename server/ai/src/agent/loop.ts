@@ -121,18 +121,25 @@ export async function runAgentTurn(
 
   try {
     // Context-window management at the turn boundary (history always ends on a complete turn here,
-    // so compaction never splits a tool_use/tool_result pair).
-    if (session.lastContextTokens >= window * HARD_CEILING) {
-      // Compaction can't free enough room — pause honestly instead of crashing on overflow.
-      emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
-      return;
-    }
+    // so compaction never splits a tool_use/tool_result pair). Mirrors Claude Code's auto-compact:
+    // whenever we're at/over the threshold — INCLUDING past the hard ceiling — we ALWAYS try to
+    // summarize older turns and continue. The "start a new chat" card is a true last resort: shown
+    // only when compaction can't free any room (no history older than the kept recent turns, or the
+    // summary call failed) or — having compacted — the prefill STILL overflows the model's real
+    // window (a single recent turn bigger than the window), which the in-loop check below catches.
     if (session.lastContextTokens >= window * compactThreshold) {
+      const overCeiling = session.lastContextTokens >= window * HARD_CEILING;
       emit({ type: 'compaction', status: 'start' });
       const res = await compactSession(session, { llm, model });
       emit({ type: 'compaction', status: res.ok ? 'done' : 'failed', reason: res.reason });
-      // No throw on failure: ~10% headroom remains at the 90% trigger, so we proceed and retry
-      // compaction at the next turn boundary. Only the hard ceiling above pauses the turn.
+      // Already over the hard ceiling AND compaction freed nothing (≤ KEEP_RECENT_TURNS of history,
+      // or it failed) → we genuinely can't fit. Pause honestly rather than firing a chat() that we
+      // know will overflow. Below the ceiling we always proceed: ~10% headroom remains, and a failed
+      // or no-op compaction simply retries at the next turn boundary.
+      if (overCeiling && (!res.ok || res.reason === 'nothing-to-compact')) {
+        emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
+        return;
+      }
     }
 
     emit({ type: 'turn_start' });
