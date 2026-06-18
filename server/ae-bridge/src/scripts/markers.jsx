@@ -179,6 +179,9 @@ function removeMarker(args) {
                 removedMarkers.push(_markerToObj(markerProp, ak));
             }
             var count = markerProp.numKeys;
+            if (count === 0) {
+                return JSON.stringify({ status: "noop", message: "No markers to remove." }, null, 2);
+            }
             while (markerProp.numKeys > 0) { markerProp.removeKey(1); }
             return JSON.stringify({
                 status: "success",

@@ -177,19 +177,65 @@ export function describeToolCall(name: string, input: unknown): string {
   }
 }
 
-/** A few commands get a friendlier "nothing changed" phrase. */
-const NOOP_SCRIPT_LABELS: Record<string, string> = {
+/**
+ * Per-command "nothing changed" phrases, shown on the muted noop row when a handler returned
+ * status:"noop" (the end-state already held, or there was nothing to remove). Honest, plain-English,
+ * sized for a non-technical editor. A few branch on the request (parent vs unparent, enable vs
+ * disable, set vs remove) — those are functions of the parameters, never of resolved AE state.
+ * The long tail (and any future noop) falls through to the generic "No change".
+ */
+const NOOP_SCRIPT_LABELS: Record<string, string | ((p: Params) => string)> = {
+  // Idempotent — value already what was asked for
+  setLayerProperty: 'Already set to that value',
+  setEffectProperty: 'Already set to that value',
+  setShapeOperatorProperty: 'Already set to that value',
+  setTextAnimatorProperty: 'Already set to that value',
+  setTextAnimatorRangeSelector: 'Already set to those values',
+  setCompositionProperties: 'Already set to those values',
+  setLayerProperties: 'Already set to those values',
+  batchSetLayerProperties: 'Already set to those values',
+  setLayerMask: 'Already set to those values',
+  updateMarker: 'Already set to those values',
+  setCurrentTime: 'Playhead already there',
+  setSelectedLayers: 'Already selected',
+  moveLayer: 'Already in that position',
+  setLayerParent: (p) => (p.parentIndex != null || p.parentName != null ? 'Already has that parent' : 'Already has no parent'),
+  setAnchorPoint: 'Anchor already there',
+  centerAnchorPoint: 'Anchor already centered',
+  trimLayer: 'Already trimmed to that range',
+  alignLayers: 'Already aligned',
+  sequenceLayers: 'Already sequenced',
+  setTimeRemapEnabled: (p) => (p.enabled ? 'Already enabled' : 'Already disabled'),
+  setTrackMatte: 'Already set as that matte',
+  setLayerKeyframe: 'Keyframe already set there',
+  setLayerExpression: (p) => (p.expressionString === '' && !p.preset ? 'No expression to remove' : 'Expression already set'),
+  // Nothing to remove / undo
+  removePropertyKeyframes: 'No keyframes to remove',
+  removeMarker: 'No markers to remove',
+  deleteUnusedSolids: 'No unused solids to remove',
+  saveProject: 'Already saved',
   restoreProject: 'Nothing to undo',
+  batch: 'No changes needed',
 };
+
+/** Resolve a NOOP_SCRIPT_LABELS entry (string or param-branching fn) to its phrase. */
+function noopLabelFor(script: string, params: Params): string | undefined {
+  const entry = NOOP_SCRIPT_LABELS[script];
+  return typeof entry === 'function' ? entry(params) : entry;
+}
 
 /**
  * Finalized label for a tool call that changed nothing (handler returned status:"noop"). Mirrors
- * describeToolCall's runScript unwrapping; falls back to a generic "No change" so ANY future command
- * that returns a noop reads honestly without per-tool wiring.
+ * describeToolCall's runScript/batch unwrapping; falls back to a generic "No change" so ANY future
+ * command that returns a noop reads honestly without per-tool wiring.
  */
 export function describeToolNoop(name: string, input: unknown): string {
   const obj = (input ?? {}) as Params;
-  if (name === 'runScript') return NOOP_SCRIPT_LABELS[String(obj.script ?? '')] ?? 'No change';
+  if (name === 'runScript') {
+    const script = String(obj.script ?? '');
+    return noopLabelFor(script, (obj.parameters ?? {}) as Params) ?? 'No change';
+  }
+  if (name === 'batch') return noopLabelFor('batch', obj) ?? 'No change';
   return 'No change';
 }
 

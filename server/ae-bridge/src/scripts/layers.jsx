@@ -790,6 +790,10 @@ function moveLayer(args) {
         } else {
             layer.moveAfter(target);
         }
+        // Reordering to the slot it already occupies leaves the index unchanged — nothing moved.
+        if (layer.index === previousIndex) {
+            return JSON.stringify({ status: "noop", message: "Layer is already in that position." }, null, 2);
+        }
         return JSON.stringify({ status: "success", message: "Layer moved successfully.", layer: { name: layer.name, index: layer.index }, previousIndex: previousIndex }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
@@ -808,6 +812,9 @@ function setLayerParent(args) {
         var previousParent = layer.parent ? { name: layer.parent.name, index: layer.parent.index } : null;
 
         if ((parentIndex === undefined || parentIndex === null) && !parentName) {
+            if (previousParent === null) {
+                return JSON.stringify({ status: "noop", message: "Layer already has no parent." }, null, 2);
+            }
             layer.parent = null;
             return JSON.stringify({ status: "success", message: "Parent cleared", layer: { name: layer.name, index: layer.index, parent: null }, previousParent: previousParent }, null, 2);
         }
@@ -822,6 +829,9 @@ function setLayerParent(args) {
         }
         if (!parentLayer) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Parent layer not found: " + (parentName || "index " + parentIndex)); }
         if (parentLayer.index === layer.index) { throw _err(ERROR_CODES.INVALID_ARGS, "A layer cannot be its own parent"); }
+        if (layer.parent && layer.parent.index === parentLayer.index) {
+            return JSON.stringify({ status: "noop", message: "Layer already has that parent." }, null, 2);
+        }
         layer.parent = parentLayer;
         return JSON.stringify({
             status: "success", message: "Layer parent set successfully",
@@ -1075,6 +1085,16 @@ function setSelectedLayers(args) {
             }
         }
 
+        // Same set of layers selected as before (re-selecting + clearing is idempotent) — no change.
+        var prevIdx = [], curIdx = [];
+        for (var pi = 0; pi < previousSelection.length; pi++) { prevIdx.push(previousSelection[pi].index); }
+        for (var cii = 0; cii < selectedLayers.length; cii++) { curIdx.push(selectedLayers[cii].index); }
+        prevIdx.sort(function (a, b) { return a - b; });
+        curIdx.sort(function (a, b) { return a - b; });
+        if (_valuesEqual(prevIdx, curIdx)) {
+            return JSON.stringify({ status: "noop", message: "Those layers are already selected." }, null, 2);
+        }
+
         return JSON.stringify({
             status: "success",
             activeComp: { name: comp.name, id: comp.id, numLayers: comp.numLayers },
@@ -1173,6 +1193,12 @@ function setTrackMatte(args) {
             if (!mattingLayer) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "Matte layer not found: " + matteLayerName); }
         }
 
+        // Already the requested matte (same type, and same matte layer if one was given) — no change.
+        if (previousMatteType === matteType &&
+            (!mattingLayer || (previousMatteLayer && previousMatteLayer.index === mattingLayer.index))) {
+            return JSON.stringify({ status: "noop", message: "Track matte is already set that way." }, null, 2);
+        }
+
         if (mattingLayer && matteTypes[matteType] !== TrackMatteType.NO_TRACK_MATTE) {
             try {
                 layer.setTrackMatte(mattingLayer, matteTypes[matteType]);
@@ -1253,6 +1279,12 @@ function trimLayer(args) {
 
         var previousValues = { startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint };
 
+        // Already at the requested in/out (and start time, if given) — nothing to trim.
+        var startUnchanged = (args.startTime === undefined || args.startTime === null) || _valuesEqual(parseFloat(args.startTime), layer.startTime);
+        if (startUnchanged && _valuesEqual(newIn, layer.inPoint) && _valuesEqual(newOut, layer.outPoint)) {
+            return JSON.stringify({ status: "noop", message: "Layer is already trimmed to that range." }, null, 2);
+        }
+
         if (args.startTime !== undefined && args.startTime !== null) { layer.startTime = parseFloat(args.startTime); }
         if (inPoint  !== undefined && inPoint  !== null) { layer.inPoint  = parseFloat(inPoint);  }
         if (outPoint !== undefined && outPoint !== null) { layer.outPoint = parseFloat(outPoint); }
@@ -1285,6 +1317,9 @@ function setTimeRemapEnabled(args) {
         }
 
         var previousValue = layer.timeRemapEnabled;
+        if (previousValue === !!args.enabled) {
+            return JSON.stringify({ status: "noop", message: "Time remap is already " + (previousValue ? "enabled" : "disabled") + " on layer '" + layer.name + "'." }, null, 2);
+        }
         layer.timeRemapEnabled = !!args.enabled;
 
         var result = {
@@ -1348,6 +1383,11 @@ function setAnchorPoint(args) {
         var posProp    = layer.property("Position");
         var oldAnchor  = anchorProp.value;
         var oldPos     = posProp.value;
+
+        // Anchor already at the requested named position — the Position compensation delta is 0 too.
+        if (_valuesEqual([newAnchorX, newAnchorY], [oldAnchor[0], oldAnchor[1]])) {
+            return JSON.stringify({ status: "noop", message: "Anchor point is already at " + position + "." }, null, 2);
+        }
 
         if (preservePosition) {
             var scale = layer.property("Scale").value;
@@ -1639,6 +1679,7 @@ function alignLayers(args) {
 
         var previousPositions = [];
         var modifiedLayers = [];
+        var anyChanged = false;
 
         for (var li = 0; li < layers.length; li++) {
             var layer = layers[li];
@@ -1660,8 +1701,14 @@ function alignLayers(args) {
             } else {
                 newPos = [pos[0] + deltaX, pos[1] + deltaY];
             }
+            if (!_valuesEqual(newPos, pos)) { anyChanged = true; }
             layer.property("Position").setValue(newPos);
             modifiedLayers.push({ index: layer.index, name: layer.name, newPosition: newPos });
+        }
+
+        // Every layer was already at its aligned position (all deltas 0) — nothing moved.
+        if (!anyChanged) {
+            return JSON.stringify({ status: "noop", message: "Those layers are already aligned." }, null, 2);
         }
 
         return JSON.stringify({
@@ -1720,11 +1767,18 @@ function sequenceLayers(args) {
 
         var previousStartTimes = [];
         var modifiedLayers = [];
+        var anyChanged = false;
         for (var n = 0; n < layers.length; n++) {
             previousStartTimes.push({ index: layers[n].index, name: layers[n].name, startTime: layers[n].startTime });
             var newStart = baseStartTime + n * offsetFrames * frameDuration;
+            if (!_valuesEqual(newStart, layers[n].startTime)) { anyChanged = true; }
             layers[n].startTime = newStart;
             modifiedLayers.push({ index: layers[n].index, name: layers[n].name, newStartTime: newStart });
+        }
+
+        // Every layer already starts at its sequenced time — nothing changed.
+        if (!anyChanged) {
+            return JSON.stringify({ status: "noop", message: "Those layers are already sequenced." }, null, 2);
         }
 
         return JSON.stringify({
@@ -1942,6 +1996,12 @@ function setLayerProperty(args) {
 
         var previousValue = null;
         try { previousValue = property.value; } catch(e) {}
+        // No keyframes and the value already matches — setting it again would change nothing.
+        // (When the property is keyframed and we're overwriting keys, that IS a change — don't noop.)
+        var hasKeys = (property.numKeys !== undefined && property.numKeys > 0);
+        if (!hasKeys && _valuesEqual(finalVal, previousValue)) {
+            return JSON.stringify({ status: "noop", message: "Property '" + property.name + "' is already set to that value." }, null, 2);
+        }
         property.setValue(finalVal);
 
         return JSON.stringify({

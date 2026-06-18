@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { describeToolResult, describeToolCall } from './events.js';
+import { describeToolResult, describeToolCall, describeToolNoop } from './events.js';
 
 /** Helper: build a runScript tool input + its handler result. */
 const run = (script: string, parameters: Record<string, unknown> = {}) => ({
@@ -81,5 +81,59 @@ describe('describeToolCall — batch label (drives the undo-group name)', () => 
   it('uses just the single sub-command label for a one-command batch', () => {
     const { name, input } = batch({ commands: [{ command: 'applyEffect', args: { effectName: 'Glow' } }] });
     expect(describeToolCall(name, input)).toBe('Applied Glow');
+  });
+});
+
+describe('describeToolNoop — muted-row label when a handler changed nothing', () => {
+  const run = (script: string, parameters: Record<string, unknown> = {}) => ({
+    name: 'runScript',
+    input: { script, parameters },
+  });
+
+  it('uses the per-command phrase for a known noop command', () => {
+    const { name, input } = run('setLayerProperty', { propertyPath: ['Transform', 'Opacity'], value: 50 });
+    expect(describeToolNoop(name, input)).toBe('Already set to that value');
+  });
+
+  it('phrases the nothing-to-remove commands honestly', () => {
+    const keys = run('removePropertyKeyframes');
+    expect(describeToolNoop(keys.name, keys.input)).toBe('No keyframes to remove');
+    const solids = run('deleteUnusedSolids');
+    expect(describeToolNoop(solids.name, solids.input)).toBe('No unused solids to remove');
+    const markers = run('removeMarker', { all: true });
+    expect(describeToolNoop(markers.name, markers.input)).toBe('No markers to remove');
+  });
+
+  it('branches on the request for setLayerParent (parent vs unparent)', () => {
+    const set = run('setLayerParent', { parentIndex: 2 });
+    expect(describeToolNoop(set.name, set.input)).toBe('Already has that parent');
+    const clear = run('setLayerParent', {});
+    expect(describeToolNoop(clear.name, clear.input)).toBe('Already has no parent');
+  });
+
+  it('branches on the request for setTimeRemapEnabled (enable vs disable)', () => {
+    const on = run('setTimeRemapEnabled', { enabled: true });
+    expect(describeToolNoop(on.name, on.input)).toBe('Already enabled');
+    const off = run('setTimeRemapEnabled', { enabled: false });
+    expect(describeToolNoop(off.name, off.input)).toBe('Already disabled');
+  });
+
+  it('branches on the request for setLayerExpression (set vs remove)', () => {
+    const set = run('setLayerExpression', { propertyName: 'Opacity', expressionString: 'wiggle(2,30)' });
+    expect(describeToolNoop(set.name, set.input)).toBe('Expression already set');
+    const remove = run('setLayerExpression', { propertyName: 'Opacity', expressionString: '' });
+    expect(describeToolNoop(remove.name, remove.input)).toBe('No expression to remove');
+  });
+
+  it('labels the typed batch tool and a runScript-wrapped batch', () => {
+    expect(describeToolNoop('batch', { commands: [] })).toBe('No changes needed');
+    const wrapped = run('batch', { commands: [] });
+    expect(describeToolNoop(wrapped.name, wrapped.input)).toBe('No changes needed');
+  });
+
+  it('falls back to a generic phrase for an un-mapped command (any future noop reads honestly)', () => {
+    const { name, input } = run('someBrandNewCommand');
+    expect(describeToolNoop(name, input)).toBe('No change');
+    expect(describeToolNoop('createComposition', { name: 'X' })).toBe('No change');
   });
 });

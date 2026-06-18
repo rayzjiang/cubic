@@ -229,6 +229,12 @@ function setLayerKeyframe(args) {
             finalVal = +value;
         }
 
+        // noop: a keyframe already exists at this exact time and already holds the requested value.
+        // Skip the Shape case (vertices aren't a flat numeric array _valuesEqual can compare).
+        if (previousKey.existed && !(finalVal instanceof Shape) && _valuesEqual(finalVal, previousKey.value)) {
+            return JSON.stringify({ status: "noop", message: "Keyframe already set to that value at that time." }, null, 2);
+        }
+
         property.setValueAtTime(timeInSeconds, finalVal);
 
         return JSON.stringify({
@@ -267,6 +273,13 @@ function setLayerExpression(args) {
         }
 
         var previousValue = property.expression || "";
+
+        // noop: the property already holds exactly this expression (covers both setting the same
+        // string and clearing an already-empty expression — "" === "" -> "No expression to remove.").
+        if (expressionStr === previousValue) {
+            return JSON.stringify({ status: "noop", message: expressionStr === "" ? "No expression to remove." : "Expression already set to that." }, null, 2);
+        }
+
         property.expression = expressionStr;
 
         var action = expressionStr === "" ? "removed" : "set";
@@ -827,6 +840,11 @@ function removePropertyKeyframes(args) {
         var layer = resolved.layer;
 
         var property = _resolveAnimProp(layer, args);
+
+        // noop: nothing to remove if the property has no keyframes.
+        if (property.numKeys === 0) {
+            return JSON.stringify({ status: "noop", message: "No keyframes to remove." }, null, 2);
+        }
 
         var removed = property.numKeys;
         while (property.numKeys > 0) { property.removeKey(1); }

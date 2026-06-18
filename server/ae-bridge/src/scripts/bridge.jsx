@@ -78,6 +78,27 @@ function _err(code, message) {
     return e;
 }
 
+// Deep value-equality with float tolerance — used by set* handlers to detect a no-op write (the
+// property already holds the requested value, so the call changes nothing). Compare PARSED values
+// (callers eval the "[x,y]"-as-string quirk first). Numbers compare within EPS because AE round-trips
+// floats imperfectly; arrays (Position/Scale/Color) compare element-wise; everything else is strict.
+// Mismatched shapes (array vs scalar, different lengths) are never equal.
+function _valuesEqual(a, b) {
+    var EPS = 1e-6;
+    var aArr = (a instanceof Array), bArr = (b instanceof Array);
+    if (aArr || bArr) {
+        if (!aArr || !bArr || a.length !== b.length) { return false; }
+        for (var i = 0; i < a.length; i++) {
+            if (!_valuesEqual(a[i], b[i])) { return false; }
+        }
+        return true;
+    }
+    if (typeof a === "number" && typeof b === "number") {
+        return Math.abs(a - b) <= EPS;
+    }
+    return a === b;
+}
+
 // Validate-first helper: returns map[value], or throws a self-healing INVALID_ARGS listing the
 // valid keys if `value` isn't one of them. Use BEFORE mutating so a bad enum can't leave a
 // partial update (and the model learns the valid options instead of a silent no-op).
@@ -335,13 +356,14 @@ function batch(args) {
         return JSON.stringify({ status: "error", errorCode: ERROR_CODES.INVALID_ARGS, message: "'commands' must be an array." });
     }
     if (commands.length === 0) {
-        return JSON.stringify({ status: "success", message: "Empty batch.", total: 0, executed: 0, succeeded: 0, failed: 0, results: [] });
+        return JSON.stringify({ status: "noop", message: "Empty batch — nothing to do.", total: 0, executed: 0, succeeded: 0, failed: 0, noopCount: 0, results: [] });
     }
 
     var stopOnError = args.stopOnError === true;
     var results = [];
     var succeeded = 0;
     var failed = 0;
+    var noopCount = 0;
 
     // Label the single undo entry for the whole turn. Prefer the agent-injected __undoLabel
     // (the same friendly text the chat shows — the model's groupLabel when given, otherwise
@@ -398,7 +420,7 @@ function batch(args) {
             cmdSuccess = false;
         }
 
-        if (cmdSuccess) { succeeded++; } else { failed++; }
+        if (cmdSuccess) { succeeded++; if (resultObj.status === "noop") { noopCount++; } } else { failed++; }
 
         results.push({
             index: i,
@@ -414,12 +436,18 @@ function batch(args) {
         app.endUndoGroup();
     }
 
+    // status precedence: any failure → error; else if every executed sub-command was itself a noop
+    // (nothing changed anywhere) → noop, so the whole batch gets the muted row; else success.
+    var envelopeStatus = failed > 0
+        ? "error"
+        : (succeeded > 0 && noopCount === succeeded) ? "noop" : "success";
     var envelope = {
-        status: failed === 0 ? "success" : "error",
+        status: envelopeStatus,
         total: commands.length,
         executed: results.length,
         succeeded: succeeded,
         failed: failed,
+        noopCount: noopCount,
         stoppedEarly: stopOnError && results.length < commands.length,
         results: results
     };

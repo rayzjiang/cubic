@@ -182,6 +182,12 @@ function setTextAnimatorProperty(args) {
         } else {
             finalVal = +value;
         }
+
+        // No-op: requested value already matches the current value — nothing to mutate.
+        if (_valuesEqual(finalVal, prop.value)) {
+            return JSON.stringify({ status: "noop", message: "This text animator property is already set to that value." }, null, 2);
+        }
+
         prop.setValue(finalVal);
 
         return JSON.stringify({

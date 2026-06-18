@@ -271,6 +271,10 @@ function setCurrentTime(args) {
         if (t >= comp.duration) { t = comp.duration - (1 / comp.frameRate); }
 
         var previousValue = comp.time;
+        // Already at the requested (post-clamp) time — playhead doesn't move.
+        if (_valuesEqual(t, previousValue)) {
+            return JSON.stringify({ status: "noop", message: "Playhead is already at that time." }, null, 2);
+        }
         comp.time = t;
 
         return JSON.stringify({

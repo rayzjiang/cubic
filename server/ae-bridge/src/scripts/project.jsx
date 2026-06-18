@@ -29,6 +29,9 @@ function saveProject(args) {
             if (!project.file) {
                 throw _err(ERROR_CODES.INVALID_ARGS, "Project has never been saved. Pass saveAs with an absolute file path (e.g. '/Users/you/my-project.aep').");
             }
+            if (project.dirty === false) {
+                return JSON.stringify({ status: "noop", message: "Project already saved — no changes." }, null, 2);
+            }
             project.save();
         }
 

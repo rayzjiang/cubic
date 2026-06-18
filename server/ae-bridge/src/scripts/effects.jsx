@@ -337,6 +337,13 @@ function setEffectProperty(args) {
         var previousValue = null;
         try { previousValue = property.value; } catch (e) {}
 
+        // No-op: requested value already matches the current value — nothing to mutate.
+        var parsedValue = args.value;
+        if (typeof parsedValue === "string") { try { parsedValue = eval("(" + parsedValue + ")"); } catch (e) {} }
+        if (_valuesEqual(parsedValue, property.value)) {
+            return JSON.stringify({ status: "noop", message: "This effect property is already set to that value." }, null, 2);
+        }
+
         property.setValue(args.value);
 
         return JSON.stringify({

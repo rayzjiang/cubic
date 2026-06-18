@@ -231,6 +231,12 @@ function setShapeOperatorProperty(args) {
         if (!prop) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Property '" + propertyName + "' not found on operator."); }
 
         if (typeof value === "string") { try { value = eval("(" + value + ")"); } catch(e) {} }
+
+        // No-op: requested value already matches the current value — nothing to mutate.
+        if (_valuesEqual(value, prop.value)) {
+            return JSON.stringify({ status: "noop", message: "This shape property is already set to that value." }, null, 2);
+        }
+
         var previousValue = null;
         try { previousValue = prop.value; } catch(e) {}
         prop.setValue(value);
