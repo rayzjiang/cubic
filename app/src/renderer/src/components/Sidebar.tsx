@@ -14,17 +14,23 @@ export function Sidebar() {
   const collapsed = useChatStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useChatStore((s) => s.toggleSidebar)
   const conversations = useChatStore((s) => s.conversations)
+  const pendingNewChats = useChatStore((s) => s.pendingNewChats)
   const sessionId = useChatStore((s) => s.sessionId)
-  const lastUserText = useChatStore((s) => s.lastUserText)
   const newChat = useChatStore((s) => s.newChat)
+  const openChat = useChatStore((s) => s.openChat)
   const goHome = useChatStore((s) => s.goHome)
 
-  // The active chat only enters `conversations` once the backend persists its first turn (done→sendList).
-  // Until then a brand-new chat has no row — so render a derived "synthetic" row for it: appears the moment
-  // New chat is clicked (highlighted/active), title fills in from the first message, then the real persisted
-  // row (same id) replaces it seamlessly. Nothing is mutated, so a stray sendList can't wipe it.
-  const activeUnlisted = !!sessionId && !conversations.some((c) => c.id === sessionId)
-  const syntheticTitle = lastUserText?.trim() || 'New chat'
+  // A brand-new chat only enters `conversations` once its first turn commits. Until then the renderer owns
+  // its row so it survives chat switches (Claude.ai behavior):
+  //  - `pendingRows`: a message was sent (in `pendingNewChats`) but isn't persisted yet — a real, clickable,
+  //    persistent row (newest first), replaced by the committed row once the backend list includes its id.
+  //  - `activeEphemeral`: the active chat is brand-new with NO message sent yet — a temporary "New chat" row
+  //    that vanishes the moment you switch away (it's tied to the active session, nothing was sent).
+  const pendingRows = pendingNewChats.filter((p) => !conversations.some((c) => c.id === p.id)).slice().reverse()
+  const activeEphemeral =
+    !!sessionId &&
+    !conversations.some((c) => c.id === sessionId) &&
+    !pendingNewChats.some((p) => p.id === sessionId)
 
   return (
     <aside
@@ -61,17 +67,28 @@ export function Sidebar() {
           </button>
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-          {conversations.length === 0 && !activeUnlisted && (
+          {conversations.length === 0 && pendingRows.length === 0 && !activeEphemeral && (
             <li className="px-3 py-2 text-[13px] text-white/35">No conversations yet.</li>
           )}
-          {/* Synthetic active row for a not-yet-persisted new chat (no kebab, click is a no-op — it's already open). */}
-          {activeUnlisted && (
+          {/* Ephemeral active row: a brand-new chat with no message sent yet — vanishes on switch (no kebab). */}
+          {activeEphemeral && (
             <li>
               <div className="flex items-center rounded-md bg-white/10">
-                <span className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] text-white/80">{syntheticTitle}</span>
+                <span className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] text-white/80">New chat</span>
               </div>
             </li>
           )}
+          {/* Pending new chats (message sent, not yet committed) — persistent + clickable; no kebab until persisted. */}
+          {pendingRows.map((p) => (
+            <li key={p.id}>
+              <button
+                onClick={() => openChat(p.id)}
+                className={`flex w-full items-center rounded-md ${p.id === sessionId ? 'bg-white/10' : 'hover:bg-white/5'}`}
+              >
+                <span className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] text-white/80">{p.title.trim() || 'New chat'}</span>
+              </button>
+            </li>
+          ))}
           {conversations.map((c) => (
             <li key={c.id}>
               <ConversationRow conv={c} active={c.id === sessionId} />

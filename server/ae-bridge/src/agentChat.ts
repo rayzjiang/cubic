@@ -32,15 +32,22 @@ const sessions = new Map<string, Session>();
  *  otherwise stay empty until something else triggered a refresh. */
 const chatSockets = new Set<WebSocket>();
 
-/** Current AE project path for keying the conversation on disk. Fail-fast when the AE worker isn't
- *  connected (return "" immediately instead of waiting out the 3s worker timeout) so startup never
- *  blocks; the real list is pushed on the bridge 'connect' event once the path becomes resolvable. */
-async function resolveProjectPath(): Promise<string> {
-  if (!bridge.isConnected()) return "";
+/**
+ * Current AE project path for keying the conversation on disk — returns `string | null`:
+ *   - `null`  → couldn't determine (worker not connected, or `getProjectInfo` threw). Callers must NOT
+ *               treat this as a definite project; falling back to the last-known path keeps the sidebar
+ *               from being wiped by a momentary no-answer (the regression that filed a new chat under "").
+ *   - `""`    → determined: a genuinely unsaved/untitled project (the real `_untitled` bucket).
+ *   - `"/…"`  → determined: a saved project path.
+ * Fail-fast when the worker isn't connected (no 3s wait) so startup never blocks; the real list is
+ * pushed on the bridge 'connect' event once the path becomes resolvable.
+ */
+async function resolveProjectPath(): Promise<string | null> {
+  if (!bridge.isConnected()) return null;
   try {
     return (await sessionCache.getProjectInfo()).path ?? "";
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -52,10 +59,23 @@ async function resolveProjectPath(): Promise<string> {
  * then re-sends the authoritative list, which only changes anything if a different project was opened.
  */
 async function sendConversations(ws: WebSocket): Promise<void> {
-  const projectPath = bridge.isConnected() ? await resolveProjectPath() : (lastActiveProjectPath() ?? "");
+  // No-answer guard: a `null` resolve (AE not connected / didn't answer) keeps the LAST-KNOWN project's
+  // list instead of wiping to "". A definite "" (genuinely unsaved project) still shows its `_untitled`
+  // bucket correctly. Only a definite resolve ever changes which project the sidebar reflects.
+  const projectPath = (await resolveProjectPath()) ?? (lastActiveProjectPath() ?? "");
   try {
     ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
   } catch { /* socket gone */ }
+}
+
+/**
+ * Push a fresh conversation list to EVERY connected chat socket (not just the one that triggered a
+ * change). Called on any index mutation — placeholder, commit, delete, rename, restore — so the backend
+ * is the single source of truth for the sidebar: the list stays correct even for a chat the user switched
+ * away from (whose `done`/`cancelled` agentEvents the renderer filters out as a background turn).
+ */
+function broadcastConversations(): void {
+  for (const ws of chatSockets) void sendConversations(ws);
 }
 
 /** Push the live AE (CEP worker) connectivity to one socket — drives the renderer's always-on status
@@ -110,13 +130,16 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   });
   if (discarded) { clearBuffer(session.id); return; }
   if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)
-  const projectPath = await resolveProjectPath();
+  // Post-turn the cache is warm, so this is reliable; if it somehow can't resolve (null), fall back to the
+  // chat's stored path, then the last-active project — never key an append under a bogus value.
   const stored = getConversation(session.id);
+  const projectPath = (await resolveProjectPath()) ?? stored?.projectPath ?? lastActiveProjectPath() ?? "";
   if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
     rekey(session.id, stored.projectPath, projectPath);
   }
   appendTurn(session.id, projectPath, committed, turnId);
   clearBuffer(session.id); // committed → now in history; clear so a later attach sees no dup
+  broadcastConversations(); // new row / updated title + lastActivity → push to every client, even backgrounded
 }
 
 export function registerAgentChat(): void {
@@ -151,7 +174,7 @@ export function registerAgentChat(): void {
     // it's allowed mid-turn and needs no Session: handle it before the per-session hydration below. The
     // renderer updates the row optimistically; no ack is sent (the next `list` confirms the persisted title).
     if (msg.type === "rename") {
-      if (msg.sessionId && msg.title) renameConversation(msg.sessionId, msg.title);
+      if (msg.sessionId && msg.title) { renameConversation(msg.sessionId, msg.title); broadcastConversations(); }
       return;
     }
 
@@ -201,6 +224,7 @@ export function registerAgentChat(): void {
       deleteConversation(id);
       if (conv) deleteSessionBackups(conv.projectPath, id); // drop this chat's pre-turn backups too
       sessions.delete(id);
+      broadcastConversations(); // authoritative removal across every client (not just the optimistic one)
       return;
     }
 
@@ -231,6 +255,7 @@ export function registerAgentChat(): void {
         const conv = getConversation(id);
         if (conv) truncateToBeforeTurn(id, conv.projectPath, turnId);
         sessions.delete(id);
+        broadcastConversations(); // title may have been re-derived after truncation → push to all clients
         ws.send(JSON.stringify({ type: "restored", sessionId: id, ok: true }));
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -270,11 +295,12 @@ export function registerAgentChat(): void {
         // Resolve the project path before wiping: a persisted chat knows it from its index entry; a
         // brand-new chat (no turns yet) falls back to the currently-open AE project.
         const conv = getConversation(id);
-        const projectPath = conv ? conv.projectPath : await resolveProjectPath();
+        const projectPath = conv ? conv.projectPath : ((await resolveProjectPath()) ?? "");
         session.messages = [];
         session.lastContextTokens = 0;
         deleteConversation(id); // explicit wipe — drop the persisted transcript too (dev escape hatch)
         deleteSessionBackups(projectPath, id); // and this chat's pre-turn backups
+        broadcastConversations(); // the wiped chat leaves the sidebar on every client
         emit({ type: "compaction", status: "done", reason: "cleared" });
         return;
       }

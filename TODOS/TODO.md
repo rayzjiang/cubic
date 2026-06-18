@@ -107,7 +107,7 @@
 - [x] §C — Command surface (buttons/icons, no slash commands) — New chat + per-row delete kebab; `/clear`,`/compact` stay backend-only.
 - [x] §C — Good UX (spinner + progress words) — motion-themed gerunds cycled in reasoning gaps; per-tool spinners; loading splash; delete confirm modal + toasts.
 - [x] §C — Instrument event seams (no-op `track(...)`) — `message_sent`/`turn_done`/`turn_error`/`conversation_deleted`/`new_chat`.
-- [ ] §C — Manual E2E compaction test (deferred from Phase 2) — **still pending** (drive a real chat to ≥90% ctx → "Tidying up…" pill; push to ≥97% → `context_full` card).
+- [x] §C — TESTED W API for COMPACTION - Manual E2E compaction test (deferred from Phase 2) — drive a real chat to ≥90% ctx → "Tidying up…" pill; push to ≥97% → `context_full` card).
 - [x] §C2 (UI) — Conversation-list sidebar (collapsible, animated) + delete kebab + Home landing view.
 - ↳ §C "Re-attach on reload (renderer half)" is **NOT here** — it's in ⑥.
 - [x] optimize conversation-list loading — **decoupled from AE** (the list is local `index.json` data, so it loads instantly like Claude Code, no wait). `sendConversations` uses the real project path when the worker's connected, else `lastActiveProjectPath()` (most-recent conversation's project) as the guess; the bridge 'connect' push re-sends the authoritative list, which only changes anything on a project switch. Root cause was the old `waitForWorker` coupling the list to the CEP panel's exponential reconnect backoff (1s→10s).
@@ -133,6 +133,7 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
 - [ ] **feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
+- [ ] check **feat: do we have functionality/tools to trim/reorder footage (like typical ai video editing tool would - i guess itd js be expected functionality for any ai editing tool)**
 - [ ] **BUG - when a new chat is switched mid message, the new chat disappears. when an existing chat is switched mid message, and then switched back, its almost as if the new message was never sent + the loading for the new message is gone, the only way to see it back is by clicking home and returning back. grill me to fix all edge cases regarding this issue/related issues**
 ---
 # THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5

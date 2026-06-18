@@ -24,6 +24,8 @@ vi.mock('./bridge/wsBridge.js', () => ({
   bridge: {
     onChat: (fn: (ws: unknown, msg: unknown) => Promise<void>) => { h.handler.fn = fn; },
     onChatClose: (fn: (ws: unknown) => void) => { h.closeFn.fn = fn; },
+    on: () => {}, // 'connect'/'disconnect' list-refresh hooks — not exercised here
+    isConnected: () => true,
   },
 }));
 
@@ -35,6 +37,8 @@ vi.mock('./persist.js', () => ({
   deleteSessionBackups: h.deleteSessionBackups,
   rekey: h.rekey,
   encodeProjectPath: (p: string) => p || '_untitled',
+  listConversations: () => [],
+  lastActiveProjectPath: () => null,
 }));
 
 vi.mock('cubic-ai', async (importActual) => {

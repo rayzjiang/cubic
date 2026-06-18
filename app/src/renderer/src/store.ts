@@ -41,6 +41,17 @@ function saveNav(sessionId: string | null, view: 'home' | 'chat'): void {
   }
 }
 
+// ── Recover a conversation's view from the backend ──
+// Load its committed history, then attach to any in-flight turn. Same socket → the backend replies
+// history-then-attached in order, so the committed transcript paints first and the live turn (spinner +
+// in-flight prompt + buffered events) replays on top — no gap, no dup. Shared by both entry points into a
+// chat: reload (reattachActive) and switching chats (openChat). For a non-running chat the `attached`
+// reply is `running:false` with an empty buffer, so it's a harmless no-op.
+function loadAndAttach(sessionId: string): void {
+  sendLoadHistory(sessionId)
+  sendAttach(sessionId)
+}
+
 // ── Friendly transient-error mapping (raw SDK/transport text → plain English) ──
 function mapError(raw: string): string {
   if (/overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
@@ -74,6 +85,13 @@ interface ChatState {
   conversations: ConversationMeta[]
   listLoaded: boolean
   sidebarCollapsed: boolean
+  // Brand-new chats that have sent a first message but whose turn hasn't committed to disk yet. The
+  // renderer owns these rows (it knows it just sent a message — no AE project lookup needed), so they
+  // persist across chat switches like Claude.ai. An entry is dropped once the backend list contains its
+  // id (committed → real row), or the turn is stopped before any output, or the chat is deleted.
+  // In-memory only (a reload self-heals: the active chat re-attaches, a backgrounded one reappears on
+  // commit).
+  pendingNewChats: { id: string; title: string }[]
   // active conversation
   sessionId: string | null
   items: DisplayItem[]
@@ -153,6 +171,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
+  pendingNewChats: [],
   ...blankConversation(),
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
@@ -167,11 +186,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleServerMessage: (msg) => {
     const s = get()
     switch (msg.type) {
-      case 'conversations':
+      case 'conversations': {
         // A fresh list reconciles any optimistic deletes (backend sends no success ack). listLoaded
         // flips the initial loading screen off once the first list lands (no UI-before-data flash).
-        set({ conversations: msg.conversations, projectPath: msg.projectPath, listLoaded: true, pendingDeletes: new Set() })
+        // Drop any pending new-chat row the backend now has persisted (its real row takes over).
+        const committed = new Set(msg.conversations.map((c) => c.id))
+        set({
+          conversations: msg.conversations,
+          projectPath: msg.projectPath,
+          listLoaded: true,
+          pendingDeletes: new Set(),
+          pendingNewChats: s.pendingNewChats.filter((p) => !committed.has(p.id)),
+        })
         break
+      }
       case 'history':
         // Guard against a stale reply painting a chat the user already navigated away from.
         if (msg.sessionId === get().sessionId) set({ items: msg.items, running: msg.running })
@@ -297,6 +325,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             running: false,
             cancelling: false,
             progressWord: null,
+            // Stopped before any output on a brand-new chat → the message is un-sent, so drop its
+            // client-owned sidebar row (nothing ran or persisted).
+            pendingNewChats: s.pendingNewChats.filter((p) => p.id !== s.sessionId),
           })
           break
         }
@@ -330,10 +361,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // in-flight turn. Same socket → backend replies history-then-attached in order, so the committed
     // transcript paints first and the live turn replays on top (no gap, no dup).
     const { sessionId, view } = get()
-    if (view === 'chat' && sessionId) {
-      sendLoadHistory(sessionId)
-      sendAttach(sessionId)
-    }
+    if (view === 'chat' && sessionId) loadAndAttach(sessionId)
   },
 
   newChat: () => {
@@ -344,9 +372,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   openChat: (id) => {
+    // Switching INTO a chat is the same recovery the reload path uses: paint committed history, then
+    // re-attach to any still-running turn (restores the spinner + in-flight prompt + buffered live
+    // events). Without the attach, switching back to a chat that's still working would lose its spinner
+    // and in-flight message until a Home round-trip — the bug this fixes.
     set({ sessionId: id, view: 'chat', ...blankConversation() })
     saveNav(id, 'chat')
-    sendLoadHistory(id)
+    loadAndAttach(id)
   },
 
   goHome: () => {
@@ -365,7 +397,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sendQueue(s.sessionId, text, id)
       return
     }
-    set({ items: [...s.items, { kind: 'user', text }], lastUserText: text, error: null })
+    // First message of a brand-new chat (not yet persisted, not already pending) → own its sidebar row
+    // client-side so it persists across switches until the turn commits (Claude.ai behavior).
+    const isNewChat = !s.conversations.some((c) => c.id === s.sessionId) && !s.pendingNewChats.some((p) => p.id === s.sessionId)
+    set({
+      items: [...s.items, { kind: 'user', text }],
+      lastUserText: text,
+      error: null,
+      ...(isNewChat ? { pendingNewChats: [...s.pendingNewChats, { id: s.sessionId, title: text }] } : {}),
+    })
     track('message_sent')
     sendUserChat(s.sessionId, text)
   },
@@ -410,7 +450,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const s = get()
     const pendingDeletes = new Set(s.pendingDeletes)
     pendingDeletes.add(id)
-    set({ conversations: s.conversations.filter((c) => c.id !== id), pendingDeletes })
+    set({
+      conversations: s.conversations.filter((c) => c.id !== id),
+      pendingDeletes,
+      pendingNewChats: s.pendingNewChats.filter((p) => p.id !== id),
+    })
     track('conversation_deleted')
     sendDelete(id)
     if (s.sessionId === id) get().newChat() // deleting the open chat → drop into a fresh New chat
