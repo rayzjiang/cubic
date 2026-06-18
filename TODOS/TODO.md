@@ -117,7 +117,7 @@
 - [x] §D — Stop/cancel button (+ Esc) → `{type:'cancel'}`
 - [x] §C — Re-attach on reload (renderer half): on (re)connect send `{type:'attach',sessionId}`, feed buffered `events` through the reducer
 - [x] §E — "Restore to before this request" button (snapshot list + confirm-before-overwrite)
-  - [ ] **BUG (6/16/26) - If someone modifies something in a different piece, the rewind will rewind the ENTIRE project state instead of only the changes that the ai made.. grill to determine if theres a better way to do the backups or if i should js ship mvp v1 like this?**
+  - [x] **addressed, deferred to post mvp, simple claude code like rewind everything (including manual changes) for now - BUG (6/16/26) - If someone modifies something in a different piece, the rewind will rewind the ENTIRE project state instead of only the changes that the ai made.. grill to determine if theres a better way to do the backups or if i should js ship mvp v1 like this?**
   - [x] ADDRESSED bc its self healing already basically, switched to be new conversation temp name- not urgent BUG (6/16/26) - if a chat is fully restored (even original message), the title of the chat is still off..
 - [x] add a send button to the ui
 - [x] add a ae panel connectivity status on all pages of the ui (gotta decide where to put it, i think simple colored status dot + brief word is good)
@@ -226,4 +226,35 @@ adapter interface — NOT Vercel AI SDK. Reason: need direct access to provider-
   class OpenAIProvider implements LLMProvider { ... }
 
 For MVP: implement AnthropicProvider only. Add others when needed.
+
+# post mvp (rewind / "restore to before this request" — known limitations)
+MVP ships rewind as a whole-project, one-way revert. Decided after grilling: keep it simple now,
+warn honestly in the confirmation, fix the depth later. The confirmation modal (`ConfirmModal.tsx`)
+explicitly states the whole project reverts and anything after that point — including hand edits — is
+lost and can't be undone.
+
+Current behavior (already implemented, no MVP code beyond the confirmation copy):
+- Reverts the entire `.aep` to that turn's pre-turn snapshot (`restoreProject` in `project.jsx`).
+- One-way: forward backups are pruned + the chat is truncated to before that turn
+  (`truncateToBeforeTurn`, `persist.ts`). No redo.
+
+Accepted limitations (conscious MVP tradeoffs):
+- **Whole-project, not surgical.** Rewind reverts everything to that point, not just the AI's
+  changes. If the user edited a *different* comp/piece by hand after that turn, that work is wiped
+  too. The real fix is per-comp / surgical scoped restore — hard, because AE has no programmatic
+  per-object undo across the agent loop's async turns (only whole-`.aep` snapshots are reliable).
+- **Manual edits not preserved.** No pre-restore safety snapshot, so uncaptured hand edits since the
+  last turn are destroyed on rewind (disclosed only via the confirmation, not recoverable).
+- **Not undoable.** One-way by design; no "undo the rewind."
+
+Deferred improvements (post-MVP, roughly in priority order):
+- **Pre-restore safety snapshot** — copy current state to a recovery point before overwriting, so a
+  rewind never truly destroys manual work. (Backend half of an undoable rewind.)
+- **Undoable rewind** — bidirectional timeline (cursor + non-destructive backups + branch-discard on
+  the next message), surfaced either as a single "undo rewind" action or collapsible "ahead" turns.
+- **Per-comp / surgical scoped restore** — revert only the comp(s)/objects the AI touched, leaving
+  the user's unrelated manual work intact. The proper answer to the original bug; biggest lift.
+
+Cross-refs: `TODO-phase4.md` ("Restore to before this request" button + confirm-before-overwrite),
+`TODO-phase4-later.md` §E (undo-history viewer / browse-all-snapshots).
 

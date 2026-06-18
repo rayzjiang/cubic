@@ -9,7 +9,7 @@ function Shell({ onCancel, children }: { onCancel: () => void; children: ReactNo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
       <div
-        className="w-[360px] rounded-xl border border-white/10 bg-neutral-800 p-5 shadow-2xl"
+        className="w-90 rounded-xl border border-white/10 bg-neutral-800 p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -31,8 +31,9 @@ export function ConfirmModal() {
       <Shell onCancel={cancelRestore}>
         <h2 className="text-[15px] font-semibold text-white/90">Restore to before this request?</h2>
         <p className="mt-2 text-[13px] text-white/55">
-          This reverts your After Effects project to how it was before this request, and removes this
-          request and everything after it from the chat.
+          This rewinds your entire After Effects project back to before this request. Anything done
+          after that point (including any manual changes) will be lost, along
+          with this request and everything after it in the chat.
         </p>
         <p className="mt-2 text-[13px] text-white/45">This can’t be undone.</p>
         <div className="mt-5 flex justify-end gap-2">
