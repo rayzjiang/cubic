@@ -78,14 +78,14 @@
   Shared `_valuesEqual()` helper (float tolerance + array deep-compare) added in `bridge.jsx`; per-command
   labels in `events.ts` `NOOP_SCRIPT_LABELS`. Principle: already-satisfied = noop, missing named target =
   error (deletes already do this). Verify noop renders muted across rows (unit tests + live spot-check).
-- [ ] **LATER (separate chat) — make the multi-field setters diff-aware so their "all fields already set"
+- [ ] **DEFERRED TO POSTMVP (separate chat) — make the multi-field setters diff-aware so their "all fields already set"**
   noop is correct** (= the J2 work below; their `NOOP_SCRIPT_LABELS` entries are already in place, dormant
   until this lands): `setLayerProperties`, `batchSetLayerProperties` (the two big layer setters),
   `setCompositionProperties`, `setTextAnimatorRangeSelector`, `setLayerMask` (update branch), `updateMarker`.
   Each must diff every supplied field against current (today text fields diff but non-text fields push to
   `changedProperties` unconditionally / `updateMarker` pushes on supply not on change), then return noop when
   nothing actually differs. A half-diff noop here would be wrong, so deferred from the noop pass.
-- [ ] **LATER (separate chat) — fix handler judgment-call issues surfaced by the noop audit** (deferred
+- [ ] **DEFERRED TO POSTMVP (separate chat) — fix handler judgment-call issues surfaced by the noop audit** (deferred
   from the noop pass; not noop-related). J3: `batchSetLayerProperties` returns top-level `status:"success"`
   even if every sub-op errored (should mirror `batch`'s `BATCH_FAILED`). J4: `createLightLayer` silently
   ignores an unknown `lightType`. J5: `setTrackMatte` swallows a `setTrackMatte()` API failure and falls
