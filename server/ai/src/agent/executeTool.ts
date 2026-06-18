@@ -32,6 +32,25 @@ export interface ToolExecution {
 }
 
 /**
+ * Coerce a model-supplied argument bag to a real object. Some models (especially smaller ones like
+ * Haiku) emit `parameters` — or the whole tool input — as a JSON-encoded STRING instead of a nested
+ * object. Left as a string, a downstream `args.__undoLabel = …` throws ("Cannot create property on
+ * string"), which escapes executeTool and orphans the assistant tool_use (permanently 400s the chat).
+ * Parsing it here makes every entry path hand the bridge — and the meta-field assignment — a real object.
+ */
+function coerceArgs(raw: unknown): Record<string, unknown> {
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch { /* not JSON — fall through to empty */ }
+    return {};
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
+}
+
+/**
  * Normalize batch sub-commands to the bridge's { command, args } shape.
  * Idempotent — accepts the model-facing { script, parameters } OR already-{ command, args },
  * so it's correct no matter how batch was invoked (the dedicated batch tool OR
@@ -40,23 +59,23 @@ export interface ToolExecution {
 function normalizeBatchCommands(raw: unknown): Array<{ command: string; args: Record<string, unknown> }> {
   if (!Array.isArray(raw)) return [];
   return raw.map((c) => {
-    const entry = (c ?? {}) as Record<string, unknown>;
+    const entry = coerceArgs(c);
     return {
       command: String(entry.command ?? entry.script ?? ''),
-      args: ((entry.args ?? entry.parameters) as Record<string, unknown>) ?? {},
+      args: coerceArgs(entry.args ?? entry.parameters),
     };
   });
 }
 
 /** Maps a model tool call to the (command, args) pair the bridge understands. */
 function toCommandCall(tool: ToolUse): { command: string; args: Record<string, unknown> } {
-  const input = (tool.input ?? {}) as Record<string, unknown>;
+  const input = coerceArgs(tool.input);
   let command: string;
   let args: Record<string, unknown>;
   switch (tool.name) {
     case 'runScript':
       command = String(input.script ?? '');
-      args = (input.parameters as Record<string, unknown>) ?? {};
+      args = coerceArgs(input.parameters);
       break;
     case 'batch':
       command = 'batch';
@@ -124,36 +143,55 @@ async function runOnce(command: string, args: Record<string, unknown>): Promise<
  * the session cache after any mutating command so the next turn re-reads live state.
  */
 export async function executeTool(tool: ToolUse, sessionId?: string): Promise<ToolExecution> {
-  const { command, args } = toCommandCall(tool);
+  // HARD CONTRACT: executeTool must NEVER throw. The agent loop commits the assistant tool_use, then
+  // relies on this returning a tool_result to commit right after it. A throw here skips that commit and
+  // orphans the tool_use (no tool_result follows) — which the API rejects forever, permanently bricking
+  // the conversation. So any unexpected internal failure is converted to a readable error tool_result.
+  try {
+    const { command, args } = toCommandCall(tool);
 
-  // restoreProject ("undo that") must be scoped to the current chat's backup folder. The model
-  // can't know the session id, so the server injects it here — overriding any value the model
-  // guessed (it has no business choosing the session).
-  if (command === 'restoreProject' && sessionId) args.sessionId = sessionId;
+    // restoreProject ("undo that") must be scoped to the current chat's backup folder. The model
+    // can't know the session id, so the server injects it here — overriding any value the model
+    // guessed (it has no business choosing the session).
+    if (command === 'restoreProject' && sessionId) args.sessionId = sessionId;
 
-  // Thread the same friendly label the chat row shows down to AE's undo group, so Edit > Undo
-  // reads "Cubic: Added text layer" instead of the raw command name. `__undoLabel` is a
-  // server-injected meta field (not a model-facing param) — the bridge reads it for the undo
-  // group name only; handlers ignore it. Read-only commands skip the undo wrapper, so it's inert there.
-  args.__undoLabel = describeToolCall(tool.name, tool.input);
+    // Thread the same friendly label the chat row shows down to AE's undo group, so Edit > Undo
+    // reads "Cubic: Added text layer" instead of the raw command name. `__undoLabel` is a
+    // server-injected meta field (not a model-facing param) — the bridge reads it for the undo
+    // group name only; handlers ignore it. Read-only commands skip the undo wrapper, so it's inert there.
+    args.__undoLabel = describeToolCall(tool.name, tool.input);
 
-  let outcome = await runOnce(command, args);
-  let retried = false;
-  if (!outcome.ok && outcome.errorCode && RETRYABLE.has(outcome.errorCode)) {
-    retried = true;
-    outcome = await runOnce(command, args);
+    let outcome = await runOnce(command, args);
+    let retried = false;
+    if (!outcome.ok && outcome.errorCode && RETRYABLE.has(outcome.errorCode)) {
+      retried = true;
+      outcome = await runOnce(command, args);
+    }
+
+    // A noop changed nothing, so the cached state is still valid — don't invalidate.
+    if (outcome.ok && !outcome.noop && !READ_ONLY_COMMANDS.has(command)) {
+      sessionCache.invalidate();
+    }
+
+    return {
+      block: { type: 'tool_result', tool_use_id: tool.id, content: outcome.content, is_error: !outcome.ok },
+      ok: outcome.ok,
+      errorCode: outcome.errorCode,
+      retried,
+      noop: outcome.noop,
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      block: {
+        type: 'tool_result',
+        tool_use_id: tool.id,
+        content: JSON.stringify({ status: 'error', errorCode: 'INTERNAL_ERROR', message }),
+        is_error: true,
+      },
+      ok: false,
+      errorCode: 'INTERNAL_ERROR',
+      retried: false,
+    };
   }
-
-  // A noop changed nothing, so the cached state is still valid — don't invalidate.
-  if (outcome.ok && !outcome.noop && !READ_ONLY_COMMANDS.has(command)) {
-    sessionCache.invalidate();
-  }
-
-  return {
-    block: { type: 'tool_result', tool_use_id: tool.id, content: outcome.content, is_error: !outcome.ok },
-    ok: outcome.ok,
-    errorCode: outcome.errorCode,
-    retried,
-    noop: outcome.noop,
-  };
 }

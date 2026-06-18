@@ -87,7 +87,11 @@ function logCall(
   if (response.content) console.log(`│  ${cyan('→ assistant')}: ${clip(response.content)}`);
   for (const tu of response.toolUses) console.log(`│  ${cyan('→ tool_use')}: ${tu.name} ${dim(clip(JSON.stringify(tu.input), 200))}`);
   const u = response.usage;
-  console.log(dim(`╰─ ${u.inputTokens} in · ${u.outputTokens} out · ${u.cacheReadInputTokens ?? 0} cache-read · ~$${estimateCost(model, u).toFixed(5)}`));
+  // ctx = the true prefill size that counts against the context window (input + cache-creation +
+  // cache-read) — matches contextTokensOf() in agent/compaction.ts. Surfaced so the §C compaction
+  // test can size CUBIC_CONTEXT_WINDOW off the real number, not just the visible `input`.
+  const ctx = u.inputTokens + (u.cacheCreationInputTokens ?? 0) + (u.cacheReadInputTokens ?? 0);
+  console.log(dim(`╰─ ${u.inputTokens} in · ${u.outputTokens} out · ${u.cacheCreationInputTokens ?? 0} cache-create · ${u.cacheReadInputTokens ?? 0} cache-read · ctx=${ctx} · ~$${estimateCost(model, u).toFixed(5)}`));
 
   _debugTally.calls++;
   _debugTally.inputTokens += u.inputTokens;

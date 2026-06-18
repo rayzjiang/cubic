@@ -56,7 +56,7 @@
   (`executeTool.ts`); keep 10/chat (prune in `project.jsx`); folder deleted on conversation-delete AND
   `/clear` (`deleteSessionBackups` in `persist.ts`, called from `agentChat.ts`).
 - [x] **BUG (6/16/26) - on new chat start, the sidebar isnt showing a loading animation/displaying the new chat in the sidebar, unless u go back to home and click the new chat**
-- [ ] **BUG/LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
+- [ ] **DEFERRED TO POSTMVP - BUG/LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
   Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
   options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo
   in `.cubic-backups/`. Ship keep-10 now.
@@ -132,6 +132,7 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
   - **Backend crash:** `BackendSupervisor` does **bounded auto-restart** (3 tries, backoff `[400,1000,2000]`, counter reset after a 3s "settled" window) → renderer shows "Reconnecting…" + keeps retrying its WS (change `ws.ts` from one-shot to infinite bounded-backoff) → on reconnect the §C reattach path rejoins the in-flight turn; after exhaustion → blocking "Cubic stopped — reopen it".
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
+- [ ] **BUG - when a new chat is switched mid message, the new chat disappears. when an existing chat is switched mid message, and then switched back, its almost as if the new message was never sent + the loading for the new message is gone, the only way to see it back is by clicking home and returning back. grill me to fix all edge cases regarding this issue/related issues**
 ---
 # THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
 # MAYBE BUILD OUT TEASER DEMO VID BEFORE PHASE 5?? POST ON TWITTER??

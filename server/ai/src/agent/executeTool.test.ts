@@ -87,6 +87,37 @@ describe('executeTool', () => {
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
+  it('coerces stringified `parameters` (Haiku quirk) into a real object instead of throwing on __undoLabel', async () => {
+    callRunScript.mockResolvedValue({ status: 'success' });
+    // Haiku sometimes emits parameters as a JSON STRING. Pre-fix, `args.__undoLabel = …` threw
+    // "Cannot create property on string", orphaning the tool_use and 400ing the whole conversation.
+    const tool: ToolUse = {
+      id: 't',
+      name: 'runScript',
+      input: { script: 'setLayerProperty', parameters: '{"layerIndex": 2, "propertyName": "Position"}' },
+    };
+    const exec = await executeTool(tool);
+
+    expect(callRunScript).toHaveBeenCalledWith('setLayerProperty', {
+      layerIndex: 2,
+      propertyName: 'Position',
+      __undoLabel: expect.any(String),
+    });
+    expect(exec.ok).toBe(true);
+    expect(exec.block.is_error).toBe(false);
+  });
+
+  it('never throws on un-parseable args — returns an INTERNAL_ERROR tool_result so the tool_use stays paired', async () => {
+    callRunScript.mockResolvedValue({ status: 'success' });
+    // A garbage string for parameters can't be parsed → coerced to {} → still a valid, paired result.
+    const tool: ToolUse = { id: 't', name: 'runScript', input: { script: 'setLayerProperty', parameters: 'not json' } };
+    const exec = await executeTool(tool);
+
+    expect(exec.block.tool_use_id).toBe('t'); // a tool_result always comes back → never an orphan
+    expect(callRunScript).toHaveBeenCalledWith('setLayerProperty', { __undoLabel: expect.any(String) });
+    expect(exec.ok).toBe(true);
+  });
+
   it('turns a transport throw into a BRIDGE_ERROR tool_result instead of throwing', async () => {
     callRunScript.mockRejectedValue(new Error('timed out after 10s'));
     const exec = await executeTool(runScript('createLayer'));
