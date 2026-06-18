@@ -15,8 +15,16 @@ export function Sidebar() {
   const toggleSidebar = useChatStore((s) => s.toggleSidebar)
   const conversations = useChatStore((s) => s.conversations)
   const sessionId = useChatStore((s) => s.sessionId)
+  const lastUserText = useChatStore((s) => s.lastUserText)
   const newChat = useChatStore((s) => s.newChat)
   const goHome = useChatStore((s) => s.goHome)
+
+  // The active chat only enters `conversations` once the backend persists its first turn (done→sendList).
+  // Until then a brand-new chat has no row — so render a derived "synthetic" row for it: appears the moment
+  // New chat is clicked (highlighted/active), title fills in from the first message, then the real persisted
+  // row (same id) replaces it seamlessly. Nothing is mutated, so a stray sendList can't wipe it.
+  const activeUnlisted = !!sessionId && !conversations.some((c) => c.id === sessionId)
+  const syntheticTitle = lastUserText?.trim() || 'New chat'
 
   return (
     <aside
@@ -53,7 +61,17 @@ export function Sidebar() {
           </button>
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-          {conversations.length === 0 && <li className="px-3 py-2 text-[13px] text-white/35">No conversations yet.</li>}
+          {conversations.length === 0 && !activeUnlisted && (
+            <li className="px-3 py-2 text-[13px] text-white/35">No conversations yet.</li>
+          )}
+          {/* Synthetic active row for a not-yet-persisted new chat (no kebab, click is a no-op — it's already open). */}
+          {activeUnlisted && (
+            <li>
+              <div className="flex items-center rounded-md bg-white/10">
+                <span className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] text-white/80">{syntheticTitle}</span>
+              </div>
+            </li>
+          )}
           {conversations.map((c) => (
             <li key={c.id}>
               <ConversationRow conv={c} active={c.id === sessionId} />
