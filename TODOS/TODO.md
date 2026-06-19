@@ -207,10 +207,16 @@ Remaining (the "exhaustive" tier, deferred):
 - Regenerate `server/ae-bridge/tests/fixtures/ae-matchnames.json` (run `scripts/introspect-matchnames.mjs`)
   whenever the AE version changes; extend the matchname guard's reviewed baseline if text/shape grows.
 
-# somewhat post mvp, maybe during (billing/usage limiting)
-- System prompt, web verify the after effects standard conventions for smooth/juicy/bouncy settings for the good saas videos
-- Take inspo from good looking after effects youtube video tutorials
-- Maybe inspo from gaming montages as well? (since those are usually edited well)
+# PRE-SHIP taste pass (HARD ship gate — Phase 5 §G-0, NOT optional/post-mvp)
+The taste/style of the AI's motion is the moat (see the Palmier competitive read — they went generative,
+left precise editable AE motion graphics open; that lane is only ours if the output is genuinely good).
+Sequencing: do NOT block Phase 5 on this, but it IS a hard gate before any paid ship.
+- [ ] FIRST (before committing Phase-5 effort): run the 7-trial diagnostic in `TODO-taste-eval.md` to classify
+  every failure as a JUDGMENT gap (prompt-fixable) vs a CAPABILITY gap (recipe/tool rework). Cheap (~half a day,
+  no code). Purpose: de-risk Phase 5 — confirm taste is a prompt-tune, not a core rebuild, before building billing infra around it.
+- [ ] THEN (pre-ship, gated at §G-0): the prompt-tuning pass — rewrite `<motion_design_principles>` in `server/ai/src/prompt/rules.ts`
+  to close the judgment gaps. Inputs: web-verify AE standard conventions for smooth/juicy/bouncy SaaS-video settings;
+  inspo from good AE youtube tutorials (+ maybe well-edited gaming montages). Capability gaps deferred to post-mvp recipe work.
 
 # context quality — agent only sees point-in-time property values, not keyframes/animation
 The per-turn live-state snapshot (`server/ai/src/context/buildContext.ts`) reads each property's VALUE

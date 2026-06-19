@@ -68,6 +68,7 @@
 - [ ] **§F-5** _(optional)_ **Staged rollout / beta channel** — `electron-builder` percentage rollout + `latest`/`beta` channels. Nice-to-have, not a launch blocker.
 
 ## §G. Launch gates (last checks before shipping to a paying stranger)
+- [ ] **§G-0** **Taste/quality bar met (HARD gate — no ship below bar)** — motion output passes the taste eval: avg ≥1.5 across the 7 trials, AND T4 (restraint) + T7 (composition coherence) both ≥1. Protocol + rubric → `TODO-taste-eval.md`. The diagnostic runs **before** committing Phase-5 effort (classifies judgment vs capability gaps); the full prompt-tuning pass closes the judgment gaps and must clear this bar before the first paid ship. This is the taste moat — it is NOT optional polish.
 - [ ] **§G-1** **Price + cap numbers locked** (§C unit-economics decision made, not TBD).
 - [ ] **§G-2** **ToS + Privacy Policy** published — required to charge money + collect accounts/usage.
 - [ ] **§G-3** **Full paid flow tested E2E** — fresh OS → install → sign in → trial → hit cap → pay → use → cancel via Portal → access revoked. The whole loop, on a clean machine.
