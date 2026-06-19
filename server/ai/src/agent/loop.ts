@@ -131,7 +131,7 @@ export async function runAgentTurn(
       const overCeiling = session.lastContextTokens >= window * HARD_CEILING;
       emit({ type: 'compaction', status: 'start' });
       const res = await compactSession(session, { llm, model });
-      emit({ type: 'compaction', status: res.ok ? 'done' : 'failed', reason: res.reason, summary: res.summary });
+      emit({ type: 'compaction', status: res.ok ? 'done' : 'failed', reason: res.reason, summary: res.summary, keptTurns: res.keptTurns });
       // Already over the hard ceiling AND compaction freed nothing (≤ KEEP_RECENT_TURNS of history,
       // or it failed) → we genuinely can't fit. Pause honestly rather than firing a chat() that we
       // know will overflow. Below the ceiling we always proceed: ~10% headroom remains, and a failed
