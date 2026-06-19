@@ -71,7 +71,7 @@ export function InputBar() {
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-white/4 px-3 py-2 focus-within:border-white/20">
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/4 px-3 py-2 focus-within:border-white/20">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -90,7 +90,7 @@ export function InputBar() {
         <button
           onClick={running ? cancelRun : submit}
           disabled={!running && !draft.trim()}
-          className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-900 transition-colors duration-200 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
+          className="relative inline-flex h-7 w-7 shrink-0 self-end items-center justify-center rounded-lg bg-white text-neutral-900 transition-colors duration-200 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
           aria-label={running ? 'Stop' : 'Send'}
           title={running ? 'Stop (Esc)' : 'Send (Enter)'}
         >
