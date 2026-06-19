@@ -11,9 +11,8 @@ export function HomeView() {
   const newChat = useChatStore((s) => s.newChat)
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="h-9 shrink-0 [-webkit-app-region:drag]" />
-      <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-6 pb-8">
+    <div className="flex h-full flex-col bg-neutral-900">
+      <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-6 pb-8 pt-8">
         <h1 className="text-[28px] font-semibold tracking-tight text-white/90">Welcome back</h1>
         <p className="mt-1 text-sm text-white/45">Pick up a conversation or start something new.</p>
 

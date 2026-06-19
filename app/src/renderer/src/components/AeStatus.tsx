@@ -7,8 +7,8 @@ import { useChatStore } from '../store'
 const RESTART_AE_GRACE_MS = 8000
 
 /**
- * Always-on After Effects / backend connectivity indicator: a colored dot + brief word pinned to the
- * top-right window chrome so it shows on every page. Hovering anywhere on the dot+text group shows a
+ * Always-on After Effects / backend connectivity indicator: a colored dot + brief word that lives in
+ * the top bar's right region so it shows on every page. Hovering anywhere on the dot+text group shows a
  * fuller explanation (native tooltip — no popover, no buttons).
  *
  * It resolves ONE state from three sources, in precedence order:
@@ -53,7 +53,8 @@ export function AeStatus() {
   })()
 
   return (
-    <div className="fixed right-3 top-0 z-50 flex h-9 items-center [-webkit-app-region:no-drag]">
+    // Inline in the top bar's right region; no-drag so the tooltip group stays hoverable over the drag strip.
+    <div className="flex items-center [-webkit-app-region:no-drag]">
       {/* whole dot+text group is the hover target for the tooltip */}
       <div className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-white/45" title={view.tip}>
         <span className={`h-2 w-2 shrink-0 rounded-full ${view.dot}`} />

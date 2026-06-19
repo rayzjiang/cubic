@@ -8,7 +8,7 @@ import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { Toasts } from './components/Toasts'
-import { AeStatus } from './components/AeStatus'
+import { TopBar } from './components/TopBar'
 
 /**
  * Root: wires the WS transport to the store and routes between the home landing view and the active
@@ -42,19 +42,27 @@ export function App() {
 
   let body
   if (backendPhase === 'port-in-use' || backendPhase === 'stopped') {
-    // Non-functional backend the user must resolve — full takeover (not just the dot).
+    // Non-functional backend the user must resolve — full takeover (no top bar).
     body = <BackendBlockedScreen phase={backendPhase} />
   } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
-  } else if (view === 'home') {
-    body = <HomeView />
   } else {
+    // Home + chat share the global top bar; only the region below it differs.
     body = (
-      <div className="flex h-full">
-        <Sidebar />
-        <div className="min-w-0 flex-1">
-          <ChatPane />
-        </div>
+      <div className="flex h-full flex-col">
+        <TopBar />
+        {view === 'home' ? (
+          <div className="min-h-0 flex-1">
+            <HomeView />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <Sidebar />
+            <div className="min-w-0 flex-1">
+              <ChatPane />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -62,7 +70,6 @@ export function App() {
   return (
     <div className="h-full bg-neutral-900 text-white/90">
       {body}
-      <AeStatus />
       <ConfirmModal />
       <Toasts />
     </div>
