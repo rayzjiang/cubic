@@ -113,10 +113,12 @@ export function MessageList() {
     )
   }
 
-  const renderItem = (it: DisplayItem, i: number) => {
+  // `suppressTopGap` drops a user prompt's top margin when it's the first row of the last-turn block
+  // (that block supplies the spacing via its own padding) — keeps the message off the very top edge.
+  const renderItem = (it: DisplayItem, i: number, suppressTopGap = false) => {
     if (it.kind === 'user') {
       return (
-        <div key={i} className={i === 0 ? '' : 'mt-7'}>
+        <div key={i} className={i === 0 || suppressTopGap ? '' : 'mt-7'}>
           <UserPrompt text={it.text} turnId={it.turnId} />
         </div>
       )
@@ -173,17 +175,23 @@ export function MessageList() {
         onTouchStart={onUserScrollIntent}
         className="h-full overflow-y-auto"
       >
-        <div className="mx-auto max-w-2xl px-5 py-6">
+        {/* pt-6 only: the bottom spacing lives INSIDE the last-turn block (pb-6) so scrolling to the
+            very bottom can't over-scroll past the pinned message and clip it. */}
+        <div className="mx-auto max-w-2xl px-5 pt-6">
           {lastUserIdx < 0 ? (
-            <>
-              {items.map(renderItem)}
+            <div className="pb-6">
+              {items.map((it, i) => renderItem(it, i))}
               {tail}
-            </>
+            </div>
           ) : (
             <>
               {items.slice(0, lastUserIdx).map((it, i) => renderItem(it, i))}
-              <div style={viewportH ? { minHeight: `${viewportH}px` } : undefined}>
-                {items.slice(lastUserIdx).map((it, j) => renderItem(it, lastUserIdx + j))}
+              {/* Last turn: min-height = viewport so the newest user message can reach the top, while
+                  pt-7 keeps it a touch below the top edge (never clipped) and pb-6 is the bottom gap.
+                  border-box (Tailwind default) folds both paddings into the min-height → no over-scroll.
+                  Tweak: `pt-7` = breathing room above the message; the min-height controls the pin. */}
+              <div className="pt-7 pb-6" style={viewportH ? { minHeight: `${viewportH}px` } : undefined}>
+                {items.slice(lastUserIdx).map((it, j) => renderItem(it, lastUserIdx + j, j === 0))}
                 {tail}
               </div>
             </>
