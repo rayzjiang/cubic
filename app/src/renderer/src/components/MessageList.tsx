@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../store'
+import type { DisplayItem } from '../protocol'
 import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
 import { ToolActionRow } from './ToolActionRow'
@@ -7,21 +8,101 @@ import { ProgressIndicator } from './ProgressIndicator'
 import { CompactionPill } from './CompactionPill'
 import { CompactionSummary } from './CompactionSummary'
 
+// Distance from the bottom (px) that still counts as "pinned" — within this, stick-to-bottom stays on.
+const PIN_THRESHOLD = 48
+
 /**
  * The transcript. One flat DisplayItem[] (history + live share the shape) rendered in order: each
- * user prompt is boxed and starts a new "turn" (extra top spacing); assistant text + tool rows flow
- * full-width below it — the Cursor/Copilot look. Auto-scrolls to the newest content.
+ * user prompt is boxed and starts a new "turn"; assistant text + tool rows flow full-width below it.
+ *
+ * Scroll model (ChatGPT/Claude.ai-style):
+ * - The LAST turn gets a min-height of the viewport, so the most-recent user message can sit at the
+ *   top — a short reply leaves whitespace down to the composer; a long reply just grows past it.
+ * - Auto-scroll sticks to the bottom ONLY while "pinned" (already at the bottom). If you've scrolled
+ *   up, neither your own send nor an incoming AI reply yanks you down — instead a "jump to latest"
+ *   button appears, with a notification dot when new content arrived while you were away.
  */
 export function MessageList() {
   const items = useChatStore((s) => s.items)
   const running = useChatStore((s) => s.running)
   const progressWord = useChatStore((s) => s.progressWord)
   const compacting = useChatStore((s) => s.compacting)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const sessionId = useChatStore((s) => s.sessionId)
 
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
+  const pinnedRef = useRef(true) // synchronous source of truth for effects
+  const programmaticRef = useRef(false) // a smooth jump is in flight → ignore its own scroll frames
+  const [pinned, setPinned] = useState(true) // mirror for rendering the jump button
+  const [hasNew, setHasNew] = useState(false) // new content arrived while scrolled up
+  const [viewportH, setViewportH] = useState(0)
+  const prevLen = useRef(items.length)
+
+  // Callback ref (not an effect) so the ResizeObserver attaches whenever the scroll node mounts — the
+  // empty state doesn't render it, so it appears only after the first message. Tracks the viewport's
+  // height → the last turn's min-height (so the newest user message can reach the top), kept correct
+  // across window/panel resizes.
+  const setScrollEl = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el
+    roRef.current?.disconnect()
+    if (!el) return
+    const ro = new ResizeObserver(() => setViewportH(el.clientHeight))
+    ro.observe(el)
+    roRef.current = ro
+    setViewportH(el.clientHeight)
+  }, [])
+
+  const scrollToBottom = (behavior: ScrollBehavior) => {
+    const el = scrollRef.current
+    if (!el) return
+    if (behavior === 'smooth') programmaticRef.current = true
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }
+
+  const onScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD
+    // Ignore the in-between frames of our own smooth jump (else the button would flicker). A real
+    // wheel/touch clears the flag (see onUserScrollIntent), so the user can still interrupt mid-jump.
+    if (programmaticRef.current) {
+      if (atBottom) programmaticRef.current = false
+      return
+    }
+    pinnedRef.current = atBottom
+    setPinned(atBottom)
+    if (atBottom) setHasNew(false) // caught back up → clear the notification
+  }
+
+  // A genuine user scroll gesture cancels "ignore programmatic frames", so interrupting a smooth jump
+  // by scrolling up immediately un-pins (the button comes back).
+  const onUserScrollIntent = () => { programmaticRef.current = false }
+
+  // Opening / switching conversations re-pins to the bottom (show the latest), even if the previous
+  // chat was left scrolled up. History loads async after the id changes, so the stick effect below
+  // does the actual scroll once items arrive.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [items, running, progressWord, compacting])
+    pinnedRef.current = true
+    setPinned(true)
+    setHasNew(false)
+  }, [sessionId])
+
+  // Stick to the bottom ONLY when pinned. When scrolled up, never yank — just flag that new content
+  // landed so the jump button shows its dot. `auto` (instant) keeps it glued without smooth-scroll
+  // stutter as items append over a turn; the deliberate jump button uses smooth below.
+  useEffect(() => {
+    const grew = items.length > prevLen.current
+    prevLen.current = items.length
+    if (pinnedRef.current) scrollToBottom('auto')
+    else if (grew) setHasNew(true)
+  }, [items, running, progressWord, compacting, viewportH])
+
+  const jumpToLatest = () => {
+    pinnedRef.current = true
+    setPinned(true)
+    setHasNew(false)
+    scrollToBottom('smooth')
+  }
 
   if (items.length === 0 && !running && !compacting) {
     return (
@@ -32,58 +113,104 @@ export function MessageList() {
     )
   }
 
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-5 py-6">
-        {items.map((it, i) => {
-          if (it.kind === 'user') {
-            return (
-              <div key={i} className={i === 0 ? '' : 'mt-7'}>
-                <UserPrompt text={it.text} turnId={it.turnId} />
-              </div>
-            )
-          }
-          if (it.kind === 'assistant') {
-            return (
-              <div key={i} className="mt-3">
-                <AssistantMessage text={it.text} />
-              </div>
-            )
-          }
-          if (it.kind === 'interrupted') {
-            return (
-              <div key={i} className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
-                <span className="h-px flex-1 bg-white/10" />
-                Stopped
-                <span className="h-px flex-1 bg-white/10" />
-              </div>
-            )
-          }
-          if (it.kind === 'compaction') {
-            return (
-              <div key={i} className="mt-3">
-                <CompactionSummary summary={it.summary} />
-              </div>
-            )
-          }
-          return (
-            <div key={i} className="mt-1.5">
-              <ToolActionRow label={it.label} status={it.status} />
-            </div>
-          )
-        })}
-        {compacting && (
-          <div className="mt-2">
-            <CompactionPill />
-          </div>
-        )}
-        {running && progressWord && (
-          <div className="mt-2">
-            <ProgressIndicator word={progressWord} />
-          </div>
-        )}
-        <div ref={bottomRef} />
+  const renderItem = (it: DisplayItem, i: number) => {
+    if (it.kind === 'user') {
+      return (
+        <div key={i} className={i === 0 ? '' : 'mt-7'}>
+          <UserPrompt text={it.text} turnId={it.turnId} />
+        </div>
+      )
+    }
+    if (it.kind === 'assistant') {
+      return (
+        <div key={i} className="mt-3">
+          <AssistantMessage text={it.text} />
+        </div>
+      )
+    }
+    if (it.kind === 'interrupted') {
+      return (
+        <div key={i} className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
+          <span className="h-px flex-1 bg-white/10" />
+          Stopped
+          <span className="h-px flex-1 bg-white/10" />
+        </div>
+      )
+    }
+    if (it.kind === 'compaction') {
+      return (
+        <div key={i} className="mt-3">
+          <CompactionSummary summary={it.summary} />
+        </div>
+      )
+    }
+    return (
+      <div key={i} className="mt-1.5">
+        <ToolActionRow label={it.label} status={it.status} />
       </div>
+    )
+  }
+
+  // The last turn (from the most-recent user prompt onward) gets the viewport min-height so it can
+  // scroll to the top. The in-flight pill/progress live inside it (they belong to that turn).
+  let lastUserIdx = -1
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].kind === 'user') { lastUserIdx = i; break }
+  }
+  const tail = (
+    <>
+      {compacting && <div className="mt-2"><CompactionPill /></div>}
+      {running && progressWord && <div className="mt-2"><ProgressIndicator word={progressWord} /></div>}
+    </>
+  )
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={setScrollEl}
+        onScroll={onScroll}
+        onWheel={onUserScrollIntent}
+        onTouchStart={onUserScrollIntent}
+        className="h-full overflow-y-auto"
+      >
+        <div className="mx-auto max-w-2xl px-5 py-6">
+          {lastUserIdx < 0 ? (
+            <>
+              {items.map(renderItem)}
+              {tail}
+            </>
+          ) : (
+            <>
+              {items.slice(0, lastUserIdx).map((it, i) => renderItem(it, i))}
+              <div style={viewportH ? { minHeight: `${viewportH}px` } : undefined}>
+                {items.slice(lastUserIdx).map((it, j) => renderItem(it, lastUserIdx + j))}
+                {tail}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {!pinned && items.length > 0 && (
+        <button
+          onClick={jumpToLatest}
+          aria-label="Jump to latest"
+          className="absolute bottom-4 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/10 bg-neutral-800/90 text-white/70 shadow-lg backdrop-blur transition-colors hover:text-white"
+        >
+          <ChevronDownIcon />
+          {hasNew && (
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-blue-400 ring-2 ring-neutral-900" />
+          )}
+        </button>
+      )}
     </div>
+  )
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path d="M4 6.5 L8 10.5 L12 6.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
