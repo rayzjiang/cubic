@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { runAgentTurn, type AgentDeps } from './loop.js';
 import { Session } from './session.js';
 import { INTERRUPTED_MARKER } from './events.js';
+import { KEEP_RECENT_TURNS } from './compaction.js';
 import type { ChatResponse, LLMProvider, ToolUse, Message } from '../llm/types.js';
 import type { AgentEvent } from './events.js';
 import type { ToolExecution } from './executeTool.js';
@@ -313,13 +314,33 @@ describe('runAgentTurn — context-window management', () => {
     const kinds = events.map((e) => e.type);
     expect(kinds.slice(0, 3)).toEqual(['compaction', 'compaction', 'turn_start']);
     expect(events[0]).toMatchObject({ type: 'compaction', status: 'start' });
-    expect(events[1]).toMatchObject({ type: 'compaction', status: 'done' });
+    // The 'done' carries the recap + keptTurns so the host can persist a compaction marker at the cut.
+    expect(events[1]).toMatchObject({ type: 'compaction', status: 'done', keptTurns: KEEP_RECENT_TURNS });
+    expect((events[1] as { summary?: string }).summary).toContain('Make a bouncy logo.');
 
     // History collapsed to [summary, ...keptRecent, newUser, assistant]; summary is XML-wrapped.
     expect(session.messages[0].content).toContain('<conversation_summary>');
     expect(session.messages[0].content).toContain('Make a bouncy logo.');
     // The summary call only saw the older messages (the prefix before the kept turns).
     expect(seen[0].length).toBeLessThan(session.messages.length);
+  });
+
+  it('honors the keepRecentTurns dep override (CUBIC_KEEP_RECENT_TURNS test knob)', async () => {
+    const { provider } = mockLLM([
+      textResponse('## Goal\nsomething'), // summary call
+      textResponse('ok'),                  // the turn
+    ]);
+    const session = new Session();
+    session.messages = chatHistory(4);
+    session.lastContextTokens = 200_000 * 0.95;
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e), { ...baseDeps(provider), keepRecentTurns: 1 });
+
+    // The override flows brain → compactSession → the emitted event (so the persisted marker records it).
+    expect(events.find((e) => e.type === 'compaction' && e.status === 'done')).toMatchObject({ keptTurns: 1 });
+    // Keep 1 verbatim: [summary, q3, a3, newUser, assistant] → 5 messages.
+    expect(session.messages).toHaveLength(5);
   });
 
   it('over the hard ceiling WITH history to summarize, compacts and continues (no dead-end card)', async () => {

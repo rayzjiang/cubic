@@ -26,8 +26,10 @@ export type AgentEvent =
   // History compaction: older turns summarized to stay under the context window. 'done' also
   // covers a /clear (reason: 'cleared'). 'failed' is a soft notice — the turn still proceeds.
   // `summary` carries the AI's recap text on a real 'done' (absent for no-op/clear/failed) so the
-  // panel can render a collapsible "View summary" row.
-  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string }
+  // panel can render a collapsible "View summary" row. `keptTurns` (present alongside `summary` on a
+  // real 'done') is how many recent turns stayed verbatim — the host uses it to place the persisted
+  // compaction marker at the cut boundary, and the renderer uses it to insert the live divider there.
+  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   // Hard ceiling: compaction can't free enough room, so the turn is paused. A call-to-action
   // (start a new conversation), NOT an error — the panel renders it differently.
   | { type: 'context_full'; message: string }

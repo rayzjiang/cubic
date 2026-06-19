@@ -124,7 +124,7 @@ export function renderTranscript(messages: Message[]): string {
 export async function compactSession(
   session: Session,
   opts: { llm?: LLMProvider; keepRecentTurns?: number; model?: string } = {},
-): Promise<{ ok: boolean; reason?: string; summary?: string }> {
+): Promise<{ ok: boolean; reason?: string; summary?: string; keptTurns?: number }> {
   const keepRecentTurns = opts.keepRecentTurns ?? KEEP_RECENT_TURNS;
   const cut = findCompactionCut(session.messages, keepRecentTurns);
   if (!cut) return { ok: true, reason: 'nothing-to-compact' };
@@ -149,8 +149,10 @@ export async function compactSession(
       if (!summary) { if (attempt === 1) return { ok: false, reason: 'empty-summary' }; continue; }
       session.messages = [buildSummaryMessage(summary), ...cut.toKeep];
       session.lastContextTokens = 0;
-      // Return the summary text so the loop can surface it to the UI (the "View summary" row).
-      return { ok: true, summary };
+      // Return the summary text so the loop can surface it to the UI (the "View summary" row), plus
+      // keptTurns so the host can resolve the on-disk cut boundary (the first kept-verbatim turn) when
+      // it persists the compaction marker — the brain has no turnIds, so it reports the count instead.
+      return { ok: true, summary, keptTurns: keepRecentTurns };
     } catch (e) {
       if (attempt === 1) return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }

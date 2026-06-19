@@ -20,7 +20,10 @@ export type AgentEvent =
   // `discarded` = stopped before any output → the turn is thrown away (prompt returns to the composer,
   // no "Stopped" marker). Otherwise a partial turn was kept and the marker is shown.
   | { type: 'cancelled'; discarded?: boolean }
-  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string }
+  // `keptTurns` (alongside `summary` on a real 'done') = how many recent turns stayed verbatim. Host-only:
+  // the backend uses it to persist the compaction marker + reconstruct the model context on reopen. The
+  // renderer ignores it — the divider is placed at the compaction moment (before the triggering prompt).
+  | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   | { type: 'context_full'; message: string }
   | { type: 'error'; message: string }
   | { type: 'done'; stopReason: string }
@@ -33,8 +36,8 @@ export type DisplayItem =
   | { kind: 'user'; text: string; turnId?: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; id: string; label: string; status: ToolStatus }
-  // A successful auto-compaction left a viewable recap — collapsible "View summary" row. Live-session
-  // only (mirrors displayItems.ts: the untrimmed JSONL never reproduces it on reload).
+  // A successful auto-compaction left a viewable recap — collapsible "View summary" row. Rendered both
+  // live and on reload (mirrors displayItems.ts: a persisted `_compaction` marker reproduces it).
   | { kind: 'compaction'; summary: string }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
   | { kind: 'interrupted' }

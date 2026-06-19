@@ -112,6 +112,7 @@ describe('compactSession', () => {
     const res = await compactSession(session, { llm, keepRecentTurns: 2 });
 
     expect(res.ok).toBe(true);
+    expect(res.keptTurns).toBe(2); // surfaced so the host can place the persisted compaction marker
     expect(session.messages[0]).toEqual(buildSummaryMessage('## Goal\nbouncy logo'));
     expect(session.messages[0].content).toContain('<conversation_summary>');
     expect(session.messages).toHaveLength(1 + 4); // summary + kept (q2 a2 q3 a3)

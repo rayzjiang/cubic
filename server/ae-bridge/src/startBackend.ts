@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultModel } from "cubic-ai";
+import { defaultModel, COMPACT_THRESHOLD, KEEP_RECENT_TURNS } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
@@ -52,6 +52,14 @@ export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void>
     console.error("  ⚠  CUBIC_MODEL unset → defaulting to Sonnet (pricier).");
     console.error("     Set CUBIC_MODEL=haiku in server/.env for cheap dev.");
   }
+  // Compaction test knobs — print the EFFECTIVE value (env override or the built-in default) so a
+  // stale shell export or an un-restarted backend is obvious when verifying compaction behavior.
+  const ctxWin = process.env.CUBIC_CONTEXT_WINDOW?.trim();
+  const thresh = process.env.CUBIC_COMPACT_THRESHOLD?.trim();
+  const keep = process.env.CUBIC_KEEP_RECENT_TURNS?.trim();
+  console.error(`  CONTEXT WINDOW: ${ctxWin ? `${ctxWin} (override)` : "unset → full model window"}`);
+  console.error(`  COMPACT THRESHOLD: ${thresh ? `${thresh} (override)` : `${COMPACT_THRESHOLD} (default)`}`);
+  console.error(`  KEEP RECENT TURNS: ${keep ? `${keep} (override)` : `${KEEP_RECENT_TURNS} (default)`}`);
   console.error(bar);
   await bridge.start(port);
   registerAgentChat();

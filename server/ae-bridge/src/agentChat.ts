@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, truncateToBeforeTurn, loadSession, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
+import { appendTurn, appendCompactionMarker, truncateToBeforeTurn, loadSession, loadDisplayMessages, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -113,20 +113,28 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   // The pre-turn snapshot's turnId, captured from the snapshot event → tags the persisted prompt line
   // so the UI can "restore to before this request" durably.
   let turnId: string | undefined;
+  // A successful compaction this turn → persist a marker (summary + how many turns stayed verbatim) so the
+  // model resumes from the summarized form on reopen and the divider survives. Captured here, written below
+  // just before the turn's own messages so it lands at the compaction boundary in the transcript.
+  let compaction: { summary: string; keptTurns: number } | undefined;
   const capture = (e: AgentEvent): void => {
     if (e.type === "snapshot" && e.turnId) turnId = e.turnId;
     if (e.type === "cancelled" && e.discarded) discarded = true;
+    if (e.type === "compaction" && e.status === "done" && e.summary && e.keptTurns)
+      compaction = { summary: e.summary, keptTurns: e.keptTurns };
     emit(e);
   };
-  // Dev-only compaction test knobs (unset in normal use → no effect): shrink the context window
-  // and/or override the compact threshold so a few short messages cross 90% (pill) / 97% (card)
-  // without filling a real 200k window. See §C manual E2E compaction test.
+  // Dev-only compaction test knobs (unset in normal use → no effect): shrink the context window,
+  // lower the compact threshold, and/or keep fewer recent turns verbatim so a few short messages cross
+  // 90% (pill) and compaction has something to summarize — without filling a real 200k window. See §C.
   const ctxOverride = process.env.CUBIC_CONTEXT_WINDOW ? Number(process.env.CUBIC_CONTEXT_WINDOW) : undefined;
   const threshOverride = process.env.CUBIC_COMPACT_THRESHOLD ? Number(process.env.CUBIC_COMPACT_THRESHOLD) : undefined;
+  const keepOverride = process.env.CUBIC_KEEP_RECENT_TURNS ? Number(process.env.CUBIC_KEEP_RECENT_TURNS) : undefined;
   await runAgentTurn(session, text, capture, {
     onCommit: (m) => committed.push(m),
     contextWindowOverride: ctxOverride,
     compactThreshold: threshOverride,
+    keepRecentTurns: keepOverride,
   });
   if (discarded) { clearBuffer(session.id); return; }
   if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)
@@ -137,6 +145,9 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
     rekey(session.id, stored.projectPath, projectPath);
   }
+  // Marker first (after any rekey, before the turn): all prior turns are already on disk, so it lands
+  // between the summarized prefix and this turn's new messages — exactly the compaction boundary.
+  if (compaction) appendCompactionMarker(session.id, projectPath, compaction.summary, compaction.keptTurns);
   appendTurn(session.id, projectPath, committed, turnId);
   clearBuffer(session.id); // committed → now in history; clear so a later attach sees no dup
   broadcastConversations(); // new row / updated title + lastActivity → push to every client, even backgrounded
@@ -203,12 +214,13 @@ export function registerAgentChat(): void {
     }
 
     // Load one conversation's committed history as renderable display items. Read the FULL transcript
-    // from disk (not session.messages, which a hot session may have compacted/trimmed in memory) so
-    // the chat pane always shows the whole conversation. Empty for a brand-new chat with no turns yet.
+    // from disk (loadDisplayMessages — NOT loadSession, which returns the compacted model context) so the
+    // chat pane always shows the whole conversation, including the persisted compaction dividers. Empty
+    // for a brand-new chat with no turns yet.
     if (msg.type === "loadHistory") {
       const meta = getConversation(id);
-      const disk = meta ? loadSession(id, meta.projectPath) : null;
-      const items = messagesToDisplayItems(disk?.messages ?? []);
+      const disk = meta ? loadDisplayMessages(id, meta.projectPath) : null;
+      const items = messagesToDisplayItems(disk ?? []);
       ws.send(JSON.stringify({ type: "history", sessionId: id, items, running: session.running }));
       return;
     }
