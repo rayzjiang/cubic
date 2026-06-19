@@ -2,11 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { Message } from 'cubic-ai';
+import { buildSummaryMessage, type Message } from 'cubic-ai';
 import {
   encodeProjectPath,
   appendTurn,
+  appendCompactionMarker,
+  truncateToBeforeTurn,
   loadSession,
+  loadDisplayMessages,
   listConversations,
   getConversation,
   deleteConversation,
@@ -184,5 +187,85 @@ describe('rekey', () => {
     fs.rmSync(path.join(tmpRoot, '_untitled', 's1.jsonl')); // drop the file, keep the index entry
     rekey('s1', '', PROJ);
     expect(getConversation('s1')!.projectPath).toBe(PROJ);
+  });
+});
+
+// ─── compaction marker: persist + reconstruct model context ───────────────────────────
+// loadSession returns the COMPACTED model context (resume-from-summary); loadDisplayMessages returns
+// the FULL transcript (for the chat pane). A marker is appended at the compaction boundary, after the
+// summarized + kept-verbatim turns and before the triggering turn's own messages.
+
+describe('appendCompactionMarker / loadSession reconstruction', () => {
+  // Three settled turns, each tagged with a turnId the way appendTurn tags a real turn's prompt line.
+  const seedThreeTurns = (): void => {
+    appendTurn('s1', PROJ, [userStr('u1'), asstStr('a1')], 't1');
+    appendTurn('s1', PROJ, [userStr('u2'), asstStr('a2')], 't2');
+    appendTurn('s1', PROJ, [userStr('u3'), asstStr('a3')], 't3');
+  };
+
+  it('resumes the model from summary + the last keptTurns verbatim + turns since', () => {
+    seedThreeTurns();
+    // Compaction fires at the start of turn 4 (keptTurns=1 → keep u3 verbatim, summarize u1/u2).
+    appendCompactionMarker('s1', PROJ, 'recap of u1 and u2', 1);
+    appendTurn('s1', PROJ, [userStr('u4'), asstStr('a4')], 't4');
+
+    expect(loadSession('s1', PROJ)!.messages).toEqual([
+      buildSummaryMessage('recap of u1 and u2'), // summary stands in for everything before the cut
+      userStr('u3'), asstStr('a3'),              // kept verbatim (the 1 recent turn before the marker)
+      userStr('u4'), asstStr('a4'),              // appended after compaction
+    ]);
+  });
+
+  it('keeps the FULL transcript (incl. the marker line) for display', () => {
+    seedThreeTurns();
+    appendCompactionMarker('s1', PROJ, 'recap', 1);
+    appendTurn('s1', PROJ, [userStr('u4'), asstStr('a4')], 't4');
+
+    const full = loadDisplayMessages('s1', PROJ)!;
+    expect(full).toHaveLength(9); // 3 turns ×2 + marker + 1 turn ×2
+    const marker = full[6] as Message & { _compaction?: boolean; _keptTurns?: number };
+    expect(marker._compaction).toBe(true);
+    expect(marker._keptTurns).toBe(1);
+  });
+
+  it('on multiple compactions, the model resumes from the LAST summary', () => {
+    seedThreeTurns();
+    appendCompactionMarker('s1', PROJ, 'recap A', 1);
+    appendTurn('s1', PROJ, [userStr('u4'), asstStr('a4')], 't4');
+    // Second compaction at the start of turn 5 (keep u4 verbatim).
+    appendCompactionMarker('s1', PROJ, 'recap B', 1);
+    appendTurn('s1', PROJ, [userStr('u5'), asstStr('a5')], 't5');
+
+    expect(loadSession('s1', PROJ)!.messages).toEqual([
+      buildSummaryMessage('recap B'),
+      userStr('u4'), asstStr('a4'),
+      userStr('u5'), asstStr('a5'),
+    ]);
+  });
+
+  it('fresh load resets lastContextTokens to 0 (no false re-compaction next turn)', () => {
+    seedThreeTurns();
+    appendCompactionMarker('s1', PROJ, 'recap', 1);
+    expect(loadSession('s1', PROJ)!.lastContextTokens).toBe(0);
+  });
+
+  it('restoring BEFORE the cut drops the marker → un-compacts to full history', () => {
+    seedThreeTurns();
+    appendCompactionMarker('s1', PROJ, 'recap', 1);
+    appendTurn('s1', PROJ, [userStr('u4'), asstStr('a4')], 't4');
+    // Rewind to before turn 2 (inside the summarized region): the marker, appended later, is dropped too.
+    truncateToBeforeTurn('s1', PROJ, 't2');
+    expect(loadSession('s1', PROJ)!.messages).toEqual([userStr('u1'), asstStr('a1')]);
+  });
+
+  it('restoring AFTER the cut keeps a valid marker → still resumes from summary', () => {
+    seedThreeTurns();
+    appendCompactionMarker('s1', PROJ, 'recap', 1);
+    appendTurn('s1', PROJ, [userStr('u4'), asstStr('a4')], 't4');
+    // Rewind to before turn 4 (after the marker): the marker survives, reconstruction still valid.
+    truncateToBeforeTurn('s1', PROJ, 't4');
+    expect(loadSession('s1', PROJ)!.messages).toEqual([
+      buildSummaryMessage('recap'), userStr('u3'), asstStr('a3'),
+    ]);
   });
 });

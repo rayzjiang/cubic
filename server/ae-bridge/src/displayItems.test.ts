@@ -75,3 +75,40 @@ describe('messagesToDisplayItems — tool outcome → row status', () => {
     ]);
   });
 });
+
+// ─── compaction marker → "Summarized earlier steps" divider at the cut point ──────────
+
+describe('messagesToDisplayItems — persisted compaction marker', () => {
+  const userTagged = (text: string, turnId: string): Message =>
+    ({ role: 'user', content: text, _turnId: turnId }) as unknown as Message;
+  const asst = (text: string): Message => ({ role: 'assistant', content: text });
+  const marker = (summary: string, keptTurns: number): Message =>
+    ({ role: 'user', content: `<conversation_summary>\n${summary}\n</conversation_summary>`, _compaction: true, _keptTurns: keptTurns }) as unknown as Message;
+
+  it('splices the divider at the cut point — before the last keptTurns verbatim turn', () => {
+    // Disk order: u1 a1 u2 a2 MARKER(keptTurns=1) u3 a3 → summarize u1, keep u2 verbatim, u3 is new.
+    const items = messagesToDisplayItems([
+      userTagged('u1', 't1'), asst('a1'),
+      userTagged('u2', 't2'), asst('a2'),
+      marker('recap of u1', 1),
+      userTagged('u3', 't3'), asst('a3'),
+    ]);
+    expect(items).toEqual([
+      { kind: 'user', text: 'u1', turnId: 't1' },
+      { kind: 'assistant', text: 'a1' },
+      { kind: 'compaction', summary: 'recap of u1' }, // divider before u2 (the kept-verbatim turn)
+      { kind: 'user', text: 'u2', turnId: 't2' },
+      { kind: 'assistant', text: 'a2' },
+      { kind: 'user', text: 'u3', turnId: 't3' },
+      { kind: 'assistant', text: 'a3' },
+    ]);
+  });
+
+  it('skips a bare <conversation_summary> line with no marker flag (defensive backstop)', () => {
+    const items = messagesToDisplayItems([
+      userTagged('u1', 't1'),
+      { role: 'user', content: '<conversation_summary>\nstray\n</conversation_summary>' },
+    ]);
+    expect(items).toEqual([{ kind: 'user', text: 'u1', turnId: 't1' }]);
+  });
+});

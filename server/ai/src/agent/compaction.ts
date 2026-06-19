@@ -7,7 +7,7 @@ import type { Session } from './session.js';
 // These are policy knobs: when to compact, when to give up, and how much to keep verbatim.
 export const COMPACT_THRESHOLD = 0.9; // ≥90% of the window → auto-compact at the next turn
 export const HARD_CEILING = 0.97;     // ≥97% → emergency pause (can't compact our way out)
-export const KEEP_RECENT_TURNS = 1;   // TEMP(compaction-test): was 3 — revert before commit. Lets compaction fire after 2 turns.
+export const KEEP_RECENT_TURNS = 3;   // recent user prompts kept word-for-word
 
 /**
  * True prefill size of a call. The system prompt is cached, so plain `inputTokens` undercounts

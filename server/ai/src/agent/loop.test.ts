@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { runAgentTurn, type AgentDeps } from './loop.js';
 import { Session } from './session.js';
 import { INTERRUPTED_MARKER } from './events.js';
+import { KEEP_RECENT_TURNS } from './compaction.js';
 import type { ChatResponse, LLMProvider, ToolUse, Message } from '../llm/types.js';
 import type { AgentEvent } from './events.js';
 import type { ToolExecution } from './executeTool.js';
@@ -313,7 +314,9 @@ describe('runAgentTurn — context-window management', () => {
     const kinds = events.map((e) => e.type);
     expect(kinds.slice(0, 3)).toEqual(['compaction', 'compaction', 'turn_start']);
     expect(events[0]).toMatchObject({ type: 'compaction', status: 'start' });
-    expect(events[1]).toMatchObject({ type: 'compaction', status: 'done' });
+    // The 'done' carries the recap + keptTurns so the host can persist a compaction marker at the cut.
+    expect(events[1]).toMatchObject({ type: 'compaction', status: 'done', keptTurns: KEEP_RECENT_TURNS });
+    expect((events[1] as { summary?: string }).summary).toContain('Make a bouncy logo.');
 
     // History collapsed to [summary, ...keptRecent, newUser, assistant]; summary is XML-wrapped.
     expect(session.messages[0].content).toContain('<conversation_summary>');
