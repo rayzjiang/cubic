@@ -15,14 +15,21 @@ export type DisplayItem =
   | { kind: "user"; text: string; turnId?: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; label: string; status: ToolStatus }
-  // A successful auto-compaction left a viewable recap of the trimmed-away earlier turns. LIVE-SESSION
-  // ONLY: the JSONL store keeps the full untrimmed history, so messagesToDisplayItems never emits this
-  // (it's produced solely by the renderer's live `compaction` event reducer).
+  // A successful auto-compaction left a viewable recap. Emitted both live (the renderer's `compaction`
+  // event reducer) AND on reopen (messagesToDisplayItems, from a persisted `_compaction` marker line) so
+  // the "Summarized earlier steps" divider + collapsible summary survive a reload.
   | { kind: "compaction"; summary: string }
   // The user stopped this turn — rendered as a muted "Stopped" divider (not a chat bubble).
   | { kind: "interrupted" };
 
 type ToolOutcome = { status: "ok" | "fail" | "noop"; result?: unknown };
+
+/** Strip the `<conversation_summary>…</conversation_summary>` wrapper → the inner Markdown the divider
+ *  renders (matches the live path, which carries the unwrapped summary text). */
+function unwrapSummary(text: string): string {
+  const m = text.match(/^<conversation_summary>\s*([\s\S]*?)\s*<\/conversation_summary>$/);
+  return m ? m[1] : text;
+}
 
 /**
  * A committed turn's tool outcome, from its matching tool_result: "fail" iff is_error; otherwise
@@ -71,8 +78,13 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
         items.push({ kind: "interrupted" });
         continue;
       }
-      // The synthetic compaction summary is an in-memory artifact; the JSONL store is the full
-      // untrimmed history so it shouldn't appear, but guard against it (never render it as a prompt).
+      // A persisted compaction marker → render the "Summarized earlier steps" divider at this boundary
+      // (with its summary collapsible), the older summarized turns still scrollable above it.
+      if ((m as { _compaction?: boolean })._compaction) {
+        items.push({ kind: "compaction", summary: unwrapSummary(text) });
+        continue;
+      }
+      // A bare summary line with no marker flag should never render as a prompt — defensive backstop.
       if (m.role === "user" && text.startsWith("<conversation_summary>")) continue;
       if (m.role === "user") {
         // Carry the persisted turnId (appendTurn tags the prompt line) onto the prompt → restore target.

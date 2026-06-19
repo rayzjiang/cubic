@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Session, type Message } from 'cubic-ai';
+import { Session, buildSummaryMessage, type Message } from 'cubic-ai';
 
 /**
  * Conversation persistence store — the host's on-disk transcript shelf.
@@ -146,6 +146,64 @@ export function appendTurn(id: string, projectPath: string, newMessages: Message
 }
 
 /**
+ * A persisted JSONL line MAY carry host-only metadata the LLM never sees (anthropic.ts sends only
+ * {role, content}): `_turnId` tags a turn's prompt line (the restore target); `_compaction` + `_keptTurns`
+ * mark a compaction summary marker (see appendCompactionMarker).
+ */
+type StoredMessage = Message & { _turnId?: string; _compaction?: boolean; _keptTurns?: number };
+
+/** Parse a conversation's JSONL into its stored lines (metadata fields preserved). Null if no file. */
+function readStoredMessages(id: string, projectPath: string): StoredMessage[] | null {
+  let raw: string;
+  try { raw = fs.readFileSync(sessionFile(projectPath, id), 'utf8'); }
+  catch { return null; }
+  return raw.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as StoredMessage);
+}
+
+/** Drop host-only metadata so a reconstructed model-context message is a clean {role, content}. */
+function stripMeta(m: StoredMessage): Message {
+  return { role: m.role, content: m.content };
+}
+
+/**
+ * Append a compaction marker line — a Claude-Code-style boundary recorded in the transcript at the moment
+ * compaction occurred. Written BEFORE the triggering turn's own messages (the caller appends it ahead of
+ * appendTurn) so it sits between the summarized prefix and the new turn. Carries the summary (XML-wrapped,
+ * byte-identical to the in-memory summary message via buildSummaryMessage) plus `_keptTurns` — how many
+ * recent turns stayed verbatim — which loadSession uses to reconstruct the compacted model context.
+ * `_compaction` is the discriminator; both extra fields are stripped on the LLM wire.
+ */
+export function appendCompactionMarker(id: string, projectPath: string, summary: string, keptTurns: number): void {
+  fs.mkdirSync(projectDir(projectPath), { recursive: true });
+  const marker: StoredMessage = { ...buildSummaryMessage(summary), _compaction: true, _keptTurns: keptTurns };
+  fs.appendFileSync(sessionFile(projectPath, id), JSON.stringify(marker) + '\n', 'utf8');
+}
+
+/**
+ * Compacted MODEL context from the stored lines. Mirrors Claude Code: from the LAST compaction marker,
+ * keep its summary + the last `_keptTurns` verbatim turns before it + every turn appended after it, and
+ * drop all marker lines. Walking back by turn-tagged prompt lines (`_turnId`) means steers and earlier
+ * markers never miscount the boundary. No marker → the full history, unchanged.
+ */
+function reconstructModelContext(all: StoredMessage[]): Message[] {
+  let markerIdx = -1;
+  for (let i = all.length - 1; i >= 0; i--) { if (all[i]._compaction) { markerIdx = i; break; } }
+  if (markerIdx === -1) return all.map(stripMeta);
+
+  const keptTurns = all[markerIdx]._keptTurns ?? 0;
+  let sliceStart = 0; // fewer than keptTurns turns precede the marker → keep all of them (safe over-keep)
+  let seen = 0;
+  for (let i = markerIdx - 1; i >= 0; i--) {
+    if (all[i]._turnId) { seen++; if (seen === keptTurns) { sliceStart = i; break; } }
+  }
+  const summaryMsg: Message = { role: 'user', content: String(all[markerIdx].content) };
+  const tail = [...all.slice(sliceStart, markerIdx), ...all.slice(markerIdx + 1)]
+    .filter((m) => !m._compaction)
+    .map(stripMeta);
+  return [summaryMsg, ...tail];
+}
+
+/**
  * Truncate a conversation's JSONL to BEFORE the turn tagged with `turnId` (the "restore to before this
  * request" rewind): drop that turn's prompt line and everything after it. One-way — there is no redo
  * (mirrors the backup pruning). Returns true if the turn was found + cut, false if the id wasn't present.
@@ -175,18 +233,29 @@ export function truncateToBeforeTurn(id: string, projectPath: string, turnId: st
   return true;
 }
 
-/** Read a conversation's full history back into a fresh `Session`. Returns null if no JSONL exists. */
+/**
+ * Reconstruct a conversation's MODEL context into a fresh `Session` (NOT the full transcript — that's
+ * `loadDisplayMessages`, for the chat pane). If the conversation was compacted, the model resumes from
+ * the last summary + the verbatim turns kept at that compaction + every turn since, so reopening never
+ * re-summarizes already-summarized history. With no marker this is the full history, unchanged. `null`
+ * if no JSONL exists.
+ */
 export function loadSession(id: string, projectPath: string): Session | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(sessionFile(projectPath, id), 'utf8');
-  } catch {
-    return null;
-  }
-  const messages: Message[] = raw.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+  const all = readStoredMessages(id, projectPath);
+  if (!all) return null;
   const session = new Session(id);
-  session.messages = messages;
+  session.messages = reconstructModelContext(all);
+  session.lastContextTokens = 0; // fresh load: next chat() re-measures it → no false compaction trigger
   return session;
+}
+
+/**
+ * The FULL committed transcript (every line, metadata preserved) for the chat pane — distinct from
+ * `loadSession`'s compacted model context. `messagesToDisplayItems` reads the `_compaction` markers here
+ * to render the "Summarized earlier steps" dividers in place. `null` if no JSONL exists.
+ */
+export function loadDisplayMessages(id: string, projectPath: string): Message[] | null {
+  return readStoredMessages(id, projectPath);
 }
 
 /** A project's conversations, most-recently-active first (drives ⑤'s sidebar list). */
