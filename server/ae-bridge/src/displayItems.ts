@@ -78,10 +78,19 @@ export function messagesToDisplayItems(messages: Message[]): DisplayItem[] {
         items.push({ kind: "interrupted" });
         continue;
       }
-      // A persisted compaction marker → render the "Summarized earlier steps" divider at this boundary
-      // (with its summary collapsible), the older summarized turns still scrollable above it.
-      if ((m as { _compaction?: boolean })._compaction) {
-        items.push({ kind: "compaction", summary: unwrapSummary(text) });
+      // A persisted compaction marker → splice the "Summarized earlier steps" divider at the CUT POINT:
+      // before the last `_keptTurns` turn-start prompts (kept verbatim), so the still-summarized turns sit
+      // above it (matches the live reducer + the reconstructed model context). The marker is physically
+      // after the kept turns (appended at compaction time), so they're already in `items` here.
+      const marker = m as { _compaction?: boolean; _keptTurns?: number };
+      if (marker._compaction) {
+        let seen = 0;
+        let idx = items.length;
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i];
+          if (it.kind === "user" && it.turnId) { seen++; if (seen === (marker._keptTurns ?? 0)) { idx = i; break; } }
+        }
+        items.splice(idx, 0, { kind: "compaction", summary: unwrapSummary(text) });
         continue;
       }
       // A bare summary line with no marker flag should never render as a prompt — defensive backstop.

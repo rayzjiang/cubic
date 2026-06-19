@@ -297,16 +297,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
           items: [...s.items, { kind: 'user', text: event.text }],
         })
         break
-      case 'compaction':
-        // A successful compaction with a real recap leaves a collapsible "View summary" row in the
-        // transcript (live-session only). Start shows the pill; done/failed clears it. A no-op/clear
-        // 'done' has no `summary`, so nothing is added (matches the silent failure/no-op behavior).
-        if (event.status === 'done' && event.summary) {
-          set({ compacting: false, items: [...s.items, { kind: 'compaction', summary: event.summary }] })
-        } else {
+      case 'compaction': {
+        // A successful compaction with a real recap leaves a collapsible "View summary" divider. Start
+        // shows the pill; done/failed clears it. A no-op/clear 'done' has no `summary`, so nothing is
+        // added (matches the silent failure/no-op behavior).
+        if (event.status !== 'done' || !event.summary) {
           set({ compacting: event.status === 'start' })
+          break
         }
+        // Place the divider at the CUT POINT — before the last `keptTurns` turn-start prompts (those kept
+        // verbatim) — so it matches the persisted view on reload and sits above the still-summarized turns,
+        // not after the new prompt this turn already optimistically added. Count only turn-start user items
+        // (they carry a turnId); steers and the new no-turnId prompt are skipped.
+        const items = [...s.items]
+        let seen = 0
+        let idx = items.length
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i]
+          if (it.kind === 'user' && it.turnId) { seen++; if (seen === (event.keptTurns ?? 0)) { idx = i; break } }
+        }
+        items.splice(idx, 0, { kind: 'compaction', summary: event.summary })
+        set({ compacting: false, items })
         break
+      }
       case 'context_full':
         set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
         break
