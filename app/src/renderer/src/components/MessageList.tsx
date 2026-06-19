@@ -10,6 +10,9 @@ import { CompactionSummary } from './CompactionSummary'
 
 // Distance from the bottom (px) that still counts as "pinned" — within this, stick-to-bottom stays on.
 const PIN_THRESHOLD = 48
+// At max scroll, leave this many px of the PREVIOUS turn peeking above the pinned message, so it's
+// obvious there's history to scroll up to (only shows when there actually is content above).
+const PEEK_ABOVE = 40
 
 /**
  * The transcript. One flat DisplayItem[] (history + live share the shape) rendered in order: each
@@ -186,11 +189,13 @@ export function MessageList() {
           ) : (
             <>
               {items.slice(0, lastUserIdx).map((it, i) => renderItem(it, i))}
-              {/* Last turn: min-height = viewport so the newest user message can reach the top, while
+              {/* Last turn: min-height ≈ viewport so the newest user message pins near the top, while
                   pt-7 keeps it a touch below the top edge (never clipped) and pb-6 is the bottom gap.
-                  border-box (Tailwind default) folds both paddings into the min-height → no over-scroll.
-                  Tweak: `pt-7` = breathing room above the message; the min-height controls the pin. */}
-              <div className="pt-7 pb-6" style={viewportH ? { minHeight: `${viewportH}px` } : undefined}>
+                  Subtracting PEEK_ABOVE leaves a sliver of the previous turn showing at the top, so it's
+                  clear there's history above (auto-zero on the first turn → nothing to peek). border-box
+                  (Tailwind default) folds both paddings into the min-height → no over-scroll.
+                  Tweak: `pt-7` = room above the message; PEEK_ABOVE = the peek; min-height = the pin. */}
+              <div className="pt-7 pb-6" style={viewportH ? { minHeight: `${Math.max(0, viewportH - PEEK_ABOVE)}px` } : undefined}>
                 {items.slice(lastUserIdx).map((it, j) => renderItem(it, lastUserIdx + j, j === 0))}
                 {tail}
               </div>
