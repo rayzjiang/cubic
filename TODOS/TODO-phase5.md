@@ -52,11 +52,12 @@
 - [ ] **§E-3** **Code-sign + notarize** (Apple Developer account from §B). **WHY mandatory:** un-notarized = macOS Gatekeeper "unidentified developer" block → non-technical user assumes virus and quits. Notarized = double-click → it just opens.
 - [ ] **§E-4** **DMG/installer** — clean drag-to-Applications install; no Terminal, no settings-digging.
 
-## §???. IMPORTANT!! Local transport security — authenticate the WebSocket
-> **Standalone** The backend's WS on `127.0.0.1:17923` currently has **no auth** — any local process (or a malicious localhost-reaching webpage) can connect and drive the user's After Effects. Close this before shipping to strangers; cheap now, painful to retrofit once users exist.
+## §???. IMPORTANT!! Local transport hardening — dynamic port + authenticate the WebSocket
+> **Standalone** The backend's WS on `127.0.0.1:17923` currently has **no auth** — any local process (or a malicious localhost-reaching webpage) can connect and drive the user's After Effects. Close this before shipping to strangers; cheap now, painful to retrofit once users exist. **Also folds in the dynamic-port robustness fix (§???-4)** — same `getBackendPort()` / `wsBridge.ts` code path, so the whole section is one transport work-unit.
 - [ ] **§???-1** **Per-launch session token** — backend mints a random secret at startup; main passes it to the renderer alongside the port (extend the `getBackendPort()` IPC), and the AE panel receives it at install/connect time.
 - [ ] **§???-2** **Reject unauthenticated sockets** — `wsBridge.ts` requires the token in the `hello`/first frame; drop any connection that doesn't present it. Applies to all three client types (UI, brain loopback, AE panel).
-- [ ] **§???-3** **(optional) bind explicitly to `127.0.0.1`** (never `0.0.0.0`) so the port is never reachable off-machine.
+- [ ] **§???-3** **(optional) bind explicitly to `127.0.0.1`** (never `0.0.0.0`) so the port is never reachable off-machine. (Pairs with §???-4 → `bind 127.0.0.1:0`.)
+- [ ] **§???-4** **Dynamic backend port (robustness — do first)** — replace the fixed `17923` with an OS-assigned free port (`bind 127.0.0.1:0`) so a port conflict can't make startup fatal on a stranger's machine. Backend writes the chosen port; panel + `ai/bridge/client.ts` + renderer all discover it via the same `getBackendPort()` channel as §???-1 (the token rides the discovered port). The real fix behind Phase-4 §B's "port-in-use" state. Detail → `TODO-phase4.md` §F.
 
 ## §F. Auto-update — electron-updater + Cloudflare R2
 > Now that the UI is Electron, push updates via `electron-updater` pulling from an R2 feed. **WHY R2:** the commercial-standard "object storage + CDN" pattern (what S3 is used for), in Cloudflare's S3-compatible flavor — free egress, private (no public binary exposure), consolidated with the proxy.

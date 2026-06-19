@@ -36,7 +36,8 @@
 - [ ] §C-7 abuse defenses — one-trial-per-card + Stripe Radar
 
 **(floats — slot into any free lane; ship-blocker, collides with nothing)**
-**WT-WS-AUTH** — §??? (local transport; `wsBridge.ts` + IPC + AE bridge only — smaller than written: `127.0.0.1` bind + `hello` frame already exist)
+**WT-WS-AUTH** — §??? (local transport hardening; `wsBridge.ts` + `getBackendPort()` IPC + `bridge/client.ts` + AE panel)
+- [ ] §???-4 dynamic backend port — `bind 127.0.0.1:0`, discover via `getBackendPort()` (**do first** — token + all clients ride this port; fixes Phase-4 §B "port-in-use")
 - [ ] §???-1 per-launch session token minted at startup, passed via `getBackendPort()` IPC
 - [ ] §???-2 reject sockets whose `hello` frame lacks the token (all 3 client types)
 - [ ] §???-3 (optional) explicit `127.0.0.1` bind — already done; just confirm
