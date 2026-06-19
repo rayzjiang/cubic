@@ -1,4 +1,4 @@
-# Phase 4 — Deferred / post-MVP
+# SLIGHTLY OUTDATED - Phase 4 — Deferred / post-MVP
 
 > These were scoped out of the **v1 MVP** (`TODO-phase4.md`) to ship faster. **None are needed for v1, and none affect project safety** (context-window management + pre-turn snapshots stay in v1). Each item notes the **§section of `TODO-phase4.md`** it was originally planned in, so it can be slotted back when promoted.
 > Do these after v1 is build-ready — before, or alongside, Phase 5.

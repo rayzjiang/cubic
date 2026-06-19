@@ -1,4 +1,4 @@
-# Phase 4 — Standalone Electron app + thin AE bridge (v1 / MVP scope)
+# OUTDATED - Phase 4 — Standalone Electron app + thin AE bridge (v1 / MVP scope)
 
 > **Scope:** this file is **strictly the v1 MVP build** — the leanest app that's *paid-public-ready*: won't break a paying stranger's project, won't look broken to a non-technical video editor. Deferred / post-MVP items live in **`TODO-phase4-later.md`** (each tagged with the §section it came from).
 > **The wall:** Phase 5 (hosted proxy holding the API key + Stripe billing + obfuscation + auto-update) is a **hard gate before any paying customer** — not in this file. This trim shortens the road *to* that wall; it doesn't remove it.
