@@ -305,16 +305,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ compacting: event.status === 'start' })
           break
         }
-        // Place the divider at the CUT POINT — before the last `keptTurns` turn-start prompts (those kept
-        // verbatim) — so it matches the persisted view on reload and sits above the still-summarized turns,
-        // not after the new prompt this turn already optimistically added. Count only turn-start user items
-        // (they carry a turnId); steers and the new no-turnId prompt are skipped.
+        // Place the divider at the COMPACTION MOMENT — right before the prompt that triggered it (the most
+        // recent user item, optimistically added on send). This matches the persisted marker's position on
+        // reload, so live and reopened views agree.
         const items = [...s.items]
-        let seen = 0
         let idx = items.length
         for (let i = items.length - 1; i >= 0; i--) {
-          const it = items[i]
-          if (it.kind === 'user' && it.turnId) { seen++; if (seen === (event.keptTurns ?? 0)) { idx = i; break } }
+          if (items[i].kind === 'user') { idx = i; break }
         }
         items.splice(idx, 0, { kind: 'compaction', summary: event.summary })
         set({ compacting: false, items })

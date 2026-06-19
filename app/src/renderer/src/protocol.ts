@@ -20,8 +20,9 @@ export type AgentEvent =
   // `discarded` = stopped before any output → the turn is thrown away (prompt returns to the composer,
   // no "Stopped" marker). Otherwise a partial turn was kept and the marker is shown.
   | { type: 'cancelled'; discarded?: boolean }
-  // `keptTurns` (alongside `summary` on a real 'done') = how many recent turns stayed verbatim, so the
-  // reducer can place the divider at the cut point (before those turns), matching the persisted view.
+  // `keptTurns` (alongside `summary` on a real 'done') = how many recent turns stayed verbatim. Host-only:
+  // the backend uses it to persist the compaction marker + reconstruct the model context on reopen. The
+  // renderer ignores it — the divider is placed at the compaction moment (before the triggering prompt).
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   | { type: 'context_full'; message: string }
   | { type: 'error'; message: string }

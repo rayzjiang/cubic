@@ -85,20 +85,21 @@ describe('messagesToDisplayItems — persisted compaction marker', () => {
   const marker = (summary: string, keptTurns: number): Message =>
     ({ role: 'user', content: `<conversation_summary>\n${summary}\n</conversation_summary>`, _compaction: true, _keptTurns: keptTurns }) as unknown as Message;
 
-  it('splices the divider at the cut point — before the last keptTurns verbatim turn', () => {
-    // Disk order: u1 a1 u2 a2 MARKER(keptTurns=1) u3 a3 → summarize u1, keep u2 verbatim, u3 is new.
+  it('emits the divider at the compaction moment — at the marker position, before the triggering turn', () => {
+    // Disk order: u1 a1 u2 a2 MARKER u3 a3. The marker is written at the boundary, so the divider lands
+    // right before u3 (the turn that triggered compaction), regardless of how many turns are kept verbatim.
     const items = messagesToDisplayItems([
       userTagged('u1', 't1'), asst('a1'),
       userTagged('u2', 't2'), asst('a2'),
-      marker('recap of u1', 1),
+      marker('recap of earlier steps', 1),
       userTagged('u3', 't3'), asst('a3'),
     ]);
     expect(items).toEqual([
       { kind: 'user', text: 'u1', turnId: 't1' },
       { kind: 'assistant', text: 'a1' },
-      { kind: 'compaction', summary: 'recap of u1' }, // divider before u2 (the kept-verbatim turn)
       { kind: 'user', text: 'u2', turnId: 't2' },
       { kind: 'assistant', text: 'a2' },
+      { kind: 'compaction', summary: 'recap of earlier steps' }, // at the moment — right before u3
       { kind: 'user', text: 'u3', turnId: 't3' },
       { kind: 'assistant', text: 'a3' },
     ]);
