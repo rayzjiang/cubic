@@ -81,33 +81,34 @@ export function InputBar() {
               submit()
             }
           }}
-          rows={2}
+          rows={1}
           placeholder={placeholder}
-          className="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
+          className="field-sizing-content max-h-[33vh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
         />
-        {running ? (
-          <button
-            onClick={cancelRun}
-            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-2.5 text-[12px] font-medium text-white/70 hover:bg-white/20 hover:text-white/90"
-            aria-label="Stop"
-            title="Stop (Esc)"
+        {/* One persistent square shell — the icon crossfades between send (↑) and stop (■) so both
+            sit in the exact same spot and the swap reads as a smooth morph (§D). */}
+        <button
+          onClick={running ? cancelRun : submit}
+          disabled={!running && !draft.trim()}
+          className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-900 transition-colors duration-200 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
+          aria-label={running ? 'Stop' : 'Send'}
+          title={running ? 'Stop (Esc)' : 'Send (Enter)'}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className={`absolute h-4 w-4 transition-all duration-200 ${running ? 'scale-50 opacity-0' : 'scale-100 opacity-100'}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
-            Stop
-          </button>
-        ) : (
-          <button
-            onClick={submit}
-            disabled={!draft.trim()}
-            className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-900 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
-            aria-label="Send"
-            title="Send (Enter)"
-          >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 13V3M4 7l4-4 4 4" />
-            </svg>
-          </button>
-        )}
+            <path d="M8 13V3M4 7l4-4 4 4" />
+          </svg>
+          <span
+            className={`absolute block h-2.5 w-2.5 rounded-[2px] bg-current transition-all duration-200 ${running ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`}
+          />
+        </button>
       </div>
     </div>
   )
