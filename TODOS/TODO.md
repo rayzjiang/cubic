@@ -102,7 +102,7 @@
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
 - [x] §C — Chat UI (agentEvent reducer + message history) — Zustand store `foldEvent` reducer; one `DisplayItem[]` display-model shared by live events + loaded history; Cursor-style transcript (boxed prompt, full-width assistant text, compact per-action tool rows w/ status icons).
 - [x] §C — Render compaction/context events — "Tidying up earlier steps…" pill + friendly `context_full` "start a new chat" CTA card.
-- [ ] §C — View compaction summary (Claude-Code-style) — on a successful compaction, leave a collapsible "Tidied up earlier steps · View summary" row in the transcript; expanding shows the AI's `<conversation_summary>` rendered as Markdown (reuse `AssistantMessage`). **Live-session only** (Cubic's JSONL stays untrimmed, so reload shows the full history and the summary is an ephemeral context-trim artifact — no persistence). Plumb the summary text through the `compaction:done` event → store → a new `compaction` `DisplayItem`. Failed/no-op compactions stay **silent** (no marker), matching today's behavior.
+- [ ] **LOOK AT THIS PRE LAUNCH MAYBE??**§C — View compaction summary (Claude-Code-style) — on a successful compaction, leave a collapsible "Tidied up earlier steps · View summary" row in the transcript; expanding shows the AI's `<conversation_summary>` rendered as Markdown (reuse `AssistantMessage`). **Live-session only** (Cubic's JSONL stays untrimmed, so reload shows the full history and the summary is an ephemeral context-trim artifact — no persistence). Plumb the summary text through the `compaction:done` event → store → a new `compaction` `DisplayItem`. Failed/no-op compactions stay **silent** (no marker), matching today's behavior.
 - [x] §C — Friendly transient-error rendering — mapped plain-English message + "Try again" (resend) + raw "Details" expander; delete-refusal surfaces as a toast.
 - [x] §C — Command surface (buttons/icons, no slash commands) — New chat + per-row delete kebab; `/clear`,`/compact` stay backend-only.
 - [x] §C — Good UX (spinner + progress words) — motion-themed gerunds cycled in reasoning gaps; per-tool spinners; loading splash; delete confirm modal + toasts.
@@ -132,9 +132,14 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
   - **Backend crash:** `BackendSupervisor` does **bounded auto-restart** (3 tries, backoff `[400,1000,2000]`, counter reset after a 3s "settled" window) → renderer shows "Reconnecting…" + keeps retrying its WS (change `ws.ts` from one-shot to infinite bounded-backoff) → on reconnect the §C reattach path rejoins the in-flight turn; after exhaustion → blocking "Cubic stopped — reopen it".
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
-- [ ] **feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
-- [ ] check **feat: do we have functionality/tools to trim/reorder footage (like typical ai video editing tool would - i guess itd js be expected functionality for any ai editing tool)**
-- [ ] **BUG - when a new chat is switched mid message, the new chat disappears. when an existing chat is switched mid message, and then switched back, its almost as if the new message was never sent + the loading for the new message is gone, the only way to see it back is by clicking home and returning back. grill me to fix all edge cases regarding this issue/related issues**
+- [ ] **wip, in worktree - feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
+- [x] **DONE (research, 6/18/26) — feat: do we have functionality/tools to trim/reorder footage?** YES — coverage is broad already:
+  `trimLayer` (in/out + startTime, playhead modes), `splitLayer`, `mergeLayer`, `moveLayer` (z-order/stacking),
+  `sequenceLayers` (stagger startTimes), `setTimeRemapEnabled` + `stretch` (speed), `importFootage`/`addFootageToComp`/
+  `importAssetToComp` (bring clips in with startTime/duration), `duplicateLayer`. The ONE missing paradigm is NLE-style
+  ripple editing — see postmvp note below. No code changes; verification item only.
+- [ ] resume the paralleization chat and have it modify the phase 5 parallization md to be more like todo.md (as in, make sure that all items are listed as todo items not just as a paragraph blob, and each item should correspond to the section+section item found in phase5 md, similar to how we essentially wrote super concise bullets for each item and then each item corresponds and is labeled directly with which section/item it came from in the original non parallized phase document)
+- [x] **FIXED - BUG - when a new chat is switched mid message, the new chat disappears. when an existing chat is switched mid message, and then switched back, its almost as if the new message was never sent + the loading for the new message is gone, the only way to see it back is by clicking home and returning back. grill me to fix all edge cases regarding this issue/related issues**
 ---
 # THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
 # MAYBE BUILD OUT TEASER DEMO VID BEFORE PHASE 5?? POST ON TWITTER??
@@ -162,6 +167,24 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
 ---
 
 **6/9/26: eventually shift the stuff below to a separate todo for post mvp stuff (maybe call it phase 6?)
+
+# postmvp (NLE-style ripple / reorder editing — the one trim/reorder gap)
+Surfaced 6/18/26 while verifying the "trim/reorder footage" TODO. Cubic speaks After Effects' COMPOSITING model:
+every layer has an independent `startTime`, layers stack, and there is no auto-ripple. A "typical AI video editor"
+(CapCut / Premiere) speaks the NLE/timeline-TRACK model: clips butted end-to-end on a track, where trimming or
+deleting a clip RIPPLES everything after it left to close the gap, and "reorder" means changing PLAYBACK ORDER in a
+sequence (not z-order). Cubic has all the primitives (trim/split/merge/sequence/stretch) but no single operation that
+arranges clips back-to-back in a given order or ripple-deletes/ripple-trims to close gaps.
+Why deferred: imposes an NLE mental model onto AE; not yet observed as a real user pain; the agent can approximate it
+today by composing existing tools (compute downstream startTimes manually) — brittle + token-heavy but functional.
+Future options if a user hits it:
+- (a) prompt/agent-guidance only — teach the model "reorder in time = recompute startTime, NOT moveLayer (z-order)";
+  cheapest, no new handlers.
+- (b) net-new ripple primitives — e.g. `arrangeSequence(layerIndices, order, gap)` (lay clips end-to-end in order) +
+  `rippleDelete`/`rippleTrim` (close the gap by shifting later layers' startTimes). Treat a chosen set of layers as a
+  single track; recompute startTimes server-side in one undo group. Biggest lift, most "real video editor" feel.
+Decision when revisited: validate with a real test chat first ("trim these 3 clips and play them back-to-back in this
+order") to see whether composed existing tools already suffice before building (b).
 
 # postmvp
 Resume cost of huge chats: on reopen we load full history; the first turn
