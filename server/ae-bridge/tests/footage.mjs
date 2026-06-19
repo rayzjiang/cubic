@@ -231,12 +231,14 @@ export async function run(ctx, opts) {
     return `removed ${r.count} unused solid(s): ${r.removed.join(', ')}`;
   });
 
-  await test('deleteUnusedSolids — with no orphans returns count=0', async () => {
+  await test('deleteUnusedSolids — with no orphans returns a noop', async () => {
     const r = await send('deleteUnusedSolids');
     assertNoError(r);
+    // No orphaned solids → handler intentionally returns status:"noop" (no count/removed payload).
+    // If some solid happened to be orphaned, it's a success with count — accept either shape.
+    if (r.status === 'noop') return 'no unused solids (noop)';
     assertField(r, 'count', 'number');
     assertArray(r, 'removed');
-    // count may be 0 or more depending on project state; just verify shape is correct
     return `count=${r.count}`;
   });
 
@@ -272,6 +274,154 @@ export async function run(ctx, opts) {
 
       // Cleanup
       await send('deleteComposition', { compName: ASSET_COMP });
+    }
+  }
+
+  // ── Folder management: createFolder / updateProjectItem ───────────────────
+  // Per-run unique base so the first create of each name is always collision-free
+  // (makes the auto-suffix asserts deterministic across repeated runs).
+  if (opts.write) {
+    console.log(bold('\nFolders (createFolder / updateProjectItem)'));
+
+    const B = `__MCP_TEST_fld_${Date.now()}`;
+    const importPng = async () => {
+      const r = await send('importFootage', { filePath: ctx.footageTempPath });
+      assertNoError(r);
+      return r.item.id;
+    };
+
+    let folderA, folderB;
+    const cleanupIds = [];
+
+    const fSetup = await test('createFolder — creates two root folders (parentId 0)', async () => {
+      const a = await send('createFolder', { name: `${B}_A` });
+      assertNoError(a);
+      assertField(a.folder, 'id', 'number');
+      assertValue(a.folder, 'parentId', 0);
+      assertValue(a, 'renamed', false);
+      folderA = a.folder.id; cleanupIds.push(folderA);
+
+      const b = await send('createFolder', { name: `${B}_B` });
+      assertNoError(b);
+      folderB = b.folder.id; cleanupIds.push(folderB);
+      return `A=${folderA} B=${folderB}`;
+    });
+
+    if (requireSetup(fSetup)) {
+      await test('createFolder — name collision auto-suffixes "(1)" + warns', async () => {
+        const r = await send('createFolder', { name: `${B}_A` });
+        assertNoError(r);
+        assertValue(r, 'renamed', true);
+        assertValue(r.folder, 'name', `${B}_A (1)`);
+        assertField(r, 'warning', 'string');
+        cleanupIds.push(r.folder.id);
+        return r.folder.name;
+      });
+
+      await test('listProjectItems — items carry parentId + parentName', async () => {
+        const r = await send('listProjectItems');
+        assertNoError(r);
+        const fa = r.items.find(i => i.id === folderA);
+        if (!fa) throw new Error(`folderA id=${folderA} not in listProjectItems`);
+        assertValue(fa, 'parentId', 0); // at root
+        if (!('parentName' in fa)) throw new Error('missing parentName field');
+        return 'parentId + parentName present';
+      });
+
+      await test('updateProjectItem — move footage into FolderA', async () => {
+        const id = await importPng(); cleanupIds.push(id);
+        const r = await send('updateProjectItem', { itemId: id, parentFolderId: folderA });
+        assertNoError(r);
+        assertValue(r, 'moved', true);
+        assertValue(r, 'renamed', false);
+        assertValue(r.item, 'parentId', folderA);
+        return `moved into "${r.item.parentName}"`;
+      });
+
+      await test('updateProjectItem — move footage back to root (parentFolderId 0)', async () => {
+        const id = await importPng(); cleanupIds.push(id);
+        await send('updateProjectItem', { itemId: id, parentFolderId: folderA });
+        const r = await send('updateProjectItem', { itemId: id, parentFolderId: 0 });
+        assertNoError(r);
+        assertValue(r, 'moved', true);
+        assertValue(r.item, 'parentId', 0);
+      });
+
+      await test('updateProjectItem — rename footage', async () => {
+        const id = await importPng(); cleanupIds.push(id);
+        const r = await send('updateProjectItem', { itemId: id, newName: `${B}_renamed` });
+        assertNoError(r);
+        assertValue(r, 'renamed', true);
+        assertValue(r.item, 'name', `${B}_renamed`);
+      });
+
+      await test('updateProjectItem — rename collision auto-suffixes + warns', async () => {
+        const id1 = await importPng(); cleanupIds.push(id1);
+        await send('updateProjectItem', { itemId: id1, newName: `${B}_dup` });
+        const id2 = await importPng(); cleanupIds.push(id2);
+        const r = await send('updateProjectItem', { itemId: id2, newName: `${B}_dup` });
+        assertNoError(r);
+        assertValue(r.item, 'name', `${B}_dup (1)`);
+        assertField(r, 'warning', 'string');
+        return r.item.name;
+      });
+
+      await test('updateProjectItem — replace deletes a same-named LEAF', async () => {
+        const victim = await importPng();
+        await send('updateProjectItem', { itemId: victim, newName: `${B}_victim` });
+        const actor = await importPng(); cleanupIds.push(actor);
+        const r = await send('updateProjectItem', { itemId: actor, newName: `${B}_victim`, onNameConflict: 'replace' });
+        assertNoError(r);
+        assertValue(r.item, 'name', `${B}_victim`);
+        const list = await send('listProjectItems');
+        if (list.items.find(i => i.id === victim)) throw new Error('victim leaf not deleted by replace');
+        return 'leaf replaced';
+      });
+
+      await test('updateProjectItem — replace REFUSES to delete a folder', async () => {
+        const actor = await importPng(); cleanupIds.push(actor);
+        const r = await send('updateProjectItem', { itemId: actor, newName: `${B}_B`, onNameConflict: 'replace' });
+        assertStructuredError(r, 'INVALID_ARGS');
+        if (!/folder/i.test(r.message)) throw new Error(`expected folder-refusal message, got: "${r.message}"`);
+        return `errorCode=${r.errorCode}`;
+      });
+
+      await test('updateProjectItem — ambiguous itemName errors with candidate ids', async () => {
+        // Same name in two different parents: rename collision is parent-scoped, so both keep the
+        // verbatim name → the project-wide name scan then sees >1 match.
+        const inFolder = await importPng(); cleanupIds.push(inFolder);
+        await send('updateProjectItem', { itemId: inFolder, parentFolderId: folderA, newName: `${B}_amb` });
+        const atRoot = await importPng(); cleanupIds.push(atRoot);
+        await send('updateProjectItem', { itemId: atRoot, newName: `${B}_amb` });
+        const r = await send('updateProjectItem', { itemName: `${B}_amb`, newName: `${B}_amb2` });
+        assertStructuredError(r, 'INVALID_ARGS');
+        if (!/multiple/i.test(r.message)) throw new Error(`expected ambiguity message, got: "${r.message}"`);
+        return `errorCode=${r.errorCode}`;
+      });
+
+      await test('updateProjectItem — moving a folder into itself throws', async () => {
+        const r = await send('updateProjectItem', { itemId: folderA, parentFolderId: folderA });
+        assertStructuredError(r, 'INVALID_ARGS');
+        if (!/itself/i.test(r.message)) throw new Error(`expected cycle message, got: "${r.message}"`);
+        return `errorCode=${r.errorCode}`;
+      });
+
+      await test('updateProjectItem — rename to same name + no move is a noop', async () => {
+        const r = await send('updateProjectItem', { itemId: folderB, newName: `${B}_B` });
+        assertValue(r, 'status', 'noop');
+        return 'noop';
+      });
+
+      await test('updateProjectItem — no newName and no parent target errors', async () => {
+        const r = await send('updateProjectItem', { itemId: folderB });
+        assertStructuredError(r, 'INVALID_ARGS');
+        return `errorCode=${r.errorCode}`;
+      });
+
+      // Cleanup: deleting the two folders removes their (test) contents too; then sweep any strays.
+      await send('deleteProjectItem', { itemId: folderA });
+      await send('deleteProjectItem', { itemId: folderB });
+      for (const id of cleanupIds) { try { await send('deleteProjectItem', { itemId: id }); } catch (_) {} }
     }
   }
 }

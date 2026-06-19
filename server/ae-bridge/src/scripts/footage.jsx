@@ -2,7 +2,7 @@
 // CRUD for project-level FootageItem objects (imported files, solids, placeholders).
 // Note: solid LAYERS are created via createSolidLayer in layers.jsx — this file
 // manages the footage sources in the project panel, not the layers that reference them.
-// CRUD: C ✓  R ✓  U ✗  D ✓
+// CRUD: C ✓  R ✓  U ✓  D ✓
 // importAssetToComp: one-shot import + place (composes importFootage + addFootageToComp)
 
 // R: listProjectItems — enumerate Project Panel contents (footage, comps, folders, solids)
@@ -13,7 +13,12 @@ function listProjectItems(args) {
         for (var i = 1; i <= app.project.numItems; i++) {
             var item = app.project.item(i);
             var itemType;
-            var info = { id: item.id, name: item.name, itemIndex: i };
+            var atRoot = (item.parentFolder === app.project.rootFolder);
+            var info = {
+                id: item.id, name: item.name, itemIndex: i,
+                parentId:   atRoot ? 0 : item.parentFolder.id,
+                parentName: atRoot ? null : item.parentFolder.name
+            };
 
             if (item instanceof CompItem) {
                 itemType = "composition";
@@ -83,22 +88,8 @@ function addFootageToComp(args) {
     try {
         var comp = _resolveComp(args);
 
-        // Resolve source: by itemId, itemName, or itemIndex
-        var source = null;
-        if (args.itemId !== undefined && args.itemId !== null) {
-            for (var j = 1; j <= app.project.numItems; j++) {
-                if (app.project.item(j).id === args.itemId) { source = app.project.item(j); break; }
-            }
-        } else if (args.itemName) {
-            for (var k = 1; k <= app.project.numItems; k++) {
-                if (app.project.item(k).name === args.itemName) { source = app.project.item(k); break; }
-            }
-        } else if (args.itemIndex !== undefined && args.itemIndex !== null) {
-            if (args.itemIndex > 0 && args.itemIndex <= app.project.numItems) {
-                source = app.project.item(args.itemIndex);
-            }
-        }
-        if (!source) { throw _err(ERROR_CODES.INVALID_ARGS, "Source item not found. Specify itemName, itemId, or itemIndex."); }
+        // Resolve source by itemId (exact), itemName (must be unique), or itemIndex.
+        var source = _findProjectItem(args.itemId, args.itemName, args.itemIndex);
         if (source instanceof FolderItem) { throw _err(ERROR_CODES.INVALID_ARGS, "Cannot add a folder to a composition."); }
 
         var layer = comp.layers.add(source);
@@ -165,17 +156,7 @@ function importAssetToComp(args) {
 // Use deleteComposition for compositions (this rejects them to avoid accidental data loss).
 function deleteProjectItem(args) {
     try {
-        var item = null;
-        if (args.itemId !== undefined && args.itemId !== null) {
-            for (var i = 1; i <= app.project.numItems; i++) {
-                if (app.project.item(i).id === args.itemId) { item = app.project.item(i); break; }
-            }
-        } else if (args.itemName) {
-            for (var j = 1; j <= app.project.numItems; j++) {
-                if (app.project.item(j).name === args.itemName) { item = app.project.item(j); break; }
-            }
-        }
-        if (!item) { throw _err(ERROR_CODES.INVALID_ARGS, "Project item not found (specify itemId or itemName)"); }
+        var item = _findProjectItem(args.itemId, args.itemName); // exact id or unique name
         if (item instanceof CompItem) { throw _err(ERROR_CODES.INVALID_ARGS, "Use deleteComposition to remove compositions"); }
         var name = item.name;
         var id = item.id;
@@ -204,6 +185,129 @@ function deleteUnusedSolids() {
             return JSON.stringify({ status: "noop", message: "No unused solids to remove." }, null, 2);
         }
         return JSON.stringify({ status: "success", removed: removed, count: removed.length }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: createFolder — create a folder at the project ROOT. Finder-style auto-suffix on a root-sibling
+// name collision ("Assets" -> "Assets (1)"); never replaces an existing item.
+function createFolder(args) {
+    try {
+        if (!args || !args.name) { throw _err(ERROR_CODES.INVALID_ARGS, "name is required."); }
+        var root = app.project.rootFolder;
+        var requested = args.name;
+        var finalName = _freeSiblingName(root, requested, null);
+
+        var folder = app.project.items.addFolder(finalName); // lands at root automatically
+
+        var renamed = (finalName !== requested);
+        var result = {
+            status: "success",
+            message: "Folder created",
+            folder: { id: folder.id, name: folder.name, parentId: 0, parentName: null },
+            renamed: renamed
+        };
+        if (renamed) { result.warning = "A folder named \"" + requested + "\" already existed, so this one was named \"" + finalName + "\"."; }
+        return JSON.stringify(result, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: updateProjectItem — rename and/or move any project item (footage/solid/folder/comp).
+// Target by itemId (exact) or itemName (must be unique). Move with parentFolderId/parentFolderName
+// (parentFolderId 0 = project root). Name collisions are scoped to the destination's siblings:
+// onNameConflict "suffix" (default) auto-numbers; "replace" deletes a same-named LEAF sibling
+// (footage/comp) — but a same-named FOLDER is never deleted (refused). No-op when nothing changes.
+function updateProjectItem(args) {
+    try {
+        var item = _findProjectItem(args.itemId, args.itemName); // exact id or unique name
+        var origName = item.name;
+        var origParent = item.parentFolder;
+
+        var mode = args.onNameConflict || "suffix";
+        if (mode !== "suffix" && mode !== "replace") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "onNameConflict must be \"suffix\" or \"replace\".");
+        }
+
+        var hasNewName = (args.newName !== undefined && args.newName !== null && args.newName !== "");
+        var wantsMove  = (args.parentFolderId !== undefined && args.parentFolderId !== null) ||
+                         (args.parentFolderName !== undefined && args.parentFolderName !== null && args.parentFolderName !== "");
+        if (!hasNewName && !wantsMove) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Provide newName and/or a parent target (parentFolderId/parentFolderName).");
+        }
+
+        // ---- MOVE first, so a rename collision is scoped to the destination folder ----
+        if (wantsMove) {
+            var destFolder;
+            if (args.parentFolderId === 0) {
+                destFolder = app.project.rootFolder; // sentinel: 0 => project root
+            } else {
+                destFolder = _findProjectItem(args.parentFolderId, args.parentFolderName, null, { requireFolder: true, missingMsg: "Specify parentFolderId or parentFolderName." });
+            }
+            // Cycle guard: a folder can't move into itself or one of its descendants.
+            if (item instanceof FolderItem) {
+                if (destFolder === item) {
+                    throw _err(ERROR_CODES.INVALID_ARGS, "Cannot move folder \"" + item.name + "\" into itself.");
+                }
+                var cur = destFolder.parentFolder;
+                while (cur && cur !== app.project.rootFolder) {
+                    if (cur === item) {
+                        throw _err(ERROR_CODES.INVALID_ARGS, "Cannot move folder \"" + item.name + "\" into one of its own subfolders.");
+                    }
+                    cur = cur.parentFolder;
+                }
+            }
+            if (destFolder !== item.parentFolder) { item.parentFolder = destFolder; }
+        }
+
+        // ---- RENAME / post-move name reconciliation (scope = item's current parent) ----
+        var suffixedFrom = null; // the name we wanted but couldn't take verbatim (drives the warning)
+        if (hasNewName || item.parentFolder !== origParent) {
+            var parentNow = item.parentFolder;
+            var targetName = hasNewName ? args.newName : item.name;
+            var clash = _siblingNamed(parentNow, targetName, item);
+            if (clash) {
+                if (mode === "replace") {
+                    if (!_isCollisionDeletableLeaf(clash)) {
+                        throw _err(ERROR_CODES.INVALID_ARGS, "A folder named \"" + targetName + "\" already exists here. Folders are never replaced — rename or delete it explicitly first.");
+                    }
+                    clash.remove();
+                    item.name = targetName;
+                } else {
+                    var freeName = _freeSiblingName(parentNow, targetName, item);
+                    if (freeName !== targetName) { suffixedFrom = targetName; }
+                    item.name = freeName;
+                }
+            } else if (targetName !== item.name) {
+                item.name = targetName;
+            }
+        }
+
+        var didMove   = (item.parentFolder !== origParent);
+        var didRename = (item.name !== origName);
+        if (!didMove && !didRename) {
+            return JSON.stringify({ status: "noop", message: "No change — already named that and in that folder." }, null, 2);
+        }
+
+        var pNow = item.parentFolder;
+        var nowAtRoot = (pNow === app.project.rootFolder);
+        var result = {
+            status: "success",
+            message: "Project item updated",
+            item: {
+                id: item.id, name: item.name,
+                parentId:   nowAtRoot ? 0 : pNow.id,
+                parentName: nowAtRoot ? null : pNow.name
+            },
+            renamed: didRename,
+            moved: didMove
+        };
+        if (suffixedFrom !== null) {
+            result.warning = "An item named \"" + suffixedFrom + "\" already existed there, so this item was named \"" + item.name + "\".";
+        }
+        return JSON.stringify(result, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }

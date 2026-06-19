@@ -180,6 +180,10 @@ export async function run(ctx, opts) {
   // ── setAnchorPoint ────────────────────────────────────────────────────────
 
   await test('setAnchorPoint CENTER — same result as centerAnchorPoint', async () => {
+    // The prior centerAnchorPoint test already centered this layer; setting CENTER again would be a
+    // noop (handler returns status:"noop" with no anchor payload). Move off-center first so CENTER is
+    // a genuine change and returns the full result we assert below.
+    await send('setAnchorPoint', { compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'TOP_LEFT' });
     const r = await send('setAnchorPoint', {
       compName: COMP_NAME, layerIndex: ctx.anchorShapeIndex, position: 'CENTER'
     });

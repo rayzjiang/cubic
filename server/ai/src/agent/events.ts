@@ -125,6 +125,14 @@ const SCRIPT_LABELS: Record<string, (p: Params) => string> = {
   importAssetToComp: (p) => `Imported ${baseName(p.filePath)}`,
   addFootageToComp: () => 'Added footage to the comp',
   deleteProjectItem: () => 'Deleted a project item',
+  createFolder: (p) => (p.name ? `Created folder "${String(p.name)}"` : 'Created a folder'),
+  updateProjectItem: (p) => {
+    const moving = p.parentFolderId != null || p.parentFolderName != null;
+    if (p.newName && moving) return `Renamed & moved "${String(p.newName)}"`;
+    if (p.newName) return `Renamed to "${String(p.newName)}"`;
+    if (moving) return 'Moved a project item';
+    return 'Updated a project item';
+  },
   addMarker: () => 'Added a marker',
   saveProject: () => 'Saved the project',
   restoreProject: () => 'Restored a backup',
@@ -209,6 +217,7 @@ const NOOP_SCRIPT_LABELS: Record<string, string | ((p: Params) => string)> = {
   sequenceLayers: 'Already sequenced',
   setTimeRemapEnabled: (p) => (p.enabled ? 'Already enabled' : 'Already disabled'),
   setTrackMatte: 'Already set as that matte',
+  updateProjectItem: 'Already named that and in that folder',
   setLayerKeyframe: 'Keyframe already set there',
   setLayerExpression: (p) => (p.expressionString === '' && !p.preset ? 'No expression to remove' : 'Expression already set'),
   // Nothing to remove / undo
@@ -414,6 +423,17 @@ const RESULT_LABELS: Record<string, (r: Params) => string | undefined> = {
   importAssetToComp: (r) => { const nm = s(pick(r, 'item', 'name')); return nm ? `Imported ${nm}` : undefined; },
   deleteProjectItem: (r) => { const nm = s(pick(r, 'deleted', 'name')); return nm ? `Deleted ${q(nm)}` : undefined; },
   deleteUnusedSolids: (r) => { const n = pick(r, 'count'); return typeof n === 'number' ? `Removed ${n} unused solid${n === 1 ? '' : 's'}` : undefined; },
+  createFolder: (r) => { const nm = s(pick(r, 'folder', 'name')); return nm ? `Created folder ${q(nm)}` : undefined; },
+  updateProjectItem: (r) => {
+    const nm = s(pick(r, 'item', 'name'));
+    if (!nm) return undefined;
+    const moved = pick(r, 'moved') === true;
+    const renamed = pick(r, 'renamed') === true;
+    if (renamed && moved) return `Renamed & moved to ${q(nm)}`;
+    if (renamed) return `Renamed to ${q(nm)}`;
+    if (moved) return `Moved ${q(nm)}`;
+    return `Updated ${q(nm)}`;
+  },
 };
 
 /**
