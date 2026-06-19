@@ -1,4 +1,5 @@
 import { useChatStore } from '../store'
+import { CHROME_BG } from '../ui'
 import { ConversationRow } from './ConversationRow'
 
 /**
@@ -7,8 +8,8 @@ import { ConversationRow } from './ConversationRow'
  *
  * Smooth collapse without a reflow jolt: the container's WIDTH animates, but the expanded content
  * sits in a FIXED-width (w-64) panel so it never re-lays-out mid-animation — the growing/shrinking
- * container simply clips/reveals it. The collapsed icon rail cross-fades against it. A drag strip up
- * top clears the macOS traffic lights; the toggle sits on the right edge, same y in both states.
+ * container simply clips/reveals it. The collapsed icon rail cross-fades against it. The full-width
+ * TopBar above owns window drag + the traffic-light zone, so the sidebar starts flush below it.
  */
 export function Sidebar() {
   const collapsed = useChatStore((s) => s.sidebarCollapsed)
@@ -34,14 +35,12 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 bg-black/20 transition-[width] duration-200 ease-out ${collapsed ? 'w-12' : 'w-64'}`}
+      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 ${CHROME_BG} transition-[width] duration-200 ease-out ${collapsed ? 'w-12' : 'w-64'}`}
     >
-      {/* Drag strip — clears the macOS traffic lights so nothing sits under them. */}
-      <div className="h-9 shrink-0 [-webkit-app-region:drag]" />
-
-      {/* Collapsed icon rail — overlaid, fades in when collapsed. */}
+      {/* Collapsed icon rail — overlaid, fades in when collapsed. Starts at the top (the TopBar above
+          owns the traffic-light zone), pt-2 to vertically align with the expanded header row. */}
       <div
-        className={`absolute inset-x-0 top-9 flex flex-col items-center gap-1 pt-0.5 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-2 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <button onClick={toggleSidebar} className="rounded-md p-1.5 text-white/55 hover:bg-white/10 hover:text-white/90" aria-label="Expand sidebar">
           <SidebarToggleIcon />
@@ -55,7 +54,7 @@ export function Sidebar() {
       <div
         className={`flex min-h-0 w-64 flex-1 flex-col transition-opacity duration-150 ${collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
       >
-        <div className="flex items-center gap-1 px-2 pb-2">
+        <div className="flex items-center gap-1 px-2 pb-2 pt-2">
           <button onClick={goHome} className="rounded-md px-2 py-1.5 text-[13px] text-white/55 hover:bg-white/10 hover:text-white/80">
             ⌂ Home
           </button>
