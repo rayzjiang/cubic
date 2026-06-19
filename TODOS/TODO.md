@@ -132,7 +132,7 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
   - **Backend crash:** `BackendSupervisor` does **bounded auto-restart** (3 tries, backoff `[400,1000,2000]`, counter reset after a 3s "settled" window) → renderer shows "Reconnecting…" + keeps retrying its WS (change `ws.ts` from one-shot to infinite bounded-backoff) → on reconnect the §C reattach path rejoins the in-flight turn; after exhaustion → blocking "Cubic stopped — reopen it".
 - ↳ §B2's one-time forced reinstall is free here because the install flow is being rebuilt — that's why it rides with ⑦, not ①.
 
-- [ ] **wip, in worktree - feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
+- [x] **DONE, in worktree, merged - feat to add: tool to create or rename folders in the project panel, grill + plan + implement**
 - [x] **DONE (research, 6/18/26) — feat: do we have functionality/tools to trim/reorder footage?** YES — coverage is broad already:
   `trimLayer` (in/out + startTime, playhead modes), `splitLayer`, `mergeLayer`, `moveLayer` (z-order/stacking),
   `sequenceLayers` (stagger startTimes), `setTimeRemapEnabled` + `stretch` (speed), `importFootage`/`addFootageToComp`/
