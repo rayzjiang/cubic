@@ -25,7 +25,7 @@
 - [ ] **§B-1** **Google + Apple OAuth** — system-browser flow → redirect back via custom deep link (`cubic://`). No manual email/password at launch (add magic-link later only if users ask — Supabase config toggle, not a rebuild). **WHY OAuth-only:** ~100% coverage for this audience, zero password/reset flows, no credential liability.
 - [ ] **§B-2** **Apple Developer account ($99/yr)** — needed for Sign in with Apple **and** code-signing/notarization (§E). One account, both jobs.
 - [ ] **§B-3** **Secure on-device session** — store tokens via Electron `safeStorage` (OS keychain, encrypted at rest), **not** a plain file. Auto-refresh the access token; "stay signed in" across launches.
-- [ ] **§B-4** **Sign-in / sign-out UI** + signed-out state. Recover session on launch → straight into the app.
+- [ ] **§B-4** **Sign-in / sign-out UI** + signed-out state. Recover session on launch → straight into the app. **Also ships the account-menu *shell/ui (like chatgpt's in the bottom right corner)*** (name + avatar + Log out); plan tag + Upgrade fill in at §D-5 once billing exists.
 
 ## §C. Billing & entitlement — Supabase + Stripe
 > **Model: flat price + monthly usage allowance** (resets monthly; hard cap protects margin). v1 runs **Sonnet for everything**, Haiku for trivial calls (conversation titles, etc.). **WHY flat+allowance:** simplest to build *and* explain to non-technical users, predictable bill, cap stops runaway spend. **Future:** evolve into a model-weighted credit pool (Copilot-style per-model multipliers draining the allowance).
@@ -44,6 +44,7 @@
 - [ ] **§D-2** **Paywall + limit states** — "trial ended" / "out of allowance this month" screens with a clear upgrade/renew CTA → Stripe Checkout.
 - [ ] **§D-3** **"Manage subscription"** entry point → opens Stripe Customer Portal.
 - [ ] **§D-4** **Non-technical copy throughout** — consumer-app tone (iMessage/ChatGPT feel), never dev/terminal language.
+- [ ] **§D-5** **Finish the Account/profile menu (ChatGPT-style)** — persistent sidebar widget aggregating identity + billing in one dropdown: name + avatar + Log out (from §B-4 shell), plan tag ("Free"/"Pro") + **Upgrade** CTA (→ §D-2 Checkout), Manage subscription (→ §D-3 Portal). Only surface Settings/Profile rows once they actually do something (else they read as broken to a non-technical user).
 
 ## §E. Packaging, signing & hardening
 > The proxy already hides the crown jewels, so client-side protection only guards the leftovers (tool names, loop, ExtendScript). Goal: raise the bar cheaply ("deters 95%") + make install seamless. **Skip binary compilation** — marginal gain now that secrets are server-side.

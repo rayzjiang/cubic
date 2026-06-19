@@ -25,7 +25,7 @@
 **2. WT-AUTH** — §B (Supabase project + `app/` auth UI; stand up the Supabase project here first)
 - [ ] §B-1 Google + Apple OAuth via system browser → `cubic://` deep link
 - [ ] §B-3 secure on-device session — Electron `safeStorage` + auto-refresh
-- [ ] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch
+- [ ] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch (+ account-menu *shell/initial ui*: name/avatar/Log out; plan+Upgrade fill in at §D-5)
 
 **3. WT-BILLING** — §C (Stripe + Supabase `subscriptions`; soft-depends on WT-AUTH's Supabase project)
 - [ ] §C-1 `subscriptions` table (entitlement source of truth; webhook-written only)
@@ -63,6 +63,7 @@
 - [ ] §D-2 paywall + limit states ("trial ended" / "out of allowance") → Checkout
 - [ ] §D-3 "Manage subscription" → Customer Portal
 - [ ] §D-4 non-technical copy throughout (consumer tone, no dev/terminal language)
+- [ ] §D-5 finish the account/profile menu (ChatGPT-style) — name/avatar/Log out (§B-4 shell) + plan tag + Upgrade (§D-2) + Manage subscription (§D-3) in one dropdown
 
 ---
 
