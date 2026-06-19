@@ -124,15 +124,17 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
       compaction = { summary: e.summary, keptTurns: e.keptTurns };
     emit(e);
   };
-  // Dev-only compaction test knobs (unset in normal use → no effect): shrink the context window
-  // and/or override the compact threshold so a few short messages cross 90% (pill) / 97% (card)
-  // without filling a real 200k window. See §C manual E2E compaction test.
+  // Dev-only compaction test knobs (unset in normal use → no effect): shrink the context window,
+  // lower the compact threshold, and/or keep fewer recent turns verbatim so a few short messages cross
+  // 90% (pill) and compaction has something to summarize — without filling a real 200k window. See §C.
   const ctxOverride = process.env.CUBIC_CONTEXT_WINDOW ? Number(process.env.CUBIC_CONTEXT_WINDOW) : undefined;
   const threshOverride = process.env.CUBIC_COMPACT_THRESHOLD ? Number(process.env.CUBIC_COMPACT_THRESHOLD) : undefined;
+  const keepOverride = process.env.CUBIC_KEEP_RECENT_TURNS ? Number(process.env.CUBIC_KEEP_RECENT_TURNS) : undefined;
   await runAgentTurn(session, text, capture, {
     onCommit: (m) => committed.push(m),
     contextWindowOverride: ctxOverride,
     compactThreshold: threshOverride,
+    keepRecentTurns: keepOverride,
   });
   if (discarded) { clearBuffer(session.id); return; }
   if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)

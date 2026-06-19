@@ -325,6 +325,24 @@ describe('runAgentTurn — context-window management', () => {
     expect(seen[0].length).toBeLessThan(session.messages.length);
   });
 
+  it('honors the keepRecentTurns dep override (CUBIC_KEEP_RECENT_TURNS test knob)', async () => {
+    const { provider } = mockLLM([
+      textResponse('## Goal\nsomething'), // summary call
+      textResponse('ok'),                  // the turn
+    ]);
+    const session = new Session();
+    session.messages = chatHistory(4);
+    session.lastContextTokens = 200_000 * 0.95;
+
+    const events: AgentEvent[] = [];
+    await runAgentTurn(session, 'next', (e) => events.push(e), { ...baseDeps(provider), keepRecentTurns: 1 });
+
+    // The override flows brain → compactSession → the emitted event (so the persisted marker records it).
+    expect(events.find((e) => e.type === 'compaction' && e.status === 'done')).toMatchObject({ keptTurns: 1 });
+    // Keep 1 verbatim: [summary, q3, a3, newUser, assistant] → 5 messages.
+    expect(session.messages).toHaveLength(5);
+  });
+
   it('over the hard ceiling WITH history to summarize, compacts and continues (no dead-end card)', async () => {
     const { provider } = mockLLM([
       textResponse('## Goal\nbouncy logo'), // the summary call

@@ -32,6 +32,9 @@ export interface AgentDeps {
   compactThreshold?: number;
   /** Override the model's context window (tokens). Same purpose as compactThreshold for tests. */
   contextWindowOverride?: number;
+  /** Override how many recent turns compaction keeps verbatim (default KEEP_RECENT_TURNS). A test knob
+   *  (CUBIC_KEEP_RECENT_TURNS) so a low value makes compaction fire after just a couple of short turns. */
+  keepRecentTurns?: number;
   /** Called once per REAL message committed to history (user prompt, assistant reply, tool-result
    *  user message) — in push order, as it happens. The host uses this to persist the canonical
    *  conversation append-only. Deliberately NOT fired by compaction (which rewrites `messages` in
@@ -130,7 +133,7 @@ export async function runAgentTurn(
     if (session.lastContextTokens >= window * compactThreshold) {
       const overCeiling = session.lastContextTokens >= window * HARD_CEILING;
       emit({ type: 'compaction', status: 'start' });
-      const res = await compactSession(session, { llm, model });
+      const res = await compactSession(session, { llm, model, keepRecentTurns: deps.keepRecentTurns });
       emit({ type: 'compaction', status: res.ok ? 'done' : 'failed', reason: res.reason, summary: res.summary, keptTurns: res.keptTurns });
       // Already over the hard ceiling AND compaction freed nothing (≤ KEEP_RECENT_TURNS of history,
       // or it failed) → we genuinely can't fit. Pause honestly rather than firing a chat() that we
