@@ -1,4 +1,5 @@
 import { useChatStore } from '../store'
+import { CHROME_BG } from '../ui'
 import { ConversationRow } from './ConversationRow'
 
 /**
@@ -34,7 +35,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 bg-black/20 transition-[width] duration-200 ease-out ${collapsed ? 'w-12' : 'w-64'}`}
+      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 ${CHROME_BG} transition-[width] duration-200 ease-out ${collapsed ? 'w-12' : 'w-64'}`}
     >
       {/* Collapsed icon rail — overlaid, fades in when collapsed. Starts at the top (the TopBar above
           owns the traffic-light zone), pt-2 to vertically align with the expanded header row. */}

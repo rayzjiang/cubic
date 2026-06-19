@@ -1,4 +1,5 @@
 import { useChatStore } from '../store'
+import { CHROME_BG } from '../ui'
 import { AeStatus } from './AeStatus'
 
 // macOS insets the traffic lights into the top-left; reserve room so nothing sits under them.
@@ -27,7 +28,7 @@ export function TopBar() {
   })()
 
   return (
-    <header className="relative flex h-9 shrink-0 items-center border-b border-white/5 bg-neutral-900 [-webkit-app-region:drag]">
+    <header className={`relative flex h-9 shrink-0 items-center border-b border-white/5 ${CHROME_BG} [-webkit-app-region:drag]`}>
       {/* Left: clear the macOS traffic lights (no controls — the sidebar owns its toggle). */}
       <div className={isMac ? 'w-[78px] shrink-0' : 'w-3 shrink-0'} />
 

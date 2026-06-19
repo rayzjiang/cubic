@@ -68,7 +68,9 @@ export function App() {
   }
 
   return (
-    <div className="h-full bg-neutral-900 text-white/90">
+    // No background here: the body is transparent so the macOS vibrancy shows through the translucent
+    // chrome (top bar + sidebar). Content panes paint their own solid bg to stay crisp.
+    <div className="h-full text-white/90">
       {body}
       <ConfirmModal />
       <Toasts />
