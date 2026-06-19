@@ -98,6 +98,8 @@ export const COMMANDS: readonly string[] = [
   "importAssetToComp",
   "deleteProjectItem",
   "deleteUnusedSolids",
+  "createFolder",
+  "updateProjectItem",
   // Project
   "getProjectPath",
   "saveProject",

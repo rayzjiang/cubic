@@ -73,16 +73,17 @@ export async function run(ctx, opts) {
   // here — re-rendering rather than sleeping/polling (a not-yet-flushed file is expected,
   // not a bug). The response-field assertions in each test are deterministic and stay
   // outside this helper.
+  const RENDER_ATTEMPTS = 4; // AE's async PNG flush can lose more than one race; re-render (no sleep)
   async function renderToDisk(args, { checkHeader = false } = {}) {
     let r;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < RENDER_ATTEMPTS; attempt++) {
       r = await send('saveFrameToPng', args);
       if (r.path) ctx.renderPaths.push(r.path);  // track before assertions so failures don't leak
       assertNoError(r);
       if (!pngProblem(r.path, { checkHeader })) return r;
-      // file not flushed yet — re-render once (mirrors agent retry on RENDER_FAILED)
+      // file not flushed yet — re-render (mirrors agent retry on RENDER_FAILED)
     }
-    throw new Error(pngProblem(r.path, { checkHeader }) + ' (after 1 retry)');
+    throw new Error(pngProblem(r.path, { checkHeader }) + ` (after ${RENDER_ATTEMPTS - 1} retries)`);
   }
 
   await test('render — default time returns PNG on disk', async () => {

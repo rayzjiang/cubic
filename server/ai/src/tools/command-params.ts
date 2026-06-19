@@ -330,6 +330,24 @@ export const COMMAND_PARAMS = {
   },
   deleteProjectItem: { domain: 'Footage', summary: 'Delete a project-panel item (itemId or itemName).', params: { itemId: 'int', itemName: 'string' } },
   deleteUnusedSolids: { domain: 'Footage', summary: 'Delete solids not used by any comp.', params: {} },
+  createFolder: {
+    domain: 'Footage',
+    summary: 'Create a folder in the project panel (at the root). Auto-numbers on a name clash ("Assets" -> "Assets (1)"); never overwrites. Returns the final name + a renamed flag.',
+    params: { name: 'string — folder name' },
+    required: ['name'],
+  },
+  updateProjectItem: {
+    domain: 'Footage',
+    summary: 'Rename and/or move any project item (footage, solid, folder, comp). Target by itemId (exact) or itemName (must be unique — ambiguous names error with candidate ids). Provide newName and/or a parent target. Move to the project root with parentFolderId: 0. Discover folder ids via listProjectItems (parentId/parentName).',
+    params: {
+      itemId: 'int — exact target',
+      itemName: 'string — unique target name',
+      newName: 'string — new name',
+      parentFolderId: 'int — destination folder id (0 = project root)',
+      parentFolderName: 'string — destination folder name (must be unique)',
+      onNameConflict: 'suffix|replace — on a same-name sibling: suffix (default) auto-numbers; replace deletes a same-named footage/comp (never a folder)',
+    },
+  },
 
   // ── Project ───────────────────────────────────────────────────────────────
   getProjectPath: { domain: 'Project', summary: 'Get the project file path + dirty flag.', params: {} },

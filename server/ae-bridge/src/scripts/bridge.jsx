@@ -165,6 +165,75 @@ function _resolveComp(args) {
     return comp;
 }
 
+// Resolves a single project-panel item by id (exact), name (must be unique), or 1-based index.
+// Takes the values directly (NOT args) so each caller reads its own args.X literally — keeps the
+// drift guard's param check honest. An ambiguous name (>1 match) throws INVALID_ARGS listing the
+// candidate ids so the caller can disambiguate by id; no match throws too. opts.requireFolder forces
+// the result to be a FolderItem (for parent resolution). Throws, never returns null.
+function _findProjectItem(idVal, nameVal, indexVal, opts) {
+    opts = opts || {};
+    var item = null;
+
+    if (idVal !== undefined && idVal !== null) {
+        for (var i = 1; i <= app.project.numItems; i++) {
+            if (app.project.item(i).id === idVal) { item = app.project.item(i); break; }
+        }
+        if (!item) { throw _err(ERROR_CODES.INVALID_ARGS, "No project item with id " + idVal + "."); }
+    } else if (nameVal) {
+        var matches = [];
+        for (var j = 1; j <= app.project.numItems; j++) {
+            if (app.project.item(j).name === nameVal) { matches.push(app.project.item(j)); }
+        }
+        if (matches.length === 0) { throw _err(ERROR_CODES.INVALID_ARGS, "No project item named \"" + nameVal + "\"."); }
+        if (matches.length > 1) {
+            var ids = [];
+            for (var m = 0; m < matches.length; m++) { ids.push(matches[m].id); }
+            throw _err(ERROR_CODES.INVALID_ARGS, "Multiple items named \"" + nameVal + "\" — specify it by id: [" + ids.join(", ") + "].");
+        }
+        item = matches[0];
+    } else if (indexVal !== undefined && indexVal !== null) {
+        if (indexVal > 0 && indexVal <= app.project.numItems) { item = app.project.item(indexVal); }
+        if (!item) { throw _err(ERROR_CODES.INVALID_ARGS, "Item index out of range: " + indexVal + "."); }
+    } else {
+        throw _err(ERROR_CODES.INVALID_ARGS, opts.missingMsg || "Specify itemId, itemName, or itemIndex.");
+    }
+
+    if (opts.requireFolder && !(item instanceof FolderItem)) {
+        throw _err(ERROR_CODES.INVALID_ARGS, "\"" + item.name + "\" is not a folder.");
+    }
+    return item;
+}
+
+// True if `item` may be deleted to resolve a name collision (a leaf source/comp) — NEVER a folder,
+// so a rename/move can't silently destroy a folder's contents as a side effect (only an explicit
+// deleteProjectItem removes folders).
+function _isCollisionDeletableLeaf(item) {
+    return (item instanceof FootageItem) || (item instanceof CompItem);
+}
+
+// First same-named sibling inside `folder`, EXCLUDING `exceptItem` (the item being renamed/moved, so
+// it never collides with itself). null if none. Works for app.project.rootFolder too (it is a FolderItem).
+function _siblingNamed(folder, name, exceptItem) {
+    for (var i = 1; i <= folder.numItems; i++) {
+        var sib = folder.item(i);
+        if (sib === exceptItem) { continue; }
+        if (sib.name === name) { return sib; }
+    }
+    return null;
+}
+
+// Finder/Explorer-style free name: "Assets" -> "Assets (1)" -> "Assets (2)" (smallest free N).
+// Returns `base` unchanged when it's already free among `folder`'s siblings (ignoring `exceptItem`).
+function _freeSiblingName(folder, base, exceptItem) {
+    if (!_siblingNamed(folder, base, exceptItem)) { return base; }
+    var n = 1;
+    while (true) {
+        var candidate = base + " (" + n + ")";
+        if (!_siblingNamed(folder, candidate, exceptItem)) { return candidate; }
+        n++;
+    }
+}
+
 // Per-chat backup folder: .cubic-backups/<sessionId>/ next to the working .aep. Scoping each chat's
 // pre-turn snapshots to its own folder is what keeps "undo that" from walking into a DIFFERENT
 // conversation's backups (see backupProject/restoreProject). sessionId is sanitized to a filesystem-safe
@@ -339,6 +408,8 @@ function _dispatchSwitch(command, args) {
         case "importAssetToComp":        return importAssetToComp(args);
         case "deleteProjectItem":         return deleteProjectItem(args);
         case "deleteUnusedSolids":       return deleteUnusedSolids();
+        case "createFolder":             return createFolder(args);
+        case "updateProjectItem":        return updateProjectItem(args);
         // bridge.jsx
         case "batch":                    return batch(args);
         default:                         return JSON.stringify({ status: "error", errorCode: ERROR_CODES.UNKNOWN_COMMAND, message: "Unknown command: " + command });
