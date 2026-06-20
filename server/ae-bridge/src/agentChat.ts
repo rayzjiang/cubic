@@ -1,4 +1,4 @@
-import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
+import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, getProjectInfo, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
 import { appendTurn, appendCompactionMarker, truncateToBeforeTurn, loadSession, loadDisplayMessages, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
@@ -34,22 +34,35 @@ const chatSockets = new Set<WebSocket>();
 
 /**
  * Current AE project path for keying the conversation on disk — returns `string | null`:
- *   - `null`  → couldn't determine (worker not connected, or `getProjectInfo` threw). Callers must NOT
- *               treat this as a definite project; falling back to the last-known path keeps the sidebar
- *               from being wiped by a momentary no-answer (the regression that filed a new chat under "").
+ *   - `null`  → couldn't determine (worker not connected, or `getProjectInfo` threw/returned an error).
+ *               Callers must NOT treat this as a definite project; falling back to the last-known path
+ *               keeps the sidebar from being wiped by a momentary no-answer (the regression that filed a
+ *               new chat under "").
  *   - `""`    → determined: a genuinely unsaved/untitled project (the real `_untitled` bucket).
  *   - `"/…"`  → determined: a saved project path.
+ * Reads UNCACHED (raw `getProjectInfo`, not `sessionCache`): the cache only invalidates after mutation
+ * turns, so it would mask an in-AE project switch — and the sidebar list / focus refresh must see the
+ * truly-open project. A `{status:"error"}` body (a handler that threw — the bridge passes it through as a
+ * successful result, so `.path` is undefined) is treated as "couldn't determine" (null), NOT as a
+ * definite unsaved project — otherwise a transient handler error would wipe the sidebar to `_untitled`.
  * Fail-fast when the worker isn't connected (no 3s wait) so startup never blocks; the real list is
  * pushed on the bridge 'connect' event once the path becomes resolvable.
  */
 async function resolveProjectPath(): Promise<string | null> {
   if (!bridge.isConnected()) return null;
   try {
-    return (await sessionCache.getProjectInfo()).path ?? "";
+    const info = (await getProjectInfo()) as { path?: unknown; status?: unknown };
+    if (!info || info.status === "error" || typeof info.path !== "string") return null;
+    return info.path; // "" = genuinely unsaved (real _untitled bucket); "/…" = saved path
   } catch {
     return null;
   }
 }
+
+// Last project path the sidebar resolved to. When a definite resolve differs from this (an in-AE project
+// switch), the cached per-turn live state (`getProjectInfo`/comps) belongs to the OLD project, so we
+// invalidate it — otherwise the first chat in the newly-opened project would inject stale `<live_ae_state>`.
+let lastResolvedProjectPath: string | null = null;
 
 /**
  * Send the current project's conversation list to one socket (the `list` reply + the connect push).
@@ -62,7 +75,14 @@ async function sendConversations(ws: WebSocket): Promise<void> {
   // No-answer guard: a `null` resolve (AE not connected / didn't answer) keeps the LAST-KNOWN project's
   // list instead of wiping to "". A definite "" (genuinely unsaved project) still shows its `_untitled`
   // bucket correctly. Only a definite resolve ever changes which project the sidebar reflects.
-  const projectPath = (await resolveProjectPath()) ?? (lastActiveProjectPath() ?? "");
+  const resolved = await resolveProjectPath();
+  const projectPath = resolved ?? (lastActiveProjectPath() ?? "");
+  // A definite resolve to a NEW project means AE switched projects under us → the cached live state is
+  // stale for the now-open project; drop it so the next turn rebuilds context fresh.
+  if (resolved !== null && resolved !== lastResolvedProjectPath) {
+    lastResolvedProjectPath = resolved;
+    sessionCache.invalidate();
+  }
   try {
     ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
   } catch { /* socket gone */ }

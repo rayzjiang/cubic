@@ -85,6 +85,11 @@ interface ChatState {
   conversations: ConversationMeta[]
   listLoaded: boolean
   sidebarCollapsed: boolean
+  // Set when a focus-driven `list` reveals AE switched to a DIFFERENT project while a chat (tied to the
+  // old project) is open → drives the non-blocking "project switched" bar. `dismissedSwitchPath` remembers
+  // the target the user dismissed so the bar doesn't re-nag on the next focus for the same project.
+  projectSwitch: { projectPath: string } | null
+  dismissedSwitchPath: string | null
   // Brand-new chats that have sent a first message but whose turn hasn't committed to disk yet. The
   // renderer owns these rows (it knows it just sent a message — no AE project lookup needed), so they
   // persist across chat switches like Claude.ai. An entry is dropped once the backend list contains its
@@ -120,6 +125,8 @@ interface ChatState {
   setConnection: (c: Connection) => void
   setBackendStatus: (s: BackendStatus) => void
   toggleSidebar: () => void
+  adoptProjectSwitch: () => void
+  dismissProjectSwitch: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -171,6 +178,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
+  projectSwitch: null,
+  dismissedSwitchPath: null,
   pendingNewChats: [],
   ...blankConversation(),
   pendingDeletes: new Set(),
@@ -183,13 +192,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setBackendStatus: (s) => set({ backendStatus: s }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
+  // "View its chats" on the project-switch bar → drop to Home for the now-open project. goHome's sendList
+  // replies with the new project's list (view is Home → adopted silently, clearing the bar).
+  adoptProjectSwitch: () => {
+    set({ projectSwitch: null, dismissedSwitchPath: null })
+    get().goHome()
+  },
+  // Dismiss the bar but remember the target so the next focus doesn't immediately re-raise it for the same
+  // project. Adopting any list (or switching to yet another project) clears the memo.
+  dismissProjectSwitch: () => set((s) => ({ projectSwitch: null, dismissedSwitchPath: s.projectSwitch?.projectPath ?? null })),
+
   handleServerMessage: (msg) => {
     const s = get()
     switch (msg.type) {
       case 'conversations': {
+        // Project-switch detection: a focus-driven `list` can reveal AE now has a DIFFERENT project open
+        // (File>Open / Increment-and-Save / recovery). Guard on `listLoaded` so the FIRST list — where
+        // `projectPath` is still '' — never counts as a switch (even when restoring into a chat on reload).
+        const isSwitch = s.listLoaded && msg.projectPath !== s.projectPath
+        if (isSwitch && s.view === 'chat' && s.sessionId) {
+          // The open chat belongs to the OLD project. Don't swap the sidebar out from under it (that would
+          // let a send operate on the wrong project) — raise the non-blocking bar instead, unless the user
+          // already dismissed this exact target. The active chat + its list stay as-is.
+          if (msg.projectPath !== s.dismissedSwitchPath) set({ projectSwitch: { projectPath: msg.projectPath } })
+          break
+        }
         // A fresh list reconciles any optimistic deletes (backend sends no success ack). listLoaded
         // flips the initial loading screen off once the first list lands (no UI-before-data flash).
-        // Drop any pending new-chat row the backend now has persisted (its real row takes over).
+        // Drop any pending new-chat row the backend now has persisted (its real row takes over). Adopting
+        // a (possibly new) project's list clears any pending switch bar — we're now showing that project.
         const committed = new Set(msg.conversations.map((c) => c.id))
         set({
           conversations: msg.conversations,
@@ -197,6 +228,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           listLoaded: true,
           pendingDeletes: new Set(),
           pendingNewChats: s.pendingNewChats.filter((p) => !committed.has(p.id)),
+          projectSwitch: null,
+          dismissedSwitchPath: null,
         })
         break
       }

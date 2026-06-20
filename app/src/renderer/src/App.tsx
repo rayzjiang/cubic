@@ -6,6 +6,7 @@ import { bindWs, connectBackend, sendList } from './ws'
 import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
+import { ProjectSwitchBar } from './components/ProjectSwitchBar'
 import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { ConfirmModal } from './components/ConfirmModal'
@@ -43,6 +44,16 @@ export function App() {
     }
   }, [connection])
 
+  // Re-check which AE project is open whenever Cubic regains focus — the user may have switched projects
+  // in AE (File>Open / Increment-and-Save) while the panel stayed connected, which fires no backend event.
+  // A fresh `list` re-resolves the project (uncached) on the backend; the store silently swaps the list on
+  // Home or raises the project-switch bar mid-chat. Event-driven (no polling — a repo rule).
+  useEffect(() => {
+    const onFocus = (): void => sendList()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
   let body
   if (backendPhase === 'port-in-use' || backendPhase === 'stopped') {
     // Non-functional backend the user must resolve — full takeover (no top bar).
@@ -58,6 +69,8 @@ export function App() {
     body = (
       <div className="flex h-full flex-col">
         <TopBar />
+        {/* Non-blocking "AE switched projects" bar — self-gates to chat view; silent on Home. */}
+        <ProjectSwitchBar />
         <div className="relative min-h-0 flex-1">
           <AnimatePresence initial={false}>
             {view === 'home' ? (
