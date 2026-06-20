@@ -51,10 +51,12 @@ describe('executeTool', () => {
   });
 
   it('retries a RENDER_FAILED exactly once', async () => {
+    // The retry path is generic (any RETRYABLE error code); exercise it with a callable command —
+    // saveFrameToPng is internal and now blocked before it could ever reach this path.
     callRunScript
       .mockResolvedValueOnce({ status: 'error', errorCode: 'RENDER_FAILED', message: 'flush race' })
-      .mockResolvedValueOnce({ status: 'success', path: '/tmp/f.png' });
-    const exec = await executeTool(runScript('saveFrameToPng'));
+      .mockResolvedValueOnce({ status: 'success' });
+    const exec = await executeTool(runScript('createLayer'));
 
     expect(callRunScript).toHaveBeenCalledTimes(2);
     expect(exec.ok).toBe(true);
@@ -116,6 +118,37 @@ describe('executeTool', () => {
     expect(exec.block.tool_use_id).toBe('t'); // a tool_result always comes back → never an orphan
     expect(callRunScript).toHaveBeenCalledWith('setLayerProperty', { __undoLabel: expect.any(String) });
     expect(exec.ok).toBe(true);
+  });
+
+  it('blocks an internal/hidden command (saveFrameToPng) without hitting the bridge', async () => {
+    const exec = await executeTool(runScript('saveFrameToPng'));
+
+    expect(callRunScript).not.toHaveBeenCalled();
+    expect(exec.ok).toBe(false);
+    expect(exec.errorCode).toBe('UNKNOWN_COMMAND');
+    expect(exec.block.is_error).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('blocks an unknown command name without hitting the bridge', async () => {
+    const exec = await executeTool(runScript('totallyMadeUpCommand'));
+
+    expect(callRunScript).not.toHaveBeenCalled();
+    expect(exec.ok).toBe(false);
+    expect(exec.errorCode).toBe('UNKNOWN_COMMAND');
+  });
+
+  it('blocks a batch carrying a hidden sub-command before any sub-command runs', async () => {
+    const tool: ToolUse = {
+      id: 'b',
+      name: 'batch',
+      input: { commands: [{ script: 'createLayer', parameters: {} }, { script: 'saveFrameToPng', parameters: {} }] },
+    };
+    const exec = await executeTool(tool);
+
+    expect(callRunScript).not.toHaveBeenCalled();
+    expect(exec.ok).toBe(false);
+    expect(exec.errorCode).toBe('UNKNOWN_COMMAND');
   });
 
   it('turns a transport throw into a BRIDGE_ERROR tool_result instead of throwing', async () => {

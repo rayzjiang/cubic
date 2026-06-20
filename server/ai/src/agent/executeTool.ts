@@ -1,6 +1,7 @@
 import { bridgeClient } from '../bridge/client.js';
 import { sessionCache } from '../context/cache.js';
 import { describeToolCall } from './events.js';
+import { COMMAND_PARAMS, type CommandSpec } from '../tools/command-params.js';
 import type { ToolUse, ToolResultBlock } from '../llm/types.js';
 
 /**
@@ -19,6 +20,20 @@ const READ_ONLY_COMMANDS = new Set([
 
 /** Error codes worth one automatic retry — transient races, not logic errors. */
 const RETRYABLE = new Set(['RENDER_FAILED']);
+
+/**
+ * Why the model may NOT call a command: it's absent from the catalog the model was given, or it's an
+ * internal-only command (`internal: true`) deliberately hidden from that catalog (e.g. saveFrameToPng,
+ * introspectMatchNames). Returns the reason to surface, or null when the command is legitimately
+ * model-facing. This is the single guard that stops the model from reaching a hidden command even if
+ * it guesses the raw name — the bridge allowlist still contains such commands for internal/test callers.
+ */
+function modelCallBlockedReason(command: string): string | null {
+  const spec = (COMMAND_PARAMS as Record<string, CommandSpec>)[command];
+  if (!spec) return `Unknown command "${command}". Call only commands listed in the command catalog.`;
+  if (spec.internal) return `"${command}" is not a callable command. Call only commands listed in the command catalog.`;
+  return null;
+}
 
 export interface ToolExecution {
   /** The tool_result block appended to history for the model to read. */
@@ -149,6 +164,26 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
   // the conversation. So any unexpected internal failure is converted to a readable error tool_result.
   try {
     const { command, args } = toCommandCall(tool);
+
+    // Guard: refuse any command the model shouldn't reach — not in the catalog, or internal-only —
+    // before it can hit the bridge, even a guessed hidden name. Covers the top-level command AND
+    // every batch sub-command (so a hidden command can't ride in inside a batch).
+    let blocked = modelCallBlockedReason(command);
+    if (!blocked && command === 'batch') {
+      const subs = (args.commands as Array<{ command?: string }> | undefined) ?? [];
+      for (const sub of subs) {
+        const reason = modelCallBlockedReason(String(sub?.command ?? ''));
+        if (reason) { blocked = `Blocked batch sub-command — ${reason}`; break; }
+      }
+    }
+    if (blocked) {
+      return {
+        block: { type: 'tool_result', tool_use_id: tool.id, content: JSON.stringify({ status: 'error', errorCode: 'UNKNOWN_COMMAND', message: blocked }), is_error: true },
+        ok: false,
+        errorCode: 'UNKNOWN_COMMAND',
+        retried: false,
+      };
+    }
 
     // restoreProject ("undo that") must be scoped to the current chat's backup folder. The model
     // can't know the session id, so the server injects it here — overriding any value the model
