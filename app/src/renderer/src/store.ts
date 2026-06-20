@@ -85,6 +85,13 @@ interface ChatState {
   conversations: ConversationMeta[]
   listLoaded: boolean
   sidebarCollapsed: boolean
+  // ── Project-switch (Cubic mirrors AE) ──
+  // `projectPath` is the project currently DISPLAYED; `liveProjectPath` is the project actually open in AE.
+  // Every `conversations` message reflects live AE, so after each adopt the two are equal — Cubic always
+  // shows the open project. A real in-AE switch auto-follows the now-open project and raises a toast (each
+  // .aep is its own conversation bucket; switching projects just switches buckets). A switch detected while a
+  // turn is running is deferred (we don't update `liveProjectPath` until the turn ends, then auto-follow).
+  liveProjectPath: string | null
   // Brand-new chats that have sent a first message but whose turn hasn't committed to disk yet. The
   // renderer owns these rows (it knows it just sent a message — no AE project lookup needed), so they
   // persist across chat switches like Claude.ai. An entry is dropped once the backend list contains its
@@ -171,6 +178,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
+  liveProjectPath: null,
   pendingNewChats: [],
   ...blankConversation(),
   pendingDeletes: new Set(),
@@ -187,17 +195,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const s = get()
     switch (msg.type) {
       case 'conversations': {
-        // A fresh list reconciles any optimistic deletes (backend sends no success ack). listLoaded
-        // flips the initial loading screen off once the first list lands (no UI-before-data flash).
-        // Drop any pending new-chat row the backend now has persisted (its real row takes over).
-        const committed = new Set(msg.conversations.map((c) => c.id))
-        set({
-          conversations: msg.conversations,
-          projectPath: msg.projectPath,
-          listLoaded: true,
-          pendingDeletes: new Set(),
-          pendingNewChats: s.pendingNewChats.filter((p) => !committed.has(p.id)),
-        })
+        // Every `conversations` message reflects the project AE actually has open → mirror it as the live
+        // path (the basis for switch detection). After any adopt, projectPath === liveProjectPath: Cubic
+        // always shows the open project.
+        const live = msg.projectPath
+        const liveChanged = s.listLoaded && live !== s.liveProjectPath
+        // Adopt the live project's list into the displayed view: reconcile optimistic deletes (no success
+        // ack), flip the initial loading screen off, drop any now-persisted pending new-chat row.
+        const adopt = (): void => {
+          const committed = new Set(msg.conversations.map((c) => c.id))
+          set({
+            conversations: msg.conversations,
+            projectPath: live,
+            liveProjectPath: live,
+            listLoaded: true,
+            pendingDeletes: new Set(),
+            pendingNewChats: s.pendingNewChats.filter((p) => !committed.has(p.id)),
+          })
+        }
+
+        // First list of the session — establish the baseline; never a "switch" (guards the restore-into-
+        // chat path, where projectPath is still '').
+        if (!s.listLoaded) { adopt(); break }
+
+        // A switch detected WHILE A TURN IS RUNNING → defer silently. Don't yank the user out of the live
+        // turn or swap the sidebar; and crucially DON'T update `liveProjectPath`, so the list that arrives
+        // after the turn ends still reads as a switch and auto-follows then (with its toast).
+        if (liveChanged && s.running) break
+
+        // Untitled project just got SAVED ('' → '/path'): same project gaining a name, not a switch. Adopt
+        // the new path but keep the current chat in place (its first/next turn rekeys it on the backend).
+        if (liveChanged && s.liveProjectPath === '') { adopt(); break }
+
+        // A real in-AE project switch (File>Open / Increment-and-Save / recovery). Auto-follow the now-open
+        // project PRESERVING the view (on a chat, a fresh chat for it; on Home, just its list) and surface a
+        // toast so the change isn't silent. Each .aep is its own conversation bucket.
+        if (liveChanged) {
+          adopt()
+          get().addToast(`After Effects switched to ${live.split('/').pop() || 'an untitled project'}`)
+          if (s.view === 'chat' && s.sessionId) get().newChat()
+          break
+        }
+
+        // Same live project, normal refresh (a `done`/`cancelled`/delete/rename push, or AE returning to the
+        // project we're on) → just adopt the fresh list.
+        adopt()
         break
       }
       case 'history':

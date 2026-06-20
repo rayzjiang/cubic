@@ -1,4 +1,4 @@
-import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, type AgentEvent, type Message } from "cubic-ai";
+import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, getProjectInfo, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
 import { appendTurn, appendCompactionMarker, truncateToBeforeTurn, loadSession, loadDisplayMessages, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
@@ -34,22 +34,35 @@ const chatSockets = new Set<WebSocket>();
 
 /**
  * Current AE project path for keying the conversation on disk — returns `string | null`:
- *   - `null`  → couldn't determine (worker not connected, or `getProjectInfo` threw). Callers must NOT
- *               treat this as a definite project; falling back to the last-known path keeps the sidebar
- *               from being wiped by a momentary no-answer (the regression that filed a new chat under "").
+ *   - `null`  → couldn't determine (worker not connected, or `getProjectInfo` threw/returned an error).
+ *               Callers must NOT treat this as a definite project; falling back to the last-known path
+ *               keeps the sidebar from being wiped by a momentary no-answer (the regression that filed a
+ *               new chat under "").
  *   - `""`    → determined: a genuinely unsaved/untitled project (the real `_untitled` bucket).
  *   - `"/…"`  → determined: a saved project path.
+ * Reads UNCACHED (raw `getProjectInfo`, not `sessionCache`): the cache only invalidates after mutation
+ * turns, so it would mask an in-AE project switch — and the sidebar list / focus refresh must see the
+ * truly-open project. A `{status:"error"}` body (a handler that threw — the bridge passes it through as a
+ * successful result, so `.path` is undefined) is treated as "couldn't determine" (null), NOT as a
+ * definite unsaved project — otherwise a transient handler error would wipe the sidebar to `_untitled`.
  * Fail-fast when the worker isn't connected (no 3s wait) so startup never blocks; the real list is
  * pushed on the bridge 'connect' event once the path becomes resolvable.
  */
 async function resolveProjectPath(): Promise<string | null> {
   if (!bridge.isConnected()) return null;
   try {
-    return (await sessionCache.getProjectInfo()).path ?? "";
+    const info = (await getProjectInfo()) as { path?: unknown; status?: unknown };
+    if (!info || info.status === "error" || typeof info.path !== "string") return null;
+    return info.path; // "" = genuinely unsaved (real _untitled bucket); "/…" = saved path
   } catch {
     return null;
   }
 }
+
+// Last project path the sidebar resolved to. When a definite resolve differs from this (an in-AE project
+// switch), the cached per-turn live state (`getProjectInfo`/comps) belongs to the OLD project, so we
+// invalidate it — otherwise the first chat in the newly-opened project would inject stale `<live_ae_state>`.
+let lastResolvedProjectPath: string | null = null;
 
 /**
  * Send the current project's conversation list to one socket (the `list` reply + the connect push).
@@ -62,7 +75,14 @@ async function sendConversations(ws: WebSocket): Promise<void> {
   // No-answer guard: a `null` resolve (AE not connected / didn't answer) keeps the LAST-KNOWN project's
   // list instead of wiping to "". A definite "" (genuinely unsaved project) still shows its `_untitled`
   // bucket correctly. Only a definite resolve ever changes which project the sidebar reflects.
-  const projectPath = (await resolveProjectPath()) ?? (lastActiveProjectPath() ?? "");
+  const resolved = await resolveProjectPath();
+  const projectPath = resolved ?? (lastActiveProjectPath() ?? "");
+  // A definite resolve to a NEW project means AE switched projects under us → the cached live state is
+  // stale for the now-open project; drop it so the next turn rebuilds context fresh.
+  if (resolved !== null && resolved !== lastResolvedProjectPath) {
+    lastResolvedProjectPath = resolved;
+    sessionCache.invalidate();
+  }
   try {
     ws.send(JSON.stringify({ type: "conversations", projectPath, conversations: listConversations(projectPath) }));
   } catch { /* socket gone */ }
@@ -142,6 +162,10 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   // chat's stored path, then the last-active project — never key an append under a bogus value.
   const stored = getConversation(session.id);
   const projectPath = (await resolveProjectPath()) ?? stored?.projectPath ?? lastActiveProjectPath() ?? "";
+  // Rekey on a path change. With the pre-turn wrong-project guard above, the only path change that can reach
+  // here is unsaved → saved (stored.projectPath was ""): a chat started in an untitled project that the user
+  // then saved. A real saved→saved switch is rejected before the turn runs, so this no longer silently
+  // migrates a chat to a different project.
   if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
     rekey(session.id, stored.projectPath, projectPath);
   }
@@ -327,6 +351,23 @@ export function registerAgentChat(): void {
     if (session.running) {
       session.pendingMessages.push({ id: msg.id ?? nextQueueId(), text: msg.text });
       return;
+    }
+
+    // Wrong-project guard (authoritative backstop): refuse to run a turn against a project AE doesn't have
+    // open. A chat bound to a SAVED project whose path isn't the one currently open in AE would otherwise
+    // edit the wrong project (and the post-turn rekey would silently migrate the chat). Reject BEFORE any
+    // model call so no credit is spent. The renderer normally prevents this (it locks the composer in that
+    // state); this catches paths it can't see — e.g. a reload while AE is on a different project. A brand-
+    // new chat (no stored entry) is always allowed → it binds to whatever's open. An UNTITLED-project chat
+    // (stored.projectPath === "") is also allowed → it legitimately adopts the project on first save
+    // (unsaved → saved rekey in runTurnAndPersist, which is now the only case that rekey ever fires for).
+    const stored = getConversation(id);
+    if (stored && stored.projectPath !== "") {
+      const live = await resolveProjectPath();
+      if (live !== null && encodeProjectPath(stored.projectPath) !== encodeProjectPath(live)) {
+        emit({ type: "error", message: `This chat belongs to ${stored.projectPath.split("/").pop()}, which isn't open in After Effects. Reopen it, or start a new chat in the current project.` });
+        return;
+      }
     }
 
     await runTurnAndPersist(session, msg.text, emit);

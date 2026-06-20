@@ -392,6 +392,7 @@ function _dispatchSwitch(command, args) {
         case "saveProject":              return saveProject(args);
         case "backupProject":            return backupProject(args);
         case "restoreProject":           return restoreProject(args);
+        case "openProject":              return openProject(args);
         // animation.jsx
         case "getLayerKeyframes":        return getLayerKeyframes(args);
         case "setLayerKeyframe":         return setLayerKeyframe(args);
