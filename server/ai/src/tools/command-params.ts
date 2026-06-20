@@ -169,6 +169,12 @@ export const COMMAND_PARAMS = {
     params: { layerIndices: 'array of int (1-based)', axis: 'horizontal|vertical (default vertical)', gap: 'float px between adjacent bounding boxes (optional; omit for a comfy proportional gap)', reference: 'COMPOSITION|SELECTION (default COMPOSITION)' },
     required: ['layerIndices'],
   },
+  fitToFrame: {
+    domain: 'Layers',
+    summary: 'Scale footage/layers to the comp frame (bounding-box-aware), then center. Use for "fit to frame", "fill the frame", "scale to fit/fill" — never hand-set Scale/Position. fit = contain (whole layer visible); fill = cover (frame filled, edges cropped); stretch = exact fit, may distort. offset nudges from center.',
+    params: { layerIndices: 'array of int (1-based)', mode: 'fit|fill|stretch (default fit)', offset: '[x,y] px nudge from center (optional)' },
+    required: ['layerIndices'],
+  },
   sequenceLayers: {
     domain: 'Layers',
     summary: 'Stagger layer start times in sequence.',
@@ -183,6 +189,12 @@ export const COMMAND_PARAMS = {
     domain: 'Layers',
     summary: 'Trim a layer in/out (mode or explicit points).',
     params: { mode: 'currentTimeIn|currentTimeOut (omit for explicit)', inPoint: 'float seconds', outPoint: 'float seconds', startTime: 'float seconds' },
+  },
+  retimeClip: {
+    domain: 'Layers',
+    summary: 'Change a clip\'s playback timing — use for "speed up / slow down / 2x / slow-mo", "freeze frame", "play in reverse". Never hand-roll time-remap keyframes. mode speed: speed>1 faster, <1 slow-mo (auto frame-blend); mode freeze: holds one frame for the whole layer (atTime = which frame, default playhead); mode reverse: plays backwards.',
+    params: { mode: 'speed|freeze|reverse', speed: 'float (speed mode; 2=2x, 0.5=half)', atTime: 'float seconds (freeze mode; default playhead)' },
+    required: ['mode'],
   },
   setTimeRemapEnabled: { domain: 'Layers', summary: 'Enable/disable time remapping on a layer.', params: { enabled: 'bool' }, required: ['enabled'] },
 
@@ -249,6 +261,12 @@ export const COMMAND_PARAMS = {
     domain: 'Effects',
     summary: 'Apply an effect. Prefer a known effectName (resolves to the right AE matchName for you; don\'t guess matchNames): gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, vibrance. Power use: pass effectMatchName (raw AE matchName) or presetPath. Returns a "warning" if some effectSettings didn\'t apply.',
     params: { effectName: 'string (known effect or AE display name)', effectMatchName: 'string (raw AE matchName, e.g. "ADBE Ramp")', presetPath: 'string (.ffx path)', effectSettings: 'object {propertyName: value}' },
+  },
+  adjustColor: {
+    domain: 'Effects',
+    summary: 'Color correction / grade — use for "warm it up", "fix the exposure", "more contrast/saturation", "cinematic look". Knobs are signed deltas, 0 = no change (drive Lumetri Color). look applies a curated preset. Never improvise a raw effect stack for color. Returns a "warning" if a knob couldn\'t apply.',
+    params: { layerIndices: 'array of int (1-based)', exposure: 'float stops (+ brighter)', contrast: 'float -100..100', saturation: 'float -100..100 (0 neutral)', temperature: 'float -100..100 (+ warmer)', tint: 'float -100..100 (+ magenta)', highlights: 'float -100..100', shadows: 'float -100..100', look: 'warm|cool|teal-orange|vintage|bw|high-contrast' },
+    required: ['layerIndices'],
   },
   applyEffectTemplate: {
     domain: 'Effects',

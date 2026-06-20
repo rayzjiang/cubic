@@ -342,12 +342,14 @@ function _dispatchSwitch(command, args) {
         case "batchSetLayerProperties":  return batchSetLayerProperties(args);
         case "splitLayer":               return splitLayer(args);
         case "trimLayer":                return trimLayer(args);
+        case "retimeClip":               return retimeClip(args);
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "centerAnchorPoint":        return centerAnchorPoint(args);
         case "setAnchorPoint":           return setAnchorPoint(args);
         case "alignLayers":              return alignLayers(args);
         case "distributeLayers":         return distributeLayers(args);
+        case "fitToFrame":               return fitToFrame(args);
         case "sequenceLayers":           return sequenceLayers(args);
         case "setTimeRemapEnabled":      return setTimeRemapEnabled(args);
         case "deleteLayer":              return deleteLayer(args);
@@ -398,6 +400,7 @@ function _dispatchSwitch(command, args) {
         // effects.jsx
         case "getLayerEffects":          return getLayerEffects(args);
         case "applyEffect":              return applyEffect(args);
+        case "adjustColor":              return adjustColor(args);
         case "applyEffectTemplate":      return applyEffectTemplate(args);
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);

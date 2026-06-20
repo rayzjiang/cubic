@@ -214,6 +214,166 @@ function applyEffect(args) {
     }
 }
 
+// ── U: adjustColor ─────────────────────────────────────────────────────────────
+//
+// Deterministic color correction/grade. Knobs (signed, 0 = no change) drive Lumetri Color (the
+// AE/Premiere standard — native temperature/white-balance, exposure, contrast, highlights/shadows,
+// saturation in one effect). Per the verified-or-fallback design, each knob that Lumetri can't apply
+// falls back to an already-verified primitive effect where one exists, and anything that still can't
+// apply is reported honestly via a warning (never a silent miss). `look` is a curated knob preset.
+
+// Curated looks → knob presets. Explicit knobs override these.
+var COLOR_LOOKS = {
+    "warm":          { temperature: 20 },
+    "cool":          { temperature: -20 },
+    "teal-orange":   { temperature: 10, tint: -5, contrast: 15, saturation: 10 },
+    "vintage":       { temperature: 12, contrast: -10, saturation: -20, exposure: 0.1 },
+    "bw":            { saturation: -100 },
+    "high-contrast": { contrast: 30 }
+};
+
+// Lumetri neutral value per knob (the value that means "no change"): Saturation is 100-neutral in
+// Lumetri, everything else is 0-neutral. A knob is added to its neutral before being written.
+var LUMETRI_NEUTRAL = { exposure: 0, contrast: 0, saturation: 100, temperature: 0, tint: 0, highlights: 0, shadows: 0 };
+// Lumetri property display names per knob (found by DFS so the group nesting doesn't matter).
+var LUMETRI_PROP = { exposure: "Exposure", contrast: "Contrast", saturation: "Saturation", temperature: "Temperature", tint: "Tint", highlights: "Highlights", shadows: "Shadows" };
+
+// Depth-first search for a settable property by display name anywhere in an effect's tree.
+// Lumetri nests Temperature/Tint under White Balance and Exposure/Contrast/etc. under Tone, so a
+// flat property(name) lookup misses them — recurse instead.
+function _findPropByName(group, name) {
+    for (var i = 1; i <= group.numProperties; i++) {
+        var p = group.property(i);
+        if (p.name.toLowerCase() === name.toLowerCase() && p.propertyType === PropertyType.PROPERTY) { return p; }
+        if (p.numProperties && p.numProperties > 0) {
+            var found = _findPropByName(p, name);
+            if (found) { return found; }
+        }
+    }
+    return null;
+}
+
+// Find an existing effect on a layer by matchName (so re-grading reuses one Lumetri, never stacks).
+function _findExistingEffect(layer, matchName) {
+    var fx = layer.property("Effects");
+    for (var i = 1; i <= fx.numProperties; i++) {
+        if (fx.property(i).matchName === matchName) { return fx.property(i); }
+    }
+    return null;
+}
+
+function adjustColor(args) {
+    var addedEffects = [];  // tracked across all layers for atomic-create rollback (see catch)
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+
+        // Merge look preset (if any) with explicit knobs (explicit wins).
+        var knobs = {};
+        if (args.look) {
+            var preset = COLOR_LOOKS[String(args.look).toLowerCase()];
+            if (!preset) {
+                var lookKeys = [];
+                for (var lk in COLOR_LOOKS) { if (COLOR_LOOKS.hasOwnProperty(lk)) lookKeys.push(lk); }
+                throw _err(ERROR_CODES.INVALID_ARGS, "look '" + args.look + "' is invalid. Valid: " + lookKeys.join(", ") + ".");
+            }
+            for (var pk in preset) { if (preset.hasOwnProperty(pk)) knobs[pk] = preset[pk]; }
+        }
+        // Read each knob explicitly (literal args.X reads — keeps the drift guard honest).
+        var explicit = {
+            exposure: args.exposure, contrast: args.contrast, saturation: args.saturation,
+            temperature: args.temperature, tint: args.tint, highlights: args.highlights, shadows: args.shadows
+        };
+        var KNOB_NAMES = ["exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"];
+        for (var ki = 0; ki < KNOB_NAMES.length; ki++) {
+            var kn = KNOB_NAMES[ki];
+            if (explicit[kn] !== undefined && explicit[kn] !== null) { knobs[kn] = parseFloat(explicit[kn]); }
+        }
+        var hasKnob = false;
+        for (var hk in knobs) { if (knobs.hasOwnProperty(hk)) { hasKnob = true; break; } }
+        if (!hasKnob) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Specify at least one adjustment (exposure, contrast, saturation, temperature, tint, highlights, shadows) or a look.");
+        }
+
+        // Knobs with no Lumetri-free fallback — reported if Lumetri can't take them.
+        var FALLBACK = { contrast: "brightness-contrast", saturation: "vibrance", exposure: "brightness-contrast" };
+
+        var perLayer = [];
+        var unappliedAny = [];
+
+        for (var li = 0; li < layerIndices.length; li++) {
+            var idx = layerIndices[li];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            var layer = comp.layer(idx);
+
+            // Reuse an existing Lumetri on this layer; otherwise add one. A very old AE without
+            // Lumetri throws here → lumetri stays null and every knob takes its fallback path.
+            var lumetri = _findExistingEffect(layer, "ADBE Lumetri");
+            if (!lumetri) {
+                try { lumetri = layer.Effects.addProperty("ADBE Lumetri"); addedEffects.push(lumetri); }
+                catch (eLum) { lumetri = null; }
+            }
+
+            var applied = [];
+            var unapplied = [];
+            for (var kk in knobs) {
+                if (!knobs.hasOwnProperty(kk)) continue;
+                var raw = knobs[kk];
+                var set = false;
+                if (lumetri) {
+                    var prop = _findPropByName(lumetri, LUMETRI_PROP[kk]);
+                    if (prop && prop.setValue) {
+                        try { prop.setValue(LUMETRI_NEUTRAL[kk] + raw); set = true; } catch (eSet) {}
+                    }
+                }
+                if (!set && FALLBACK[kk]) {
+                    // Fallback to a verified primitive (matchName comes from EFFECT_DICT, never a literal).
+                    var fbKey = FALLBACK[kk];
+                    var fbEntry = EFFECT_DICT[fbKey];
+                    var fbEffect = _findExistingEffect(layer, fbEntry.matchName);
+                    if (!fbEffect) {
+                        try { fbEffect = layer.Effects.addProperty(fbEntry.matchName); addedEffects.push(fbEffect); } catch (eFb) { fbEffect = null; }
+                    }
+                    if (fbEffect) {
+                        // exposure→Brightness (≈20 units/stop); contrast→Contrast; saturation→Saturation.
+                        var fbProp = (kk === "exposure") ? "Brightness" : (kk === "contrast") ? "Contrast" : "Saturation";
+                        var fbVal = (kk === "exposure") ? raw * 20 : raw;
+                        var fail = applyEffectSettings(fbEffect, _objOf(fbProp, fbVal));
+                        if (fail.length === 0) { set = true; }
+                    }
+                }
+                if (set) { applied.push(kk); } else { unapplied.push(kk); }
+            }
+            if (unapplied.length > 0) {
+                for (var ua = 0; ua < unapplied.length; ua++) { unappliedAny.push(unapplied[ua]); }
+            }
+            perLayer.push({ index: layer.index, name: layer.name, applied: applied, unapplied: unapplied });
+        }
+
+        var warning;
+        if (unappliedAny.length > 0) {
+            warning = "Couldn't apply: " + unappliedAny.join(", ") + " (needs Lumetri Color, unavailable on this layer/AE).";
+        }
+        return JSON.stringify({
+            status: "success",
+            message: "Adjusted color on " + layerIndices.length + " layer(s)" + (args.look ? " (look: " + args.look + ")" : "") + ".",
+            look: args.look || undefined,
+            layers: perLayer,
+            warning: warning
+        }, null, 2);
+    } catch (error) {
+        // Roll back every effect this call added so a failure leaves no orphan grade.
+        for (var r = addedEffects.length - 1; r >= 0; r--) { try { addedEffects[r].remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// Tiny helper: a one-key settings object (keeps adjustColor's fallback path readable).
+function _objOf(k, v) { var o = {}; o[k] = v; return o; }
+
 // ── C: applyEffectTemplate ────────────────────────────────────────────────────
 //
 // A thin layer over EFFECT_DICT / EFFECT_TEMPLATES (defined at the top of this file — the single

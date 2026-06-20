@@ -25,6 +25,8 @@ const CANDIDATES = [
   'ADBE Gaussian Blur 2', 'ADBE Motion Blur', 'ADBE Color Balance (HLS)',
   'ADBE Brightness & Contrast 2', 'ADBE CurvesCustom', 'ADBE Glo2',
   'ADBE Drop Shadow', 'ADBE Vibrance',
+  // adjustColor's grade engine (knobs reached by display-name DFS, not by property matchName):
+  'ADBE Lumetri',
   // known-wrong (should report valid:false):
   'ADBE Glow', 'ADBE Directional Blur',
 ];

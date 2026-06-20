@@ -1300,6 +1300,103 @@ function trimLayer(args) {
     }
 }
 
+// U: retimeClip — change a clip's playback timing without hand-rolling time-remap keyframes.
+// mode: speed (uniform rate via time-stretch; speed=2 → 2x faster, 0.5 → slow-mo) |
+//       freeze (hold one frame for the whole layer, via a single held Time Remap key) |
+//       reverse (play backwards via negative time-stretch).
+// On slow-mo (speed < 1) frame blending is auto-enabled so the in-between frames stay smooth.
+function retimeClip(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+        var mode = (args.mode || "").toLowerCase();
+
+        if (mode !== "speed" && mode !== "freeze" && mode !== "reverse") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "mode must be speed, freeze, or reverse.");
+        }
+        if (!(layer instanceof AVLayer)) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "retimeClip only works on footage/precomp (AV) layers — not cameras, lights, or nulls.");
+        }
+
+        var previousValues = { stretch: layer.stretch, timeRemapEnabled: layer.timeRemapEnabled, inPoint: layer.inPoint, outPoint: layer.outPoint };
+
+        if (mode === "speed") {
+            var speed = (args.speed !== undefined && args.speed !== null) ? parseFloat(args.speed) : null;
+            if (speed === null || isNaN(speed) || speed <= 0) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "speed must be a positive number (e.g. 2 for 2x, 0.5 for half-speed).");
+            }
+            // Time-stretch is the inverse of speed: 50% stretch = 2x faster, 200% = half-speed.
+            // Preserve any existing reverse (negative stretch) direction.
+            var sign = (layer.stretch < 0) ? -1 : 1;
+            var newStretch = sign * (100 / speed);
+            if (_valuesEqual(newStretch, layer.stretch)) {
+                return JSON.stringify({ status: "noop", message: "Layer is already at that speed." }, null, 2);
+            }
+            layer.stretch = newStretch;
+
+            // Smooth slow-mo: auto-enable frame blending when playing slower than real time.
+            var frameBlended = false;
+            if (speed < 1) {
+                try { layer.frameBlendingType = FrameBlendingType.PIXEL_MOTION; frameBlended = true; }
+                catch (eFB) { try { layer.frameBlendingType = FrameBlendingType.FRAME_MIX; frameBlended = true; } catch (eFB2) {} }
+                try { comp.frameBlending = true; } catch (eCFB) {}
+            }
+            return JSON.stringify({
+                status: "success",
+                message: "Set speed to " + speed + "x" + (frameBlended ? " (frame blending on for smooth slow-mo)" : "") + ".",
+                layer: { index: layer.index, name: layer.name, stretch: layer.stretch, outPoint: layer.outPoint },
+                frameBlended: frameBlended,
+                previousValues: previousValues
+            }, null, 2);
+        }
+
+        if (mode === "reverse") {
+            // Negative time-stretch reverses playback while preserving the current speed magnitude.
+            if (layer.stretch < 0) {
+                return JSON.stringify({ status: "noop", message: "Layer is already playing in reverse." }, null, 2);
+            }
+            layer.stretch = -Math.abs(layer.stretch);
+            return JSON.stringify({
+                status: "success",
+                message: "Reversed playback.",
+                layer: { index: layer.index, name: layer.name, stretch: layer.stretch, inPoint: layer.inPoint, outPoint: layer.outPoint },
+                previousValues: previousValues
+            }, null, 2);
+        }
+
+        // mode === "freeze": hold a single source frame for the whole layer via Time Remap.
+        if (!layer.canSetTimeRemapEnabled) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "This layer can't be frozen (time remapping unsupported — use a footage or precomp layer, not a solid or still).");
+        }
+        var freezeAt = (args.atTime !== undefined && args.atTime !== null) ? parseFloat(args.atTime) : comp.time;
+        // Clamp the freeze point into the layer's visible range.
+        if (freezeAt < layer.inPoint) freezeAt = layer.inPoint;
+        if (freezeAt > layer.outPoint) freezeAt = layer.outPoint;
+
+        if (!layer.timeRemapEnabled) { layer.timeRemapEnabled = true; }  // AE auto-adds keys here
+        var trp = layer.property("Time Remap");
+        // Source time currently shown at the freeze point — the frame we hold.
+        var srcTime = trp.valueAtTime(freezeAt, false);
+        // Collapse to a SINGLE held key. Never empty the property: with 0 keys AE hides Time Remap and
+        // the next setValue throws "property or a parent property is hidden" — so we leave one key, then
+        // overwrite its value, rather than removing all and re-adding.
+        while (trp.numKeys > 1) { trp.removeKey(trp.numKeys); }
+        if (trp.numKeys === 1) { trp.setValueAtKey(1, srcTime); }
+        else { trp.setValueAtTime(layer.inPoint, srcTime); }
+        try { trp.setInterpolationTypeAtKey(1, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD); } catch (eHold) {}
+
+        return JSON.stringify({
+            status: "success",
+            message: "Froze the frame at " + freezeAt.toFixed(3) + "s.",
+            layer: { index: layer.index, name: layer.name, freezeTime: freezeAt, sourceTime: srcTime },
+            previousValues: previousValues
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // U: setTimeRemapEnabled — enable/disable time remapping on a layer (AVLayer only)
 function setTimeRemapEnabled(args) {
     try {
@@ -1835,6 +1932,98 @@ function distributeLayers(args) {
             reference: reference,
             modifiedLayers: modifiedLayers,
             previousPositions: previousPositions
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: fitToFrame — scale a layer to the composition frame (bounding-box-aware), then center it.
+// mode: fit (contain — whole layer visible) | fill (cover — frame fully covered, edges cropped) |
+//       stretch (independent x/y — fills exactly, may distort). offset: [x,y] px nudge from center.
+// Computes scale from the layer's natural source rect vs the comp size, so the model never
+// hand-computes scale %. Centering reuses the same anchor-aware delta math as alignLayers.
+function fitToFrame(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        var mode = (args.mode || "fit").toLowerCase();
+        var offset = args.offset || [0, 0];
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        if (mode !== "fit" && mode !== "fill" && mode !== "stretch") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "mode must be fit, fill, or stretch.");
+        }
+        var offX = (offset && offset.length > 0) ? parseFloat(offset[0]) : 0;
+        var offY = (offset && offset.length > 1) ? parseFloat(offset[1]) : 0;
+
+        // Resolve layers
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            layers.push(comp.layer(idx));
+        }
+
+        var compCenterX = comp.width / 2;
+        var compCenterY = comp.height / 2;
+
+        var previousValues = [];
+        var modifiedLayers = [];
+        var anyChanged = false;
+
+        for (var li = 0; li < layers.length; li++) {
+            var layer = layers[li];
+            // Natural (unscaled) source bounds at the current time.
+            var rect = layer.sourceRectAtTime(comp.time, false);
+            if (rect.width <= 0 || rect.height <= 0) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' has no measurable bounds to fit.");
+            }
+
+            var scaleProp = layer.property("Scale");
+            var posProp = layer.property("Position");
+            var prevScale = scaleProp.value;
+            var prevPos = posProp.value;
+            previousValues.push({ index: layer.index, name: layer.name, scale: prevScale, position: prevPos });
+
+            // Scale factors (percent) to make the source exactly span each comp axis at 100% = natural size.
+            var ratioX = (comp.width / rect.width) * 100;
+            var ratioY = (comp.height / rect.height) * 100;
+            var sx, sy;
+            if (mode === "stretch")    { sx = ratioX; sy = ratioY; }
+            else if (mode === "fill")  { sx = sy = Math.max(ratioX, ratioY); }
+            else                       { sx = sy = Math.min(ratioX, ratioY); } // fit (contain)
+
+            // Write scale via the current value as a template so z survives (AE Scale is [x,y,z]).
+            var newScale = scaleProp.value;
+            newScale[0] = sx;
+            newScale[1] = sy;
+            scaleProp.setValue(newScale);
+
+            // Center anchor-awarely: recompute the bbox at the new scale, then shift Position so the
+            // bbox center lands on the comp center (+ offset). Same delta math as alignLayers.
+            var bbox = _getCompBbox(comp, layer);
+            var deltaX = (compCenterX + offX) - (bbox.left + bbox.right) / 2;
+            var deltaY = (compCenterY + offY) - (bbox.top + bbox.bottom) / 2;
+            var newPos = layer.threeDLayer ? [prevPos[0] + deltaX, prevPos[1] + deltaY, prevPos[2]] : [prevPos[0] + deltaX, prevPos[1] + deltaY];
+            posProp.setValue(newPos);
+
+            if (!_valuesEqual(newScale, prevScale) || !_valuesEqual(newPos, prevPos)) { anyChanged = true; }
+            modifiedLayers.push({ index: layer.index, name: layer.name, scale: newScale, position: newPos });
+        }
+
+        if (!anyChanged) {
+            return JSON.stringify({ status: "noop", message: "Those layers already fit the frame." }, null, 2);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Fit " + layers.length + " layer(s) to frame (" + mode + ").",
+            mode: mode,
+            modifiedLayers: modifiedLayers,
+            previousValues: previousValues
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

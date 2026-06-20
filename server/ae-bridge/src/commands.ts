@@ -46,11 +46,13 @@ export const COMMANDS: readonly string[] = [
   "centerAnchorPoint",
   "alignLayers",
   "distributeLayers",
+  "fitToFrame",
   "sequenceLayers",
   // Layers — time ops
   "splitLayer",
   "mergeLayer",
   "trimLayer",
+  "retimeClip",
   "setTimeRemapEnabled",
   // Layers — nesting / mattes
   "precompose",
@@ -73,6 +75,7 @@ export const COMMANDS: readonly string[] = [
   // Effects
   "getLayerEffects",
   "applyEffect",
+  "adjustColor",
   "applyEffectTemplate",
   "setEffectProperty",
   "deleteEffect",
