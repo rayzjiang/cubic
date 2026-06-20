@@ -334,13 +334,14 @@ function extractShapes(args) {
     var createdLayers = [];  // tracked for atomic-create rollback
     try {
         var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
         var layer = resolved.layer;
 
         var contents = layer.property("Contents");
         if (!contents) { throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' has no Contents — is it a shape layer?"); }
 
-        // Count the top-level vector groups (every property access guarded — a merged layer can hold
-        // groups that share a name, so we select by ORDINAL position, never by name).
+        // Count the top-level vector groups (every access guarded — a merged layer can hold groups that
+        // share a name, so we select by ORDINAL position below, never by name).
         var groupCount = _countShapeGroups(contents);
         if (groupCount < 2) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Layer has " + groupCount + " shape group(s) — need at least 2 to extract.");
@@ -348,15 +349,17 @@ function extractShapes(args) {
 
         var deleteSource = args.deleteSource === true;
         var prevEnabled = layer.enabled;
+        var srcName = layer.name;
+        // duplicate() rebuilds the comp's layer collection and INVALIDATES this cached `layer` ref, so
+        // capture a stable id now and re-resolve the source fresh before touching it after the loop.
+        var srcId = null; try { srcId = layer.id; } catch (e) {}
         var out = [];
 
-        // For each group ordinal, duplicate the layer and delete every OTHER top-level group on the dup
-        // (matched by ordinal index, not name — robust to duplicate group names).
+        // For each group ordinal, duplicate the layer and delete every OTHER top-level group on the dup.
         for (var g = 0; g < groupCount; g++) {
             var dup = layer.duplicate();
             createdLayers.push(dup);
             var dupContents = dup.property("Contents");
-            // Forward list of this dup's group child-indices (guarded).
             var dupGroupIdx = [];
             for (var f = 1; f <= dupContents.numProperties; f++) {
                 var isG = false; try { isG = (dupContents.property(f).matchName === "ADBE Vector Group"); } catch (e) {}
@@ -365,24 +368,36 @@ function extractShapes(args) {
             var keepChild = dupGroupIdx[g];
             var keepName = "Shape " + (g + 1);
             try { keepName = dupContents.property(keepChild).name; } catch (e) {}
-            // Remove every other group by child-index, high→low so indices stay valid.
             for (var r = dupGroupIdx.length - 1; r >= 0; r--) {
                 if (dupGroupIdx[r] !== keepChild) { try { dupContents.property(dupGroupIdx[r]).remove(); } catch (e2) {} }
             }
-            dup.name = layer.name + " [" + keepName + "]";
+            try { dup.name = srcName + " [" + keepName + "]"; } catch (e) {}
             out.push({ index: dup.index, name: dup.name, group: keepName });
         }
 
-        if (deleteSource) { layer.remove(); } else { layer.enabled = false; }
+        // Re-resolve the source by its stable id (the cached `layer` ref is now stale post-duplicate),
+        // then hide/remove it. Non-fatal: the extracted layers are the deliverable, so a failed cleanup
+        // never fails the whole call.
+        var src = null;
+        if (srcId !== null) {
+            for (var li = 1; li <= comp.numLayers; li++) { try { if (comp.layer(li).id === srcId) { src = comp.layer(li); break; } } catch (e) {} }
+        }
+        var sourceHandled = true;
+        if (src) {
+            if (deleteSource) { try { src.remove(); } catch (e) { try { src.enabled = false; } catch (e2) { sourceHandled = false; } } }
+            else { try { src.enabled = false; } catch (e) { sourceHandled = false; } }
+        } else { sourceHandled = false; }
 
-        return JSON.stringify({
+        var resultObj = {
             status: "success",
-            message: "Extracted " + out.length + " shape group(s) from '" + layer.name + "'.",
+            message: "Extracted " + out.length + " shape group(s) from '" + srcName + "'.",
             createdLayers: out,
             previousValues: { sourceEnabled: prevEnabled, sourceDeleted: deleteSource }
-        }, null, 2);
+        };
+        if (!sourceHandled) { resultObj.warning = "Extracted layers created, but couldn't hide/remove the source — remove it manually."; }
+        return JSON.stringify(resultObj, null, 2);
     } catch (error) {
-        for (var r = createdLayers.length - 1; r >= 0; r--) { try { createdLayers[r].remove(); } catch (e2) {} }
+        for (var rb = createdLayers.length - 1; rb >= 0; rb--) { try { createdLayers[rb].remove(); } catch (e2) {} }
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
