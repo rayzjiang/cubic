@@ -68,6 +68,11 @@ export const COMMAND_PARAMS = {
     summary: 'Duplicate a composition (compName/compIndex).',
     params: { newName: 'string', deep: 'bool — also duplicate nested pre-comps (default false)' },
   },
+  cropComp: {
+    domain: 'Compositions',
+    summary: 'Autocrop a comp to its visible content bounds (union of every layer\'s bbox), shifting content to the new origin — the Motion-Tools "Crop Comp" move. optional padding (px) on all sides.',
+    params: { padding: 'float px — margin kept on all sides (default 0)' },
+  },
 
   // ── Playhead ─────────────────────────────────────────────────────────────
   getCurrentTime: { domain: 'Playhead', summary: 'Get the playhead time (seconds + frames) of a comp.', params: {} },
@@ -150,6 +155,17 @@ export const COMMAND_PARAMS = {
 
   // ── Layers — hierarchy & transform ────────────────────────────────────────
   setLayerParent: { domain: 'Layers', summary: 'Parent a layer (parentIndex/parentName; omit both to unparent).', params: { parentIndex: 'int (1-based)', parentName: 'string' } },
+  addNullToLayers: {
+    domain: 'Layers',
+    summary: 'Add a parent null and parent the layers to it — the canonical control-rig setup. mode "single" = one null centered on the combined bbox; "perLayer" = one null per layer. Centers on the real visual bbox, not raw anchors.',
+    params: { layerIndices: 'array of int (1-based)', mode: 'single|perLayer (default single)', name: 'string (null name; default "Control")' },
+    required: ['layerIndices'],
+  },
+  getLayerColors: {
+    domain: 'Layers',
+    summary: 'Collect a layer\'s colors (text fill + shape fills/strokes) and drop them onto a "Colors" controller null as Color Control swatches (palette extraction). Pass createController:false to just return the colors.',
+    params: { createController: 'bool — build the controller null (default true); false = read-only' },
+  },
   moveLayer: { domain: 'Layers', summary: 'Reorder a layer relative to a target.', params: { targetIndex: 'int (1-based)', targetName: 'string', position: 'before|after (default before)' } },
   setAnchorPoint: {
     domain: 'Layers',
@@ -233,17 +249,33 @@ export const COMMAND_PARAMS = {
   },
   copyKeyframeEasing: {
     domain: 'Keyframes',
-    summary: 'Copy keyframe easing from a source property to a target property.',
-    params: { sourceCompName: 'string', sourceLayerIndex: 'int', sourceLayerName: 'string', targetCompName: 'string', targetLayerIndex: 'int', targetLayerName: 'string', propertyPath: 'array', propertyName: 'string', timeOffset: 'float seconds (default 0)' },
+    summary: 'Copy keyframe easing (and optionally values) from a source property to a target property — the Easings-Manager copy/paste. copyValues:true also pastes the source values onto matched target keys.',
+    params: { sourceCompName: 'string', sourceLayerIndex: 'int', sourceLayerName: 'string', targetCompName: 'string', targetLayerIndex: 'int', targetLayerName: 'string', propertyPath: 'array', propertyName: 'string', timeOffset: 'float seconds (default 0)', copyValues: 'bool — also copy keyframe VALUES, not just easing' },
   },
   removePropertyKeyframes: { domain: 'Keyframes', summary: 'Remove all keyframes on a property (propertyPath/propertyName).', params: { propertyPath: 'array', propertyName: 'string' } },
+  cloneKeyframes: {
+    domain: 'Keyframes',
+    summary: 'Clone a property\'s keyframes to the playhead (or targetTime), preserving values + easing — the Motion-Tools "Clone" move. reverse mirrors their timing. Omit keyIndices to clone all keys.',
+    params: { propertyPath: 'array', propertyName: 'string', keyIndices: 'array of int (1-based; omit for all)', targetTime: 'float seconds (default playhead)', reverse: 'bool — mirror the keyframes in time' },
+  },
+  fixKeyframeTiming: {
+    domain: 'Keyframes',
+    summary: 'Snap every keyframe on a property to the comp frame grid (preserving value + easing) — cleans up sub-frame keys after retiming/scaling. The Motion-Tools "Fix Keys Time" move.',
+    params: { propertyPath: 'array', propertyName: 'string' },
+  },
+  sequenceKeyframes: {
+    domain: 'Keyframes',
+    summary: 'Stagger the EXISTING keyframes of a property across several layers (each layer\'s key-set shifts by n*stagger) — the keyframe-mode Sequencer. Distinct from sequenceLayers, which moves layer START times.',
+    params: { layerIndices: 'array of int (1-based)', propertyPath: 'array', propertyName: 'string', stagger: 'float seconds (default 0.1)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (default TOP_DOWN)' },
+    required: ['layerIndices'],
+  },
 
   // ── Expressions ───────────────────────────────────────────────────────────
   getLayerExpressions: { domain: 'Expressions', summary: 'List expressions on a layer.', params: {} },
   setLayerExpression: {
     domain: 'Expressions',
     summary: 'Set/remove an expression (expressionString OR preset).',
-    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG', presetParams: 'object (preset-specific: amp/freq/decay, fadeIn/fadeOut, ...)' },
+    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG|LOOP_OUT_CONTINUE|LOOP_IN_CONTINUE|LOOP_OUT_OFFSET|LOOP_IN_OFFSET', presetParams: 'object (preset-specific: amp/freq/decay, fadeIn/fadeOut, ...)' },
   },
 
   // ── Masks ─────────────────────────────────────────────────────────────────
@@ -306,6 +338,23 @@ export const COMMAND_PARAMS = {
     required: ['animatorIndex'],
   },
   explodeTextLayer: { domain: 'Text', summary: 'Split a text layer into per-unit layers.', params: { splitMethod: 'CHARACTERS|WORDS|LINES (default CHARACTERS)' } },
+  animateText: {
+    domain: 'Text',
+    summary: 'Animate text in/out in ONE call — kinetic typography. Builds the text animator + range selector + keyframed Offset that drives the reveal across characters/words/lines. Use for "type on", "kinetic type", "words fly up", "typewriter", "reveal the title" — NEVER hand-wire addTextAnimator + setTextAnimatorRangeSelector + setLayerKeyframe. Pick a preset and override knobs as needed. Auto-enables motion blur on positional reveals + an ease-out settle unless ease=linear or motionBlur=false.',
+    params: {
+      preset: 'typewriter|wordByWord|lineByLine|fadeUpByWord|cascade|wave|scaleUp (presets every knob; default typewriter)',
+      animateProps: 'array of: Position|Opacity|Scale|Rotation|Tracking (overrides the preset set)',
+      basedOn: 'characters|charactersExcludingSpaces|words|lines',
+      shape: 'square|rampUp|rampDown|triangle|round|smooth (range-selector shape)',
+      easeHigh: 'float 0-100 (range-selector Ease High)', easeLow: 'float 0-100 (range-selector Ease Low)',
+      startTime: 'float seconds (default 0)', duration: 'float seconds (preset default ~1.5)',
+      ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easeOut)',
+      direction: 'on|off (reveal in vs out; default on)',
+      positionOffset: '[x,y] px the chars travel from (default [0,-100])',
+      scaleFrom: 'float % chars scale up from (default 0)', rotationAmount: 'float deg', trackingAmount: 'float',
+      motionBlur: 'bool (override the auto motion-blur default)', name: 'string (animator name)',
+    },
+  },
   listFonts: { domain: 'Text', summary: 'List installed font families (optional substring filter). Common display names auto-resolve when you set fontFamily; call this to pick a real installed font for vague requests ("a fun font").', params: { filter: 'string — case-insensitive substring to narrow families' } },
 
   // ── Shapes ────────────────────────────────────────────────────────────────
@@ -322,6 +371,22 @@ export const COMMAND_PARAMS = {
     required: ['operatorPath', 'propertyName', 'value'],
   },
   convertToShape: { domain: 'Shapes', summary: 'Convert a text/solid/parametric layer to editable shapes.', params: {} },
+  animateShape: {
+    domain: 'Shapes',
+    summary: 'Write-on / draw-on reveal for a shape layer — finds or adds Trim Paths and keyframes it so the stroke draws on. Use for "draw it on", "reveal the stroke/line", "write-on logo", "animate the path" — NEVER hand-keyframe Trim Paths. Defaults to a clean ease-out draw-on (End 0→100).',
+    params: { trimProperty: 'start|end (which trim end animates; default end)', startValue: 'float 0-100 (default 0)', endValue: 'float 0-100 (default 100)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 1.0)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easeOut)', offset: 'float deg (static Trim Offset)', groupPath: 'array e.g. ["Contents","Group 1","Contents"] (default first group)', overwriteKeyframes: 'bool' },
+  },
+  extractShapes: {
+    domain: 'Shapes',
+    summary: 'Explode a shape layer\'s top-level groups onto separate shape layers (the shape analog of explodeTextLayer) so each can animate independently. Source is hidden unless deleteSource.',
+    params: { deleteSource: 'bool — remove the source instead of hiding it (default false)' },
+  },
+  mergeShapes: {
+    domain: 'Shapes',
+    summary: 'Merge several shape layers into the first one (deep-clones each layer\'s groups, then removes the merged-away layers). Returns a warning for any sub-property it could not copy.',
+    params: { layerIndices: 'array of int (1-based; first is the target)' },
+    required: ['layerIndices'],
+  },
 
   // ── Markers ───────────────────────────────────────────────────────────────
   addMarker: {
@@ -385,8 +450,8 @@ export const COMMAND_PARAMS = {
   // ── Motion recipes & 3D ───────────────────────────────────────────────────
   applyMotionRecipe: {
     domain: 'Motion',
-    summary: 'Apply a juicy motion preset to layers.',
-    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
+    summary: 'Apply a juicy motion preset to layers. To reveal N layers in sequence, pass the whole layerIndices array with a stagger (and orderType for the cascade direction) — one call, not N.',
+    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
     required: ['recipe', 'layerIndices'],
   },
   distributeLayers3D: {
@@ -394,6 +459,17 @@ export const COMMAND_PARAMS = {
     summary: 'Arrange layers in 3D (cylinder or grid).',
     params: { shape: 'cylinder|grid', layerIndices: 'array of int (>=2, 1-based)', center: '[x,y,z]', enable3D: 'bool (default true)', faceCamera: 'bool', overwriteKeyframes: 'bool', radius: 'float (cylinder, default 400)', depthSpacing: 'float (cylinder)', rings: 'int (cylinder)', axis: 'x|y|z (cylinder)', spacing: '[x,y,z] (grid)', rows: 'int (grid)', cols: 'int (grid)' },
     required: ['shape', 'layerIndices'],
+  },
+  cameraMove: {
+    domain: 'Motion',
+    summary: 'Create/animate a camera for a scene move in ONE call — use for "push in", "zoom in on", "orbit around", "parallax", "camera move". Creates a camera if the comp has none (createIfMissing). Keyframes are eased. NEVER hand-keyframe a camera rig for these.',
+    params: { move: 'pushIn|orbit|parallax', startTime: 'float seconds (default 0)', duration: 'float seconds (default 2)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easyEase)', amount: 'float (pushIn: zoom factor ~0.3; orbit: degrees ~30; parallax: pan px ~200)', layerIndices: 'array of int (parallax: the layers to spread in depth)', zoomFrom: 'float (pushIn)', zoomTo: 'float (pushIn)', createIfMissing: 'bool (default true)', overwriteKeyframes: 'bool' },
+    required: ['move'],
+  },
+  createBackground: {
+    domain: 'Motion',
+    summary: 'Add a comp-sized background layer at the BOTTOM of the stack — use for "add a background/backdrop", "gradient background". Solid + optional Gradient Ramp (gradient stop colors via the Ramp effect, the scriptable path). Optional subtle animated drift.',
+    params: { color: '[r,g,b] 0-1 (solid base; default dark)', gradient: 'bool — add a Gradient Ramp (default true)', startColor: '[r,g,b] 0-1', endColor: '[r,g,b] 0-1', gradientShape: 'linear|radial (default linear)', animate: 'bool — subtle drift (default false)', driftAmount: 'float (drift amplitude)', name: 'string (default "Background")' },
   },
 
   // ── Multi-command ─────────────────────────────────────────────────────────

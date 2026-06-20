@@ -416,3 +416,177 @@ function setTextAnimatorRangeSelector(args) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
+
+// ── Kinetic typography ──────────────────────────────────────────────────────
+// animateText builds a complete, reliable text-reveal rig in one call: a Text Animator with the
+// chosen animated properties, a Range Selector (basedOn / shape / Ease High / Ease Low), and the
+// KEYFRAMED selector Offset that actually drives the reveal across the characters. This replaces
+// hand-wiring addTextAnimator + setTextAnimatorRangeSelector + setLayerKeyframe (the error-prone path).
+//
+// How the reveal works: the animator holds the "hidden" state (Opacity 0, a Position offset, a small
+// Scale). The Range Selector (Start=0 End=100, percentage units) selects characters, and Offset is
+// keyframed 0 -> 100 so the selection sweeps OFF the text over `duration` — characters settle from the
+// animated state to their base state left-to-right. Offset=0 = all selected (hidden); Offset=100 =
+// none selected (fully visible at rest). direction "off" reverses it (100 -> 0) for an exit.
+
+// Preset → knob defaults. Caller knobs override any of these (each read as a literal args.X below).
+var TEXT_PRESETS = {
+    typewriter:   { animateProps: ["Opacity"],                       basedOn: "characters", shape: "square", easeHigh: 0,   easeLow: 0,   duration: 1.5 },
+    wordByWord:   { animateProps: ["Opacity", "Position"],           basedOn: "words",      shape: "rampUp", easeHigh: 100, easeLow: 0,   positionOffset: [0, -50], duration: 1.2 },
+    lineByLine:   { animateProps: ["Opacity", "Position"],           basedOn: "lines",      shape: "rampUp", easeHigh: 100, easeLow: 0,   positionOffset: [0, -60], duration: 1.2 },
+    fadeUpByWord: { animateProps: ["Opacity", "Position"],           basedOn: "words",      shape: "smooth", easeHigh: 100, easeLow: 100, positionOffset: [0, -40], duration: 1.5 },
+    cascade:      { animateProps: ["Opacity", "Position", "Scale"],  basedOn: "characters", shape: "smooth", easeHigh: 100, easeLow: 0,   positionOffset: [0, -80], scaleFrom: 60, duration: 1.5 },
+    wave:         { animateProps: ["Position"],                      basedOn: "characters", shape: "smooth", easeHigh: 100, easeLow: 100, positionOffset: [0, -30], duration: 2.0 },
+    scaleUp:      { animateProps: ["Opacity", "Scale"],              basedOn: "characters", shape: "rampUp", easeHigh: 100, easeLow: 0,   scaleFrom: 0,  duration: 1.2 }
+};
+
+// C: animateText — one-call kinetic-typography reveal (preset + overridable knobs).
+function animateText(args) {
+    var animator = null;  // tracked for atomic-create rollback (see catch)
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp  = resolved.comp;
+        var layer = resolved.layer;
+
+        var textProp = layer.property("Text");
+        if (!textProp) { throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' is not a text layer."); }
+
+        // Resolve preset (default typewriter when neither preset nor animateProps given), then let
+        // explicit args override each knob. Every arg is read literally (args.X) for the drift guard.
+        var presetName = args.preset ? String(args.preset) : (args.animateProps ? null : "typewriter");
+        var preset = presetName ? TEXT_PRESETS[presetName] : null;
+        if (presetName && !preset) {
+            var names = [];
+            for (var pn in TEXT_PRESETS) { if (TEXT_PRESETS.hasOwnProperty(pn)) names.push(pn); }
+            throw _err(ERROR_CODES.INVALID_ARGS, "Unknown text preset '" + presetName + "'. Valid: " + names.join(", ") + ".");
+        }
+        var base = preset || {};
+
+        var animateProps   = args.animateProps   !== undefined ? args.animateProps   : (base.animateProps || ["Opacity"]);
+        var basedOn        = args.basedOn         !== undefined ? args.basedOn         : (base.basedOn || "characters");
+        var shape          = args.shape           !== undefined ? args.shape           : (base.shape || "rampUp");
+        var easeHigh       = args.easeHigh        !== undefined ? +args.easeHigh       : (base.easeHigh !== undefined ? base.easeHigh : 0);
+        var easeLow        = args.easeLow         !== undefined ? +args.easeLow        : (base.easeLow !== undefined ? base.easeLow : 0);
+        var startTime      = args.startTime       !== undefined ? +args.startTime      : 0;
+        var duration       = args.duration        !== undefined ? +args.duration       : (base.duration !== undefined ? base.duration : 1.5);
+        var direction      = args.direction       !== undefined ? String(args.direction) : "on";
+        var positionOffset = args.positionOffset  !== undefined ? args.positionOffset  : (base.positionOffset || [0, -100]);
+        var scaleFrom      = args.scaleFrom       !== undefined ? +args.scaleFrom      : (base.scaleFrom !== undefined ? base.scaleFrom : 0);
+        var rotationAmount = args.rotationAmount  !== undefined ? +args.rotationAmount : 0;
+        var trackingAmount = args.trackingAmount  !== undefined ? +args.trackingAmount : 0;
+
+        if (typeof positionOffset === "string") { try { positionOffset = eval("(" + positionOffset + ")"); } catch (e) {} }
+        if (!animateProps || typeof animateProps.length === "undefined" || animateProps.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "animateProps must be a non-empty array (e.g. [\"Opacity\",\"Position\"]).");
+        }
+        if (duration <= 0) { throw _err(ERROR_CODES.INVALID_ARGS, "duration must be > 0."); }
+        if (startTime + duration > comp.duration + 0.001) {
+            throw _err(ERROR_CODES.TIME_OUT_OF_RANGE, "Reveal extends to " + (startTime + duration).toFixed(3) + "s, exceeding comp duration " + comp.duration.toFixed(3) + "s.");
+        }
+
+        // Auto-juice: enable motion blur on positional/scale reveals (unless caller says linear/false),
+        // and default the Offset sweep to a snappy ease-out settle. Honors the literal/linear escape hatch.
+        var ease = args.ease !== undefined ? String(args.ease) : "easeOut";
+        var animatesMotion = false;
+        for (var ap = 0; ap < animateProps.length; ap++) {
+            if (animateProps[ap] === "Position" || animateProps[ap] === "Scale" || animateProps[ap] === "Rotation") { animatesMotion = true; }
+        }
+        var motionBlur = (args.motionBlur !== undefined) ? !!args.motionBlur : (animatesMotion && ease !== "linear");
+
+        var animators = textProp.property("Animators");
+        animator = animators.addProperty("ADBE Text Animator");
+        if (args.name) { animator.name = args.name; }
+
+        // AE's UI auto-creates Range Selector 1 when adding an animator; scripting doesn't.
+        var selectors = animator.property("ADBE Text Selectors");
+        if (selectors.numProperties === 0) { selectors.addProperty("ADBE Text Selector"); }
+        var selector = selectors.property(1);
+
+        var animatorProps = animator.property("ADBE Text Animator Properties");
+        var propMatchNames = {
+            "Position": "ADBE Text Position 3D",
+            "Scale":    "ADBE Text Scale 3D",
+            "Rotation": "ADBE Text Rotation",
+            "Opacity":  "ADBE Text Opacity",
+            "Tracking": "ADBE Text Tracking Amount"
+        };
+        var addedProps = [];
+        for (var i = 0; i < animateProps.length; i++) {
+            var pName = animateProps[i];
+            var mn = propMatchNames[pName];
+            if (!mn) { continue; }  // skip unknown props rather than fail the whole reveal
+            var p = animatorProps.addProperty(mn);
+            if (pName === "Opacity")       { p.setValue(0); }
+            else if (pName === "Position") { p.setValue([+positionOffset[0] || 0, (positionOffset[1] !== undefined ? +positionOffset[1] : 0), 0]); }
+            else if (pName === "Scale")    { p.setValue([scaleFrom, scaleFrom, 100]); }
+            else if (pName === "Rotation") { p.setValue(rotationAmount); }
+            else if (pName === "Tracking") { p.setValue(trackingAmount); }
+            addedProps.push(pName);
+        }
+
+        // Configure the Range Selector: full range, percentage units, basedOn / shape / Ease High / Low.
+        var BASED_ON_MAP = { "characters": 1, "charactersExcludingSpaces": 2, "words": 3, "lines": 4 };
+        var SHAPE_MAP    = { "square": 1, "rampUp": 2, "rampDown": 3, "triangle": 4, "round": 5, "smooth": 6 };
+        var basedOnVal = _requireEnum(basedOn, BASED_ON_MAP, "basedOn");
+        var shapeVal   = _requireEnum(shape, SHAPE_MAP, "shape");
+        try { selector.property("Start").setValue(0); } catch (e) {}
+        try { selector.property("End").setValue(100); } catch (e) {}
+        var advanced = null;
+        try { advanced = selector.property("ADBE Text Range Advanced"); } catch (e) {}
+        if (advanced) {
+            try { advanced.property("ADBE Text Range Units").setValue(1); } catch (e) {}  // 1 = percentage
+            try { advanced.property("ADBE Text Range Shape").setValue(shapeVal); } catch (e) {}
+            // Based On — AE's matchName is inconsistent; scan by display name as a fallback.
+            var boProp = null;
+            try { boProp = advanced.property("ADBE Text Selector Based On"); } catch (e) {}
+            if (!boProp) { try { boProp = advanced.property("ADBE Text Range Based On"); } catch (e) {} }
+            if (!boProp) {
+                for (var bi = 1; bi <= advanced.numProperties; bi++) {
+                    try { if (advanced.property(bi).name === "Based On") { boProp = advanced.property(bi); break; } } catch (e) {}
+                }
+            }
+            if (boProp) { try { boProp.setValue(basedOnVal); } catch (e) {} }
+            // Ease High / Ease Low live under Advanced; reach them by display name (matchName varies by AE).
+            var ehProp = _findAdvancedProp(advanced, "Ease High");
+            var elProp = _findAdvancedProp(advanced, "Ease Low");
+            if (ehProp) { try { ehProp.setValue(easeHigh); } catch (e) {} }
+            if (elProp) { try { elProp.setValue(easeLow); } catch (e) {} }
+        }
+
+        // Drive the reveal: keyframe Offset 0 -> 100 (direction "on") so the selection sweeps off the text.
+        var fromOffset = (direction === "off") ? 100 : 0;
+        var toOffset   = (direction === "off") ? 0   : 100;
+        var offsetProp = selector.property("Offset");
+        _recipeSetKey(offsetProp, startTime, fromOffset, ease);
+        _recipeSetKey(offsetProp, startTime + duration, toOffset, ease);
+
+        var prevMotionBlur = layer.motionBlur;
+        if (motionBlur) { layer.motionBlur = true; }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Animated text on '" + layer.name + "'" + (presetName ? " (" + presetName + ")" : "") + " — " + addedProps.join(" + ") + ", " + duration + "s.",
+            preset: presetName,
+            animator: { index: animators.numProperties, name: animator.name, propertyPath: ["Text", "Animators", animator.name] },
+            animatedProperties: addedProps,
+            motionBlur: !!motionBlur,
+            previousValues: { motionBlur: prevMotionBlur }
+        }, null, 2);
+    } catch (error) {
+        // Roll back the partially-built animator so a failed reveal leaves no orphan rig.
+        if (animator !== null) { try { animator.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// Find a Range Selector Advanced property (e.g. "Ease High", "Ease Low") by display name. AE's
+// matchNames for these vary by version, so a display-name scan is the robust handle.
+function _findAdvancedProp(advanced, displayName) {
+    var p = null;
+    try { p = advanced.property(displayName); } catch (e) {}
+    if (p) { return p; }
+    for (var i = 1; i <= advanced.numProperties; i++) {
+        try { if (advanced.property(i).name === displayName) { return advanced.property(i); } } catch (e) {}
+    }
+    return null;
+}

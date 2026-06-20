@@ -82,6 +82,9 @@ function getLayerInfo(args) {
                 masksCount: layer.property("Masks") ? layer.property("Masks").numProperties : 0
             };
 
+            // Motion blur switch — only AVLayers have it (cameras/lights throw), so guard the read.
+            try { layerInfo.motionBlur = layer.motionBlur; } catch (mbErr) {}
+
             // Blend mode as a friendly label (reverse of BLEND_MODES) — enables read-back verification.
             for (var bmk in BLEND_MODES) {
                 if (BLEND_MODES.hasOwnProperty(bmk) && BLEND_MODES[bmk] === layer.blendingMode) { layerInfo.blendMode = bmk; break; }
@@ -2318,5 +2321,305 @@ function setLayerProperty(args) {
         }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// ── Camera moves & backgrounds ──────────────────────────────────────────────
+
+// Find the topmost camera layer in a comp, or null.
+function _findCamera(comp) {
+    for (var i = 1; i <= comp.numLayers; i++) {
+        try { if (comp.layer(i) instanceof CameraLayer) { return comp.layer(i); } } catch (e) {}
+    }
+    return null;
+}
+
+// C/U: cameraMove — create/animate a camera for push-in, orbit, or parallax in ONE call instead of
+// hand-keyframing the camera rig. Keyframes are eased via _recipeSetKey (consistent with recipes).
+function cameraMove(args) {
+    var createdCamera = null;  // tracked for atomic-create rollback
+    try {
+        var comp = _resolveComp(args);
+        var move = args.move ? String(args.move) : "pushIn";
+        var startTime = args.startTime !== undefined ? +args.startTime : 0;
+        var duration  = args.duration  !== undefined ? +args.duration  : 2;
+        var ease      = args.ease ? String(args.ease) : "easyEase";
+        var amount    = (args.amount !== undefined && args.amount !== null) ? +args.amount : null;
+        var overwrite = args.overwriteKeyframes === true;
+        var createIfMissing = (args.createIfMissing !== undefined) ? !!args.createIfMissing : true;
+
+        if (duration <= 0) { throw _err(ERROR_CODES.INVALID_ARGS, "duration must be > 0."); }
+        if (startTime + duration > comp.duration + 0.001) {
+            throw _err(ERROR_CODES.TIME_OUT_OF_RANGE, "Move extends to " + (startTime + duration).toFixed(3) + "s, past comp duration " + comp.duration.toFixed(3) + "s.");
+        }
+        var t1 = startTime + duration;
+
+        var cam = _findCamera(comp);
+        if (!cam) {
+            if (!createIfMissing) { throw _err(ERROR_CODES.LAYER_NOT_FOUND, "No camera in the comp (pass createIfMissing:true to add one)."); }
+            cam = comp.layers.addCamera("Camera", [comp.width / 2, comp.height / 2]);
+            createdCamera = cam;
+        }
+
+        var camOpts  = cam.property("Camera Options");
+        var zoomProp = camOpts.property("Zoom");
+        var posProp  = cam.property("Position");
+        var prevVals = {};
+
+        if (move === "pushIn") {
+            var z0 = (args.zoomFrom !== undefined && args.zoomFrom !== null) ? +args.zoomFrom : zoomProp.value;
+            var z1 = (args.zoomTo   !== undefined && args.zoomTo   !== null) ? +args.zoomTo   : z0 * (1 + (amount !== null ? amount : 0.3));
+            try { prevVals.zoom = zoomProp.value; } catch (e) {}
+            if (overwrite) { while (zoomProp.numKeys > 0) { zoomProp.removeKey(1); } }
+            _recipeSetKey(zoomProp, startTime, z0, ease);
+            _recipeSetKey(zoomProp, t1, z1, ease);
+
+        } else if (move === "orbit") {
+            var degrees = (amount !== null) ? amount : 30;
+            var poi;
+            try { poi = cam.property("Point of Interest").value; } catch (e) { poi = [comp.width / 2, comp.height / 2, 0]; }
+            var p = posProp.value;
+            var dx = p[0] - poi[0];
+            var dz = (p[2] !== undefined ? p[2] : 0) - (poi[2] !== undefined ? poi[2] : 0);
+            var radius = Math.sqrt(dx * dx + dz * dz);
+            if (radius < 1) { radius = (p[2] !== undefined ? Math.abs(p[2]) : comp.width); }
+            var a0 = Math.atan2(dz, dx);
+            var y = p[1];
+            try { prevVals.position = posProp.value; } catch (e) {}
+            if (overwrite) { while (posProp.numKeys > 0) { posProp.removeKey(1); } }
+            // Sample the arc so interpolation curves around the POI instead of cutting a chord through it.
+            var steps = 6;
+            for (var s = 0; s <= steps; s++) {
+                var frac = s / steps;
+                var ang = a0 + (degrees * Math.PI / 180) * frac;
+                var px = poi[0] + radius * Math.cos(ang);
+                var pz = (poi[2] !== undefined ? poi[2] : 0) + radius * Math.sin(ang);
+                _recipeSetKey(posProp, startTime + duration * frac, [px, y, pz], ease);
+            }
+
+        } else if (move === "parallax") {
+            var pan = (amount !== null) ? amount : 200;
+            // Spread the listed layers in Z so the camera pan reveals depth; then pan the camera.
+            var layerIndices = args.layerIndices;
+            var layerSnaps = [];
+            if (layerIndices && layerIndices.length) {
+                var nn = layerIndices.length;
+                for (var li = 0; li < nn; li++) {
+                    var L = comp.layer(layerIndices[li]);
+                    var wasThreeD = L.threeDLayer;
+                    L.threeDLayer = true;
+                    var lp = L.property("Position").value;
+                    var z = -400 + (800 * (nn > 1 ? li / (nn - 1) : 0.5));
+                    layerSnaps.push({ index: L.index, prevThreeD: wasThreeD, prevPos: lp });
+                    L.property("Position").setValue([lp[0], lp[1], z]);
+                }
+            }
+            try { prevVals.position = posProp.value; } catch (e) {}
+            if (overwrite) { while (posProp.numKeys > 0) { posProp.removeKey(1); } }
+            var cp = posProp.value;
+            var cz = (cp[2] !== undefined ? cp[2] : 0);
+            _recipeSetKey(posProp, startTime, [cp[0] - pan / 2, cp[1], cz], ease);
+            _recipeSetKey(posProp, t1, [cp[0] + pan / 2, cp[1], cz], ease);
+            prevVals.layers = layerSnaps;
+
+        } else {
+            throw _err(ERROR_CODES.INVALID_ARGS, "move must be pushIn, orbit, or parallax.");
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Camera " + move + " over " + duration + "s" + (createdCamera ? " (added a camera)" : "") + ".",
+            move: move,
+            camera: { name: cam.name, index: cam.index, created: (createdCamera !== null) },
+            previousValues: prevVals
+        }, null, 2);
+    } catch (error) {
+        if (createdCamera !== null) { try { createdCamera.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: createBackground — add a base background layer (solid + optional Gradient Ramp), placed at the
+// BOTTOM of the stack. Gradient colors use the Ramp effect because shape gradient stops aren't
+// scriptable (see shapes.jsx header). Optional subtle animated drift via a wiggle expression.
+function createBackground(args) {
+    var bgLayer = null;  // tracked for atomic-create rollback
+    try {
+        var comp = _resolveComp(args);
+        var color    = args.color || [0.05, 0.05, 0.08];
+        var gradient = (args.gradient !== undefined) ? !!args.gradient : true;
+        var name     = args.name || "Background";
+        var animate  = args.animate === true;
+
+        bgLayer = comp.layers.addSolid(color, name, comp.width, comp.height, 1);
+
+        var rampInfo = null;
+        if (gradient) {
+            var startColor = args.startColor || [0.10, 0.12, 0.20];
+            var endColor   = args.endColor   || [0.02, 0.02, 0.05];
+            var gradientShape = args.gradientShape ? String(args.gradientShape) : "linear";
+            var ramp = bgLayer.Effects.addProperty("ADBE Ramp");
+            // Reach Ramp props by display name (DFS) — robust across AE versions.
+            var sc = _findPropByName(ramp, "Start Color");
+            var ec = _findPropByName(ramp, "End Color");
+            var sr = _findPropByName(ramp, "Start of Ramp");
+            var er = _findPropByName(ramp, "End of Ramp");
+            var shp = _findPropByName(ramp, "Ramp Shape");
+            if (sc) { try { sc.setValue(startColor); } catch (e) {} }
+            if (ec) { try { ec.setValue(endColor); } catch (e) {} }
+            if (sr) { try { sr.setValue([comp.width / 2, 0]); } catch (e) {} }
+            if (er) { try { er.setValue([comp.width / 2, comp.height]); } catch (e) {} }
+            if (shp) { try { shp.setValue(gradientShape === "radial" ? 2 : 1); } catch (e) {} }
+            if (animate && sr) {
+                var driftAmount = (args.driftAmount !== undefined) ? +args.driftAmount : 30;
+                try { sr.expression = _buildPresetExpression("WIGGLE", { freq: 0.4, amp: driftAmount }); } catch (e) {}
+            }
+            rampInfo = { shape: gradientShape };
+        }
+
+        // Place at the bottom of the stack so it renders behind everything (highest index).
+        try { bgLayer.moveToEnd(); } catch (e) {}
+
+        return JSON.stringify({
+            status: "success",
+            message: "Added a " + (gradient ? "gradient " : "") + "background" + (animate ? " with drift" : "") + ".",
+            layer: { name: bgLayer.name, index: bgLayer.index, type: "solid" },
+            gradient: rampInfo
+        }, null, 2);
+    } catch (error) {
+        if (bgLayer !== null) { try { bgLayer.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: addNullToLayers — add a parent null and parent the layers to it. mode "single" = one null centered
+// on the selection's combined bbox (the canonical control-rig move); "perLayer" = one null per layer.
+// Reuses _getCompBbox so the null lands on the real visual center, not a raw anchor point.
+function addNullToLayers(args) {
+    var createdNulls = [];  // tracked for atomic-create rollback
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        var mode = args.mode ? String(args.mode) : "single";
+        var baseName = args.name || "Control";
+
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) { throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx); }
+            layers.push(comp.layer(idx));
+        }
+
+        var result = [];
+        if (mode === "perLayer") {
+            for (var p = 0; p < layers.length; p++) {
+                var L = layers[p];
+                var bb = _getCompBbox(comp, L);
+                var nul = comp.layers.addNull();
+                createdNulls.push(nul);
+                nul.name = baseName + " " + L.name;
+                nul.property("Position").setValue([(bb.left + bb.right) / 2, (bb.top + bb.bottom) / 2]);
+                try { nul.moveBefore(L); } catch (e) {}
+                var prevParent = L.parent ? { name: L.parent.name, index: L.parent.index } : null;
+                L.parent = nul;
+                result.push({ nullName: nul.name, child: L.name, prevParent: prevParent });
+            }
+        } else {
+            var left = null, right = null, top = null, bottom = null, minIdx = layers[0].index;
+            for (var u = 0; u < layers.length; u++) {
+                var b = _getCompBbox(comp, layers[u]);
+                if (left === null || b.left < left) { left = b.left; }
+                if (right === null || b.right > right) { right = b.right; }
+                if (top === null || b.top < top) { top = b.top; }
+                if (bottom === null || b.bottom > bottom) { bottom = b.bottom; }
+                if (layers[u].index < minIdx) { minIdx = layers[u].index; }
+            }
+            var nul2 = comp.layers.addNull();
+            createdNulls.push(nul2);
+            nul2.name = baseName;
+            nul2.property("Position").setValue([(left + right) / 2, (top + bottom) / 2]);
+            try { nul2.moveBefore(comp.layer(minIdx)); } catch (e) {}
+            var children = [];
+            for (var c = 0; c < layers.length; c++) {
+                var prevP = layers[c].parent ? { name: layers[c].parent.name, index: layers[c].parent.index } : null;
+                layers[c].parent = nul2;
+                children.push({ name: layers[c].name, prevParent: prevP });
+            }
+            result.push({ nullName: nul2.name, children: children });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Added " + createdNulls.length + " control null" + (createdNulls.length === 1 ? "" : "s") + " (" + mode + ") and parented " + layers.length + " layer(s).",
+            mode: mode,
+            nulls: result
+        }, null, 2);
+    } catch (error) {
+        for (var r = createdNulls.length - 1; r >= 0; r--) { try { createdNulls[r].remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// R/C: getLayerColors — collect a layer's colors (text fill + shape fills/strokes) and, unless
+// createController:false, drop them onto a "Colors" controller null as ADBE Color Control effects.
+function getLayerColors(args) {
+    var controller = null;  // tracked for atomic-create rollback
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var colors = [];
+        function pushColor(c) {
+            if (!c || c.length < 3) { return; }
+            var r = Math.round(c[0] * 1000) / 1000, g = Math.round(c[1] * 1000) / 1000, bl = Math.round(c[2] * 1000) / 1000;
+            for (var i = 0; i < colors.length; i++) {
+                if (Math.abs(colors[i][0] - r) < 0.004 && Math.abs(colors[i][1] - g) < 0.004 && Math.abs(colors[i][2] - bl) < 0.004) { return; }
+            }
+            colors.push([r, g, bl]);
+        }
+        try { var td = layer.property("Text"); if (td) { pushColor(td.property("ADBE Text Document").value.fillColor); } } catch (e) {}
+        function scanShape(group) {
+            for (var i = 1; i <= group.numProperties; i++) {
+                var p = group.property(i);
+                var mn = null; try { mn = p.matchName; } catch (e) {}
+                if (mn === "ADBE Vector Graphic - Fill" || mn === "ADBE Vector Graphic - Stroke") {
+                    try { pushColor(p.property("Color").value); } catch (e) {}
+                } else if (p.numProperties && p.numProperties > 0) { scanShape(p); }
+            }
+        }
+        try { var cont = layer.property("Contents"); if (cont) { scanShape(cont); } } catch (e) {}
+
+        if (colors.length === 0) { return JSON.stringify({ status: "noop", message: "No fill/stroke colors found on '" + layer.name + "'." }, null, 2); }
+
+        if (args.createController === false) {
+            return JSON.stringify({ status: "success", message: "Found " + colors.length + " color(s) on '" + layer.name + "'.", colors: colors, controller: null }, null, 2);
+        }
+
+        controller = comp.layers.addNull();
+        controller.name = layer.name + " Colors";
+        for (var k = 0; k < colors.length; k++) {
+            try {
+                var fx = controller.Effects.addProperty("ADBE Color Control");
+                fx.name = "Color " + (k + 1);
+                var cp = null;
+                try { cp = fx.property("Color"); } catch (e) {}
+                if (!cp) { for (var pi = 1; pi <= fx.numProperties; pi++) { if (fx.property(pi).name === "Color") { cp = fx.property(pi); break; } } }
+                if (cp) { var col = colors[k]; try { cp.setValue([col[0], col[1], col[2], 1]); } catch (e) { try { cp.setValue(col); } catch (e2) {} } }
+            } catch (e) {}
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Extracted " + colors.length + " color(s) from '" + layer.name + "' into a controller null.",
+            colors: colors,
+            controller: { name: controller.name, index: controller.index, count: colors.length }
+        }, null, 2);
+    } catch (error) {
+        if (controller !== null) { try { controller.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }

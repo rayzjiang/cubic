@@ -16,6 +16,7 @@
     "test:chat": "node tests/chat-live.mjs",
     "test:agent": "node tests/agent-live.mjs",
     "test:editing": "npm run build && node tests/editing-handlers-live.mjs",
+    "test:motion": "npm run build && node tests/motion-handlers-live.mjs",
     "test:tools": "node tests/tools-live.mjs",
     "test:compaction": "npm run build && node tests/compaction-live.mjs",
     "test:drift": "npm run build && node tests/drift-guard.mjs",

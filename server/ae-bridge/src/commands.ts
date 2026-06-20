@@ -22,6 +22,7 @@ export const COMMANDS: readonly string[] = [
   "setCompositionProperties",
   "deleteComposition",
   "duplicateComposition",
+  "cropComp",
   // Playhead
   "getCurrentTime",
   "setCurrentTime",
@@ -41,6 +42,8 @@ export const COMMANDS: readonly string[] = [
   "setLayerProperty",
   // Layers — hierarchy & transform
   "setLayerParent",
+  "addNullToLayers",
+  "getLayerColors",
   "moveLayer",
   "setAnchorPoint",
   "centerAnchorPoint",
@@ -65,6 +68,9 @@ export const COMMANDS: readonly string[] = [
   "setKeyframeSpatial",
   "copyKeyframeEasing",
   "removePropertyKeyframes",
+  "cloneKeyframes",
+  "fixKeyframeTiming",
+  "sequenceKeyframes",
   // Expressions
   "getLayerExpressions",
   "setLayerExpression",
@@ -85,11 +91,15 @@ export const COMMANDS: readonly string[] = [
   "setTextAnimatorProperty",
   "setTextAnimatorRangeSelector",
   "explodeTextLayer",
+  "animateText",
   "listFonts",
   // Shapes
   "addShapeOperator",
   "setShapeOperatorProperty",
   "convertToShape",
+  "animateShape",
+  "extractShapes",
+  "mergeShapes",
   // Markers
   "addMarker",
   "listMarkers",
@@ -112,6 +122,8 @@ export const COMMANDS: readonly string[] = [
   // Motion recipes & 3D
   "applyMotionRecipe",
   "distributeLayers3D",
+  "cameraMove",
+  "createBackground",
   // Multi-command
   "batch",
 ] as const;

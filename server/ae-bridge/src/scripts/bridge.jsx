@@ -327,6 +327,7 @@ function _dispatchSwitch(command, args) {
         case "setCurrentTime":           return setCurrentTime(args);
         case "saveFrameToPng":           return saveFrameToPng(args);
         case "getCompositionInfo":       return getCompositionInfo(args);
+        case "cropComp":                 return cropComp(args);
         // layers.jsx (core)
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
@@ -360,6 +361,10 @@ function _dispatchSwitch(command, args) {
         case "getLayerProperty":         return getLayerProperty(args);
         case "setLayerProperty":         return setLayerProperty(args);
         case "distributeLayers3D":       return distributeLayers3D(args);
+        case "cameraMove":               return cameraMove(args);
+        case "createBackground":         return createBackground(args);
+        case "addNullToLayers":          return addNullToLayers(args);
+        case "getLayerColors":           return getLayerColors(args);
         // text.jsx
         case "createTextLayer":          return createTextLayer(args);
         // fonts.jsx
@@ -368,11 +373,15 @@ function _dispatchSwitch(command, args) {
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
         case "explodeTextLayer":         return explodeTextLayer(args);
+        case "animateText":              return animateText(args);
         // shapes.jsx
         case "createShapeLayer":         return createShapeLayer(args);
         case "addShapeOperator":         return addShapeOperator(args);
         case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
         case "convertToShape":           return convertToShape(args);
+        case "animateShape":             return animateShape(args);
+        case "extractShapes":            return extractShapes(args);
+        case "mergeShapes":              return mergeShapes(args);
         // markers.jsx
         case "addMarker":                return addMarker(args);
         case "listMarkers":              return listMarkers(args);
@@ -389,6 +398,9 @@ function _dispatchSwitch(command, args) {
         case "setKeyframeEasing":        return setKeyframeEasing(args);
         case "setKeyframeSpatial":       return setKeyframeSpatial(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
+        case "cloneKeyframes":           return cloneKeyframes(args);
+        case "fixKeyframeTiming":        return fixKeyframeTiming(args);
+        case "sequenceKeyframes":        return sequenceKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
         case "copyKeyframeEasing":       return copyKeyframeEasing(args);
