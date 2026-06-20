@@ -21,6 +21,22 @@
   body {
     background: transparent;
   }
+
+  /* Smooth EVERY interactive hover (background / text / border) app-wide from one place, so individual
+     buttons never need their own `transition-colors`. Covers all buttons/links plus `.group` rows (the
+     conversation rows hover-tint their wrapper div, not a button). Matches Tailwind's `transition-colors`
+     (150ms). Color-only — never transform/opacity — so it can't interfere with Motion animations. A
+     component that wants a different speed just adds its own `duration-*`, which overrides this (utilities
+     beat base layer). */
+  button,
+  a,
+  summary,
+  [role='button'],
+  .group {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
 }
 
 /* Markdown body (react-markdown output in AssistantMessage). Tailwind preflight resets element
