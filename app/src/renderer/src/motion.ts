@@ -45,6 +45,14 @@ export const fadeRise: Variants = {
   animate: { opacity: 1, y: 0, transition: { duration: DURATION.fast, ease: EASE_OUT } },
 }
 
+// Toast / notification banner (top-right): slides in from the right on enter, fades out in place on
+// exit (no slide on the way out). Requires an AnimatePresence around the list so the exit plays.
+export const toast: Variants = {
+  initial: { opacity: 0, x: 24 },
+  animate: { opacity: 1, x: 0, transition: { duration: DURATION.base, ease: EASE_OUT } },
+  exit: { opacity: 0, transition: { duration: DURATION.base, ease: EASE_OUT } },
+}
+
 // Stagger timing shared by the home list and the chat transcript cascade so the two feel identical:
 // each item fades+rises over DURATION.fast, STAGGER_STEP apart, after an initial STAGGER_DELAY.
 export const STAGGER_STEP = 0.035
@@ -100,6 +108,14 @@ export function useMotion() {
           animate: () => ({ opacity: 1, transition: { duration: DURATION.fast, ease: EASE_OUT } }),
         } as Variants)
       : messageEntrance,
+    // Toast: reduced motion drops the horizontal slide → a plain fade in/out.
+    toast: reduce
+      ? ({
+          initial: { opacity: 0 },
+          animate: { opacity: 1, transition: { duration: DURATION.fast, ease: EASE_OUT } },
+          exit: { opacity: 0, transition: { duration: DURATION.fast, ease: EASE_OUT } },
+        } as Variants)
+      : toast,
     // Send/stop morph transition: spring normally, instant snap when reduced.
     morphTransition: (reduce ? { duration: 0 } : SPRING) as Transition,
   }

@@ -61,16 +61,21 @@ export function Sidebar() {
         className={`flex min-h-0 w-64 flex-1 flex-col transition-opacity duration-150 ${collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
       >
         <div className="flex items-center gap-1 px-2 pb-2 pt-2">
-          <button onClick={goHome} className="rounded-md px-2 py-1.5 text-[13px] text-white/55 hover:bg-white/10 hover:text-white/80">
-            ⌂ Home
+          <button onClick={goHome} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] leading-none text-white/55 hover:bg-white/10 hover:text-white/80">
+            <HomeIcon size={14} />
+            Home
           </button>
-          <button onClick={newChat} className="ml-auto whitespace-nowrap rounded-md bg-white/10 px-2.5 py-1.5 text-[13px] hover:bg-white/15">
-            + New chat
+          <button onClick={newChat} className="ml-auto inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-white/10 px-2.5 py-1.5 text-[13px] leading-none hover:bg-white/15">
+            <PlusIcon size={14} />
+            New chat
           </button>
           <button onClick={toggleSidebar} className="rounded-md p-1.5 text-white/45 hover:bg-white/10 hover:text-white/90" aria-label="Collapse sidebar">
             <SidebarToggleIcon />
           </button>
         </div>
+        {(conversations.length > 0 || pendingRows.length > 0 || activeEphemeral) && (
+          <div className="px-3 pb-2 pt-3 text-xs font-medium uppercase tracking-wide text-white/30">Recents</div>
+        )}
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
           {conversations.length === 0 && pendingRows.length === 0 && !activeEphemeral && (
             <li className="px-3 py-2 text-[13px] text-white/35">No conversations yet.</li>
@@ -105,6 +110,16 @@ export function Sidebar() {
   )
 }
 
+/** House outline matching the sidebar's stroke-icon style (1.4 stroke, round joins). */
+function HomeIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <path d="M2.5 7 L8 2.75 L13.5 7" />
+      <path d="M4 6.5 V13 H12 V6.5" />
+    </svg>
+  )
+}
+
 /** Standard "toggle sidebar" glyph: a rounded rect with a left-side divider. Inline SVG, no library. */
 function SidebarToggleIcon() {
   return (
@@ -115,9 +130,9 @@ function SidebarToggleIcon() {
   )
 }
 
-function PlusIcon() {
+function PlusIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true" className="shrink-0">
       <line x1="8" y1="3.5" x2="8" y2="12.5" />
       <line x1="3.5" y1="8" x2="12.5" y2="8" />
     </svg>

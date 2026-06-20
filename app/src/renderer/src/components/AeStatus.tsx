@@ -9,7 +9,8 @@ const RESTART_AE_GRACE_MS = 8000
 /**
  * Always-on After Effects / backend connectivity indicator: a colored dot + brief word that lives in
  * the top bar's right region so it shows on every page. Hovering anywhere on the dot+text group shows a
- * fuller explanation (native tooltip — no popover, no buttons).
+ * fuller explanation (native tooltip). It's a button with a Home-button-style hover affordance — the
+ * groundwork for a future app-switcher menu here (pick/check configured apps: AE, Premiere, Resolve…).
  *
  * It resolves ONE state from three sources, in precedence order:
  *   1. backend-link phase from main (`backendStatus`) — reconnecting overrides everything recoverable;
@@ -53,13 +54,17 @@ export function AeStatus() {
   })()
 
   return (
-    // Inline in the top bar's right region; no-drag so the tooltip group stays hoverable over the drag strip.
+    // Inline in the top bar's right region; no-drag so the group stays hoverable/clickable over the drag strip.
     <div className="flex items-center [-webkit-app-region:no-drag]">
-      {/* whole dot+text group is the hover target for the tooltip */}
-      <div className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-white/45" title={view.tip}>
+      {/* whole dot+text group is the hover target + tooltip; a button now so the future app-switcher just wires onClick */}
+      <button
+        type="button"
+        title={view.tip}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/45 transition-colors hover:bg-white/10 hover:text-white/70"
+      >
         <span className={`h-2 w-2 shrink-0 rounded-full ${view.dot}`} />
         <span>{view.label}</span>
-      </div>
+      </button>
     </div>
   )
 }
