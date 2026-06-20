@@ -233,17 +233,33 @@ export const COMMAND_PARAMS = {
   },
   copyKeyframeEasing: {
     domain: 'Keyframes',
-    summary: 'Copy keyframe easing from a source property to a target property.',
-    params: { sourceCompName: 'string', sourceLayerIndex: 'int', sourceLayerName: 'string', targetCompName: 'string', targetLayerIndex: 'int', targetLayerName: 'string', propertyPath: 'array', propertyName: 'string', timeOffset: 'float seconds (default 0)' },
+    summary: 'Copy keyframe easing (and optionally values) from a source property to a target property — the Easings-Manager copy/paste. copyValues:true also pastes the source values onto matched target keys.',
+    params: { sourceCompName: 'string', sourceLayerIndex: 'int', sourceLayerName: 'string', targetCompName: 'string', targetLayerIndex: 'int', targetLayerName: 'string', propertyPath: 'array', propertyName: 'string', timeOffset: 'float seconds (default 0)', copyValues: 'bool — also copy keyframe VALUES, not just easing' },
   },
   removePropertyKeyframes: { domain: 'Keyframes', summary: 'Remove all keyframes on a property (propertyPath/propertyName).', params: { propertyPath: 'array', propertyName: 'string' } },
+  cloneKeyframes: {
+    domain: 'Keyframes',
+    summary: 'Clone a property\'s keyframes to the playhead (or targetTime), preserving values + easing — the Motion-Tools "Clone" move. reverse mirrors their timing. Omit keyIndices to clone all keys.',
+    params: { propertyPath: 'array', propertyName: 'string', keyIndices: 'array of int (1-based; omit for all)', targetTime: 'float seconds (default playhead)', reverse: 'bool — mirror the keyframes in time' },
+  },
+  fixKeyframeTiming: {
+    domain: 'Keyframes',
+    summary: 'Snap every keyframe on a property to the comp frame grid (preserving value + easing) — cleans up sub-frame keys after retiming/scaling. The Motion-Tools "Fix Keys Time" move.',
+    params: { propertyPath: 'array', propertyName: 'string' },
+  },
+  sequenceKeyframes: {
+    domain: 'Keyframes',
+    summary: 'Stagger the EXISTING keyframes of a property across several layers (each layer\'s key-set shifts by n*stagger) — the keyframe-mode Sequencer. Distinct from sequenceLayers, which moves layer START times.',
+    params: { layerIndices: 'array of int (1-based)', propertyPath: 'array', propertyName: 'string', stagger: 'float seconds (default 0.1)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (default TOP_DOWN)' },
+    required: ['layerIndices'],
+  },
 
   // ── Expressions ───────────────────────────────────────────────────────────
   getLayerExpressions: { domain: 'Expressions', summary: 'List expressions on a layer.', params: {} },
   setLayerExpression: {
     domain: 'Expressions',
     summary: 'Set/remove an expression (expressionString OR preset).',
-    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG', presetParams: 'object (preset-specific: amp/freq/decay, fadeIn/fadeOut, ...)' },
+    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG|LOOP_OUT_CONTINUE|LOOP_IN_CONTINUE|LOOP_OUT_OFFSET|LOOP_IN_OFFSET', presetParams: 'object (preset-specific: amp/freq/decay, fadeIn/fadeOut, ...)' },
   },
 
   // ── Masks ─────────────────────────────────────────────────────────────────
@@ -418,8 +434,8 @@ export const COMMAND_PARAMS = {
   // ── Motion recipes & 3D ───────────────────────────────────────────────────
   applyMotionRecipe: {
     domain: 'Motion',
-    summary: 'Apply a juicy motion preset to layers.',
-    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
+    summary: 'Apply a juicy motion preset to layers. To reveal N layers in sequence, pass the whole layerIndices array with a stagger (and orderType for the cascade direction) — one call, not N.',
+    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
     required: ['recipe', 'layerIndices'],
   },
   distributeLayers3D: {

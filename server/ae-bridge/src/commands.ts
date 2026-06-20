@@ -65,6 +65,9 @@ export const COMMANDS: readonly string[] = [
   "setKeyframeSpatial",
   "copyKeyframeEasing",
   "removePropertyKeyframes",
+  "cloneKeyframes",
+  "fixKeyframeTiming",
+  "sequenceKeyframes",
   // Expressions
   "getLayerExpressions",
   "setLayerExpression",

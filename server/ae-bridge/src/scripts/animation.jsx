@@ -32,15 +32,19 @@ var EXPRESSION_PRESETS = (function() {
                 "else{value;}"
             ].join("\n")
         },
-        LOOP_OUT:     { defaults: {}, template: 'loopOut("cycle");' },
-        LOOP_IN:      { defaults: {}, template: 'loopIn("cycle");' },
-        LOOP_PINGPONG:{ defaults: {}, template: 'loopOut("pingpong");' }
+        LOOP_OUT:          { defaults: {}, template: 'loopOut("cycle");' },
+        LOOP_IN:           { defaults: {}, template: 'loopIn("cycle");' },
+        LOOP_PINGPONG:     { defaults: {}, template: 'loopOut("pingpong");' },
+        LOOP_OUT_CONTINUE: { defaults: {}, template: 'loopOut("continue");' },
+        LOOP_IN_CONTINUE:  { defaults: {}, template: 'loopIn("continue");' },
+        LOOP_OUT_OFFSET:   { defaults: {}, template: 'loopOut("offset");' },
+        LOOP_IN_OFFSET:    { defaults: {}, template: 'loopIn("offset");' }
     };
 }());
 
 function _buildPresetExpression(presetName, params) {
     var preset = EXPRESSION_PRESETS[presetName];
-    if (!preset) throw _err(ERROR_CODES.INVALID_ARGS, "Unknown expression preset: '" + presetName + "'. Valid: INERTIAL_BOUNCE, ELASTIC, OVERSHOOT, WIGGLE, AUTO_FADE, LOOP_OUT, LOOP_IN, LOOP_PINGPONG");
+    if (!preset) throw _err(ERROR_CODES.INVALID_ARGS, "Unknown expression preset: '" + presetName + "'. Valid: INERTIAL_BOUNCE, ELASTIC, OVERSHOOT, WIGGLE, AUTO_FADE, LOOP_OUT, LOOP_IN, LOOP_PINGPONG, LOOP_OUT_CONTINUE, LOOP_IN_CONTINUE, LOOP_OUT_OFFSET, LOOP_IN_OFFSET");
     var p = {};
     for (var k in preset.defaults) { if (preset.defaults.hasOwnProperty(k)) p[k] = preset.defaults[k]; }
     if (params) { for (var pk in params) { if (params.hasOwnProperty(pk)) p[pk] = params[pk]; } }
@@ -602,6 +606,11 @@ function copyKeyframeEasing(args) {
                 } catch(e) {}
             }
 
+            // Optionally copy the VALUE too (Easings-Manager "paste values + easing"), not just the curve.
+            if (args.copyValues === true) {
+                try { tgtProp.setValueAtTime(tgtProp.keyTime(tk), srcProp.keyValue(sk)); } catch(e) {}
+            }
+
             pairsCopied++;
         }
 
@@ -797,6 +806,16 @@ function applyMotionRecipe(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "duration must be > 0.");
         }
 
+        // orderType controls the stagger order across layers (default: the given layerIndices order).
+        if (args.orderType) {
+            var ot = String(args.orderType).toUpperCase();
+            layerIndices = layerIndices.slice(0);
+            if (ot === "TOP_DOWN")       { layerIndices.sort(function(a, b) { return a - b; }); }
+            else if (ot === "BOTTOM_UP") { layerIndices.sort(function(a, b) { return b - a; }); }
+            else if (ot === "RANDOM")    { for (var sh = layerIndices.length - 1; sh > 0; sh--) { var rk = Math.floor(Math.random() * (sh + 1)); var tmp = layerIndices[sh]; layerIndices[sh] = layerIndices[rk]; layerIndices[rk] = tmp; } }
+            else { throw _err(ERROR_CODES.INVALID_ARGS, "orderType must be TOP_DOWN, BOTTOM_UP, or RANDOM."); }
+        }
+
         var lastStart = t0 + (layerIndices.length - 1) * stagger;
         if (lastStart + duration > comp.duration + 0.001) {
             throw _err(ERROR_CODES.TIME_OUT_OF_RANGE,
@@ -854,6 +873,173 @@ function removePropertyKeyframes(args) {
             property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
             removed: removed
         }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// ── Keyframe pro-tools (Motion-Tools-style) ─────────────────────────────────────
+
+// Read every keyframe on a property into a portable array (time, value, interp, eases, spatial).
+// Pairs with _writeKey to clone / re-time / shift keys while preserving their easing exactly.
+function _readKeys(prop) {
+    var spatial = false; try { spatial = prop.isSpatial; } catch (e) {}
+    var keys = [];
+    for (var k = 1; k <= prop.numKeys; k++) {
+        var rec = { time: prop.keyTime(k), value: prop.keyValue(k),
+                    inInterp: prop.keyInInterpolationType(k), outInterp: prop.keyOutInterpolationType(k) };
+        try { rec.inEase = prop.keyInTemporalEase(k); rec.outEase = prop.keyOutTemporalEase(k); } catch (e) {}
+        if (spatial) {
+            try { rec.inTan = prop.keyInSpatialTangent(k); rec.outTan = prop.keyOutSpatialTangent(k);
+                  rec.autoBez = prop.keySpatialAutoBezier(k); rec.cont = prop.keySpatialContinuous(k); } catch (e) {}
+        }
+        keys.push(rec);
+    }
+    return { spatial: spatial, keys: keys };
+}
+
+// Write one key record at a (possibly remapped) time, restoring value + easing + spatial tangents.
+// Interp type is applied LAST because setTemporalEaseAtKey forces bezier on the tangents it touches.
+function _writeKey(prop, rec, atTime, spatial) {
+    prop.setValueAtTime(atTime, rec.value);
+    var ki = -1;
+    for (var k = 1; k <= prop.numKeys; k++) { if (Math.abs(prop.keyTime(k) - atTime) < 0.0005) { ki = k; break; } }
+    if (ki === -1) { return; }
+    if (rec.inEase && rec.outEase) {
+        try {
+            var ni = [], no = [];
+            for (var a = 0; a < rec.inEase.length; a++) { ni.push(new KeyframeEase(rec.inEase[a].speed, rec.inEase[a].influence)); }
+            for (var b = 0; b < rec.outEase.length; b++) { no.push(new KeyframeEase(rec.outEase[b].speed, rec.outEase[b].influence)); }
+            prop.setTemporalEaseAtKey(ki, ni, no);
+        } catch (e) {}
+    }
+    if (spatial && rec.inTan && rec.outTan) {
+        try { prop.setSpatialTangentsAtKey(ki, rec.inTan, rec.outTan); } catch (e) {}
+        try { prop.setSpatialAutoBezierAtKey(ki, rec.autoBez); prop.setSpatialContinuousAtKey(ki, rec.cont); } catch (e) {}
+    }
+    try { prop.setInterpolationTypeAtKey(ki, rec.inInterp, rec.outInterp); } catch (e) {}
+}
+
+// C: cloneKeyframes — copy a property's keyframes (all, or keyIndices) to the playhead (or targetTime),
+// preserving values + easing. reverse mirrors their order in time. The Motion-Tools "Clone" move.
+function cloneKeyframes(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+        var prop = _resolveAnimProp(layer, args);
+        if (prop.numKeys === 0) { throw _err(ERROR_CODES.INVALID_ARGS, "Property '" + prop.name + "' has no keyframes to clone."); }
+
+        var snap = _readKeys(prop);
+        var src = [];
+        if (args.keyIndices && args.keyIndices.length) {
+            for (var i = 0; i < args.keyIndices.length; i++) {
+                var idx = args.keyIndices[i];
+                if (idx >= 1 && idx <= snap.keys.length) { src.push(snap.keys[idx - 1]); }
+            }
+        } else { src = snap.keys; }
+        if (src.length === 0) { throw _err(ERROR_CODES.INVALID_ARGS, "No source keyframes selected."); }
+
+        var minT = src[0].time, maxT = src[0].time;
+        for (var s = 1; s < src.length; s++) { if (src[s].time < minT) { minT = src[s].time; } if (src[s].time > maxT) { maxT = src[s].time; } }
+        var targetTime = (args.targetTime !== undefined && args.targetTime !== null) ? +args.targetTime : comp.time;
+        var reverse = args.reverse === true;
+
+        var created = [];
+        for (var c = 0; c < src.length; c++) {
+            var rec = src[c];
+            var nt = reverse ? (targetTime + (maxT - rec.time)) : (targetTime + (rec.time - minT));
+            if (nt > comp.duration + 0.001 || nt < 0) { continue; }
+            _writeKey(prop, rec, nt, snap.spatial);
+            created.push(nt);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Cloned " + created.length + " keyframe(s) to " + targetTime.toFixed(3) + "s" + (reverse ? " (reversed)" : "") + ".",
+            property: { name: prop.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            clonedTimes: created, reverse: reverse
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// U: fixKeyframeTiming — snap every keyframe on a property to the comp's frame grid (preserving value
+// + easing). The Motion-Tools "Fix Keys Time" move — cleans up sub-frame keys after retiming/scaling.
+function fixKeyframeTiming(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+        var prop = _resolveAnimProp(layer, args);
+        if (prop.numKeys === 0) { return JSON.stringify({ status: "noop", message: "No keyframes to snap." }, null, 2); }
+
+        var fd = comp.frameDuration;
+        var snap = _readKeys(prop);
+        var changed = false;
+        for (var c = 0; c < snap.keys.length; c++) {
+            var snapped = Math.round(snap.keys[c].time / fd) * fd;
+            if (Math.abs(snapped - snap.keys[c].time) > 0.0005) { changed = true; }
+            snap.keys[c].newTime = snapped;
+        }
+        if (!changed) { return JSON.stringify({ status: "noop", message: "Keyframes already sit on the frame grid." }, null, 2); }
+
+        while (prop.numKeys > 0) { prop.removeKey(1); }
+        for (var w = 0; w < snap.keys.length; w++) { _writeKey(prop, snap.keys[w], snap.keys[w].newTime, snap.spatial); }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Snapped " + snap.keys.length + " keyframe(s) to the frame grid.",
+            property: { name: prop.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            keyframes: snap.keys.length
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
+// U: sequenceKeyframes — stagger the EXISTING keyframes of a property across several layers (layer n's
+// whole key-set shifts by n*stagger). Distinct from sequenceLayers (which moves layer START times).
+function sequenceKeyframes(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        var stagger = (args.stagger !== undefined && args.stagger !== null) ? +args.stagger : 0.1;
+        var orderType = (args.orderType || "TOP_DOWN").toUpperCase();
+        var ordered = layerIndices.slice(0);
+        if (orderType === "TOP_DOWN")       { ordered.sort(function(a, b) { return a - b; }); }
+        else if (orderType === "BOTTOM_UP") { ordered.sort(function(a, b) { return b - a; }); }
+        else if (orderType === "RANDOM")    { for (var sh = ordered.length - 1; sh > 0; sh--) { var rk = Math.floor(Math.random() * (sh + 1)); var tmp = ordered[sh]; ordered[sh] = ordered[rk]; ordered[rk] = tmp; } }
+        else { throw _err(ERROR_CODES.INVALID_ARGS, "orderType must be TOP_DOWN, BOTTOM_UP, or RANDOM."); }
+
+        var shifted = [];
+        var warnings = [];
+        for (var n = 0; n < ordered.length; n++) {
+            var idx = ordered[n];
+            if (idx < 1 || idx > comp.numLayers) { throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx); }
+            var layer = comp.layer(idx);
+            var prop;
+            try { prop = _resolveAnimProp(layer, args); } catch (e) { warnings.push("Layer " + idx + ": " + e.message); continue; }
+            if (prop.numKeys === 0) { warnings.push("Layer " + idx + " has no keyframes on that property."); continue; }
+            var offset = n * stagger;
+            if (offset === 0) { shifted.push({ index: idx, offset: 0 }); continue; }
+            var snap = _readKeys(prop);
+            while (prop.numKeys > 0) { prop.removeKey(1); }
+            for (var w = 0; w < snap.keys.length; w++) { _writeKey(prop, snap.keys[w], snap.keys[w].time + offset, snap.spatial); }
+            shifted.push({ index: idx, offset: offset });
+        }
+
+        var resultObj = {
+            status: "success",
+            message: "Sequenced keyframes across " + shifted.length + " layer(s) by " + stagger + "s (" + orderType + ").",
+            orderType: orderType, stagger: stagger, layers: shifted
+        };
+        if (warnings.length > 0) { resultObj.warning = warnings.join(" "); }
+        return JSON.stringify(resultObj, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }

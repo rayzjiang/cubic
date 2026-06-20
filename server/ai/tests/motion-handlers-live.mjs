@@ -204,6 +204,43 @@ try {
     assert((fx.count || (fx.effects || []).length) >= 1, 'expected a Ramp effect on the background');
     return `bottom layer ${res.layer.index}, gradient`;
   });
+
+  // ── keyframe pro-tools ──────────────────────────────────────────────────────────
+  await test('cloneKeyframes copies a property\'s keys to the playhead', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'CLONE');
+    await call('applyMotionRecipe', { compName: comp, layerIndices: [1], recipe: 'fadeIn', duration: 0.5 }); // 2 Opacity keys
+    const res = await call('cloneKeyframes', { compName: comp, layerIndex: 1, propertyName: 'Opacity', targetTime: 2 });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    const kf = await run('getLayerKeyframes', { compName: comp, layerIndex: 1, propertyName: 'Opacity' });
+    assert(kf.count === 4, `expected 4 Opacity keys after clone, got ${kf.count}`);
+    return `${kf.count} Opacity keys`;
+  });
+
+  await test('fixKeyframeTiming snaps off-grid keys to the frame grid', async () => {
+    const comp = await freshComp(); // 30fps → frameDuration 1/30
+    await addText(comp, 'SNAP');
+    await run('setLayerKeyframe', { compName: comp, layerIndex: 1, propertyName: 'Opacity', timeInSeconds: 0.333, value: 0 });
+    await run('setLayerKeyframe', { compName: comp, layerIndex: 1, propertyName: 'Opacity', timeInSeconds: 1.027, value: 100 });
+    const res = await call('fixKeyframeTiming', { compName: comp, layerIndex: 1, propertyName: 'Opacity' });
+    assert(res.status === 'success', 'expected success, got ' + res.status);
+    const kf = await run('getLayerKeyframes', { compName: comp, layerIndex: 1, propertyName: 'Opacity' });
+    const onGrid = kf.keyframes.every(k => Math.abs(k.time * 30 - Math.round(k.time * 30)) < 1e-3);
+    assert(onGrid, 'expected all keyframe times on the 30fps grid');
+    return `${kf.count} keys snapped`;
+  });
+
+  await test('sequenceKeyframes staggers existing keys across layers', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'A');
+    await addText(comp, 'B');
+    await call('applyMotionRecipe', { compName: comp, layerIndices: [1, 2], recipe: 'fadeIn', duration: 0.5 });
+    const res = await call('sequenceKeyframes', { compName: comp, layerIndices: [1, 2], propertyName: 'Opacity', stagger: 0.5, orderType: 'TOP_DOWN' });
+    assert(res.status === 'success', 'expected success, got ' + res.status);
+    const kf2 = await run('getLayerKeyframes', { compName: comp, layerIndex: 2, propertyName: 'Opacity' });
+    assert(kf2.keyframes[0].time >= 0.49, `expected layer 2's first key shifted to ~0.5s, got ${kf2.keyframes[0].time}`);
+    return `layer 2 first key @ ${kf2.keyframes[0].time.toFixed(2)}s`;
+  });
 } catch (e) {
   console.log(red(`\n  Aborted: ${e.message}`));
 } finally {

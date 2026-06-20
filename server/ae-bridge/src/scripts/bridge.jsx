@@ -395,6 +395,9 @@ function _dispatchSwitch(command, args) {
         case "setKeyframeEasing":        return setKeyframeEasing(args);
         case "setKeyframeSpatial":       return setKeyframeSpatial(args);
         case "removePropertyKeyframes":  return removePropertyKeyframes(args);
+        case "cloneKeyframes":           return cloneKeyframes(args);
+        case "fixKeyframeTiming":        return fixKeyframeTiming(args);
+        case "sequenceKeyframes":        return sequenceKeyframes(args);
         case "getLayerExpressions":      return getLayerExpressions(args);
         case "setLayerExpression":       return setLayerExpression(args);
         case "copyKeyframeEasing":       return copyKeyframeEasing(args);
