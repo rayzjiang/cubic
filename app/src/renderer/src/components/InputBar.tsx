@@ -12,11 +12,6 @@ import { useMotion } from '../motion'
 export function InputBar() {
   const running = useChatStore((s) => s.running)
   const isEmpty = useChatStore((s) => s.items.length === 0)
-  // Detour: the open chat belongs to a project AE doesn't have open (the user jumped "Back" to it). Sending
-  // would run the agent against whatever project IS open, so the composer is locked — the bar's "Return to
-  // …" is the way out. (The backend also rejects such a send as an authoritative backstop.)
-  const stale = useChatStore((s) => s.liveProjectPath !== null && s.projectPath !== s.liveProjectPath)
-  const staleName = useChatStore((s) => s.projectPath.split('/').pop() || 'this project')
   const sendMessage = useChatStore((s) => s.sendMessage)
   const cancelRun = useChatStore((s) => s.cancelRun)
   const queuedSteers = useChatStore((s) => s.queuedSteers)
@@ -48,18 +43,13 @@ export function InputBar() {
     return () => window.removeEventListener('keydown', onKey)
   }, [cancelRun])
 
-  const placeholder = stale
-    ? `Reopen ${staleName} in After Effects to chat here`
-    : running
-      ? 'Add a follow-up — Cubic picks it up as it works…'
-      : isEmpty
-        ? 'What are we building today?'
-        : 'Send a message…'
+  const placeholder = running
+    ? 'Add a follow-up — Cubic picks it up as it works…'
+    : isEmpty
+      ? 'What are we building today?'
+      : 'Send a message…'
 
   const submit = () => {
-    // Locked while viewing a project AE doesn't have open — the bar's "Return to …" is the way out.
-    const st = useChatStore.getState()
-    if (st.liveProjectPath !== null && st.projectPath !== st.liveProjectPath) return
     const text = draft.trim()
     if (!text) return
     // A stop is still finalizing on the backend (sub-second). Hold the send — and keep the draft —
@@ -84,7 +74,7 @@ export function InputBar() {
           ))}
         </div>
       )}
-      <div className={`flex items-center gap-2 rounded-xl border border-white/10 bg-white/4 px-3 py-2 focus-within:border-white/20 ${stale ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/4 px-3 py-2 focus-within:border-white/20">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -95,15 +85,14 @@ export function InputBar() {
             }
           }}
           rows={1}
-          disabled={stale}
           placeholder={placeholder}
-          className="field-sizing-content max-h-[33vh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30 disabled:cursor-not-allowed"
+          className="field-sizing-content max-h-[33vh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
         />
         {/* One persistent square shell — the icon crossfades between send (↑) and stop (■) so both
             sit in the exact same spot and the swap reads as a smooth morph (§D). */}
         <button
           onClick={running ? cancelRun : submit}
-          disabled={stale || (!running && !draft.trim())}
+          disabled={!running && !draft.trim()}
           className="relative inline-flex h-7 w-7 shrink-0 self-end items-center justify-center rounded-lg bg-white text-neutral-900 transition-colors duration-200 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
           aria-label={running ? 'Stop' : 'Send'}
           title={running ? 'Stop (Esc)' : 'Send (Enter)'}

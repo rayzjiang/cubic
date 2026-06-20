@@ -343,3 +343,30 @@ export function rekey(id: string, oldPath: string, newPath: string): void {
     writeIndex(entries);
   }
 }
+
+/**
+ * Carry every conversation from one project to another, keeping the originals (used when AE
+ * increments/Save-As to a new file and the user opts to "bring my chats to the new version"). Unlike
+ * `rekey` (a move), this COPIES each transcript under a FRESH id: the live `sessions` Map and
+ * `getConversation` are keyed by id alone, so a shared id across two project paths would make lookups
+ * ambiguous. `fromPath` keeps its own copies, so each version retains its history snapshot. Returns the
+ * number of conversations copied. No-op (returns 0) when source and destination encode to the same dir.
+ */
+export function copyConversations(fromPath: string, toPath: string): number {
+  if (encodeProjectPath(fromPath) === encodeProjectPath(toPath)) return 0;
+  const entries = readIndex();
+  const sources = entries.filter((e) => e.projectPath === fromPath);
+  let copied = 0;
+  for (const src of sources) {
+    const newId = crypto.randomUUID();
+    const newFile = sessionFile(toPath, newId);
+    try {
+      fs.mkdirSync(path.dirname(newFile), { recursive: true });
+      fs.copyFileSync(sessionFile(fromPath, src.id), newFile);
+    } catch { continue; /* nothing persisted on disk for this conversation → skip it */ }
+    entries.push({ id: newId, title: src.title, projectPath: toPath, lastActivity: src.lastActivity, renamed: src.renamed });
+    copied++;
+  }
+  if (copied > 0) writeIndex(entries);
+  return copied;
+}

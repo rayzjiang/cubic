@@ -64,6 +64,12 @@ export type ClientMessage =
   | { type: 'list' }
   | { type: 'loadHistory'; sessionId: string }
   | { type: 'restore'; sessionId: string; turnId: string }
+  // Drive AE to open a different project (the "Open <project> in After Effects" bar action). `save` is
+  // the unsaved-changes decision for the project being closed; absent on the first send (the backend
+  // replies `projectOpened` with `needsConfirm` so the renderer can ask).
+  | { type: 'openProject'; sessionId?: string; path: string; save?: 'save' | 'discard' }
+  // Copy every conversation from one project to another (version continuity: "bring my chats to v2").
+  | { type: 'bringChats'; fromPath: string; toPath: string }
 
 // ── Backend → renderer ──
 export type ServerMessage =
@@ -75,6 +81,11 @@ export type ServerMessage =
   | { type: 'history'; sessionId: string; items: DisplayItem[]; running: boolean }
   // Reply to a `restore`: ok → the project + transcript were rewound; !ok → `message` says why.
   | { type: 'restored'; sessionId: string; ok: boolean; message?: string }
+  // Reply to `openProject`: ok → AE opened the project (the new conversation list is broadcast
+  // separately); needsConfirm → the project being closed has unsaved changes, so the renderer must ask
+  // Save/Discard (`currentUntitled` hides the Save option, since an unsaved project can't save silently);
+  // !ok without needsConfirm → `message` says why it failed.
+  | { type: 'projectOpened'; sessionId?: string; ok: boolean; needsConfirm?: boolean; dirty?: boolean; currentUntitled?: boolean; path?: string; message?: string }
   // Live After Effects bridge (CEP worker) connectivity. Pushed once on connect (alongside the `list`
   // reply) so a fresh renderer has a correct value, then on every bridge connect/disconnect. Drives the
   // always-on status dot — distinct from `connection` (the renderer↔backend link in ws.ts).

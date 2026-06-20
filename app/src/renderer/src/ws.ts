@@ -70,3 +70,6 @@ export const sendRename = (sessionId: string, title: string): void => wsSend({ t
 export const sendCancel = (sessionId: string): void => wsSend({ type: 'cancel', sessionId })
 export const sendAttach = (sessionId: string): void => wsSend({ type: 'attach', sessionId })
 export const sendRestore = (sessionId: string, turnId: string): void => wsSend({ type: 'restore', sessionId, turnId })
+export const sendOpenProject = (path: string, save?: 'save' | 'discard', sessionId?: string): void =>
+  wsSend({ type: 'openProject', path, save, sessionId })
+export const sendBringChats = (fromPath: string, toPath: string): void => wsSend({ type: 'bringChats', fromPath, toPath })

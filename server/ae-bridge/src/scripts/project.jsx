@@ -213,3 +213,36 @@ function restoreProject(args) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
+
+// U: openProject — replace the open project with the .aep at args.path. Drives AE from the Cubic UI
+// (the "Open <project> in After Effects" bar action) so Cubic mirrors AE rather than showing a project
+// that isn't open. args = { path: string, save: "save" | "discard" }. The CALLER (agentChat) resolves
+// the unsaved-changes decision first and passes it as `save`, because AE's own "save changes?" dialog on
+// close would block evalScript and hang the bridge — so we never let it prompt: a "save" decision flushes
+// the current project explicitly (only possible when it has a file), then we always close DO_NOT_SAVE.
+// Internal-only — intentionally absent from the command registry/catalog (not a model tool).
+function openProject(args) {
+    try {
+        if (!args || !args.path) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Missing required argument 'path'.");
+        }
+        var file = new File(args.path);
+        if (!file.exists) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Project file not found: " + args.path);
+        }
+        var project = app.project;
+        // Flush the current project to disk when the user chose "save" — only a project that already has a
+        // file can be saved silently (an untitled one would open a Save-As dialog; the UI hides that option).
+        if (args.save === "save" && project.file) project.save();
+        // Drop the current project without a save dialog, then load the requested one from disk.
+        project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+        app.open(file);
+
+        return JSON.stringify({
+            status: "success",
+            openedPath: file.fsName
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
