@@ -46,8 +46,9 @@ export function App() {
 
   // Re-check which AE project is open whenever Cubic regains focus — the user may have switched projects
   // in AE (File>Open / Increment-and-Save) while the panel stayed connected, which fires no backend event.
-  // A fresh `list` re-resolves the project (uncached) on the backend; the store silently swaps the list on
-  // Home or raises the project-switch bar mid-chat. Event-driven (no polling — a repo rule).
+  // A fresh `list` re-resolves the project (uncached) on the backend; the store auto-follows the now-open
+  // project (preserving Home/chat view) and raises the project-switch bar. Event-driven (no polling — a
+  // repo rule).
   useEffect(() => {
     const onFocus = (): void => sendList()
     window.addEventListener('focus', onFocus)
@@ -69,7 +70,8 @@ export function App() {
     body = (
       <div className="flex h-full flex-col">
         <TopBar />
-        {/* Non-blocking "AE switched projects" bar — self-gates to chat view; silent on Home. */}
+        {/* Non-blocking "AE switched projects" bar — shows on both Home and chat; self-gates on the store's
+            displayed-vs-live project state (post-switch "Back to …" / detour "Return to …"). */}
         <ProjectSwitchBar />
         <div className="relative min-h-0 flex-1">
           <AnimatePresence initial={false}>

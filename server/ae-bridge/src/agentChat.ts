@@ -162,6 +162,10 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   // chat's stored path, then the last-active project — never key an append under a bogus value.
   const stored = getConversation(session.id);
   const projectPath = (await resolveProjectPath()) ?? stored?.projectPath ?? lastActiveProjectPath() ?? "";
+  // Rekey on a path change. With the pre-turn wrong-project guard above, the only path change that can reach
+  // here is unsaved → saved (stored.projectPath was ""): a chat started in an untitled project that the user
+  // then saved. A real saved→saved switch is rejected before the turn runs, so this no longer silently
+  // migrates a chat to a different project.
   if (stored && encodeProjectPath(stored.projectPath) !== encodeProjectPath(projectPath)) {
     rekey(session.id, stored.projectPath, projectPath);
   }
@@ -347,6 +351,23 @@ export function registerAgentChat(): void {
     if (session.running) {
       session.pendingMessages.push({ id: msg.id ?? nextQueueId(), text: msg.text });
       return;
+    }
+
+    // Wrong-project guard (authoritative backstop): refuse to run a turn against a project AE doesn't have
+    // open. A chat bound to a SAVED project whose path isn't the one currently open in AE would otherwise
+    // edit the wrong project (and the post-turn rekey would silently migrate the chat). Reject BEFORE any
+    // model call so no credit is spent. The renderer normally prevents this (it locks the composer in that
+    // state); this catches paths it can't see — e.g. a reload while AE is on a different project. A brand-
+    // new chat (no stored entry) is always allowed → it binds to whatever's open. An UNTITLED-project chat
+    // (stored.projectPath === "") is also allowed → it legitimately adopts the project on first save
+    // (unsaved → saved rekey in runTurnAndPersist, which is now the only case that rekey ever fires for).
+    const stored = getConversation(id);
+    if (stored && stored.projectPath !== "") {
+      const live = await resolveProjectPath();
+      if (live !== null && encodeProjectPath(stored.projectPath) !== encodeProjectPath(live)) {
+        emit({ type: "error", message: `This chat belongs to ${stored.projectPath.split("/").pop()}, which isn't open in After Effects. Reopen it, or start a new chat in the current project.` });
+        return;
+      }
     }
 
     await runTurnAndPersist(session, msg.text, emit);
