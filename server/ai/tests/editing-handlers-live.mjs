@@ -148,38 +148,6 @@ try {
     return res.message;
   });
 
-  // ── applyTransition ────────────────────────────────────────────────────────────
-  await test('applyTransition crossDissolve keyframes opacity on both clips', async () => {
-    const comp = await freshComp();
-    await addSolid(comp, 'ClipB', [1920, 1080]);
-    await addSolid(comp, 'ClipA', [1920, 1080]); // newest = index 1
-    const res = await call('applyTransition', { compName: comp, type: 'crossDissolve', layerIndices: [1, 2], durationSeconds: 1 });
-    assert(res.status === 'success', 'expected success, got ' + res.status);
-    const k1 = await run('getLayerKeyframes', { compName: comp, layerIndex: 1, propertyName: 'Opacity' });
-    const keys = k1.keyframes || [];
-    assert(keys.length >= 2, `expected ≥2 opacity keys on the outgoing clip, got ${keys.length}`);
-    return `${keys.length} opacity keys`;
-  });
-
-  await test('applyTransition fadeToBlack adds a solid named exactly "Fade to Black"', async () => {
-    const comp = await freshComp();
-    await addSolid(comp, 'Clip', [1920, 1080]);
-    const res = await call('applyTransition', { compName: comp, type: 'fadeToBlack', layerIndices: [1], durationSeconds: 0.5 });
-    assert(res.status === 'success', 'expected success, got ' + res.status);
-    // Exact name — a loose /black/i match would let a fadeToBlack/fadeFromBlack mixup pass silently.
-    assert(res.solid && res.solid.name === 'Fade to Black', `expected solid "Fade to Black", got "${res.solid && res.solid.name}"`);
-    return res.solid.name;
-  });
-
-  await test('applyTransition fadeFromBlack adds a solid named exactly "Fade from Black"', async () => {
-    const comp = await freshComp();
-    await addSolid(comp, 'Clip', [1920, 1080]);
-    const res = await call('applyTransition', { compName: comp, type: 'fadeFromBlack', layerIndices: [1], durationSeconds: 0.5 });
-    assert(res.status === 'success', 'expected success, got ' + res.status);
-    assert(res.solid && res.solid.name === 'Fade from Black', `expected solid "Fade from Black", got "${res.solid && res.solid.name}"`);
-    return res.solid.name;
-  });
-
   // ── adjustColor ────────────────────────────────────────────────────────────────
   await test('adjustColor warms a layer and leaves a color effect on it', async () => {
     const comp = await freshComp();
@@ -216,8 +184,7 @@ console.log(cyan('    • "make this comp vertical 9:16"          → setComposi
 console.log(cyan('    • "slow this down to 50%"                 → retimeClip (speed)'));
 console.log(cyan('    • "freeze the frame here"                 → retimeClip (freeze)'));
 console.log(cyan('    • "play it backwards"                     → retimeClip (reverse)'));
-console.log(cyan('    • "cross dissolve between these two clips" → applyTransition (crossDissolve)'));
-console.log(cyan('    • "fade to black at the end"              → applyTransition (fadeToBlack)'));
+console.log(cyan('    • "fade to black at the end"              → black solid + applyMotionRecipe fadeIn (no dedicated tool)'));
 console.log(cyan('    • "warm it up / fix the exposure"         → adjustColor'));
 console.log(cyan('    • "give it a teal-and-orange look"        → adjustColor (look)'));
 console.log(cyan('    • "export this as an mp4"                 → polite decline (out of scope)'));

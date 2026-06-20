@@ -111,7 +111,6 @@ export const COMMANDS: readonly string[] = [
   "restoreProject",
   // Motion recipes & 3D
   "applyMotionRecipe",
-  "applyTransition",
   "distributeLayers3D",
   // Multi-command
   "batch",

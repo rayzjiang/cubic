@@ -393,7 +393,6 @@ function _dispatchSwitch(command, args) {
         case "setLayerExpression":       return setLayerExpression(args);
         case "copyKeyframeEasing":       return copyKeyframeEasing(args);
         case "applyMotionRecipe":        return applyMotionRecipe(args);
-        case "applyTransition":          return applyTransition(args);
         // masks.jsx
         case "getLayerMasks":            return getLayerMasks(args);
         case "setLayerMask":             return setLayerMask(args);
