@@ -116,6 +116,8 @@ export const COMMANDS: readonly string[] = [
   // Motion recipes & 3D
   "applyMotionRecipe",
   "distributeLayers3D",
+  "cameraMove",
+  "createBackground",
   // Multi-command
   "batch",
 ] as const;

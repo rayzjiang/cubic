@@ -428,6 +428,17 @@ export const COMMAND_PARAMS = {
     params: { shape: 'cylinder|grid', layerIndices: 'array of int (>=2, 1-based)', center: '[x,y,z]', enable3D: 'bool (default true)', faceCamera: 'bool', overwriteKeyframes: 'bool', radius: 'float (cylinder, default 400)', depthSpacing: 'float (cylinder)', rings: 'int (cylinder)', axis: 'x|y|z (cylinder)', spacing: '[x,y,z] (grid)', rows: 'int (grid)', cols: 'int (grid)' },
     required: ['shape', 'layerIndices'],
   },
+  cameraMove: {
+    domain: 'Motion',
+    summary: 'Create/animate a camera for a scene move in ONE call — use for "push in", "zoom in on", "orbit around", "parallax", "camera move". Creates a camera if the comp has none (createIfMissing). Keyframes are eased. NEVER hand-keyframe a camera rig for these.',
+    params: { move: 'pushIn|orbit|parallax', startTime: 'float seconds (default 0)', duration: 'float seconds (default 2)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easyEase)', amount: 'float (pushIn: zoom factor ~0.3; orbit: degrees ~30; parallax: pan px ~200)', layerIndices: 'array of int (parallax: the layers to spread in depth)', zoomFrom: 'float (pushIn)', zoomTo: 'float (pushIn)', createIfMissing: 'bool (default true)', overwriteKeyframes: 'bool' },
+    required: ['move'],
+  },
+  createBackground: {
+    domain: 'Motion',
+    summary: 'Add a comp-sized background layer at the BOTTOM of the stack — use for "add a background/backdrop", "gradient background". Solid + optional Gradient Ramp (gradient stop colors via the Ramp effect, the scriptable path). Optional subtle animated drift.',
+    params: { color: '[r,g,b] 0-1 (solid base; default dark)', gradient: 'bool — add a Gradient Ramp (default true)', startColor: '[r,g,b] 0-1', endColor: '[r,g,b] 0-1', gradientShape: 'linear|radial (default linear)', animate: 'bool — subtle drift (default false)', driftAmount: 'float (drift amplitude)', name: 'string (default "Background")' },
+  },
 
   // ── Multi-command ─────────────────────────────────────────────────────────
   batch: {

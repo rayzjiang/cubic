@@ -360,6 +360,8 @@ function _dispatchSwitch(command, args) {
         case "getLayerProperty":         return getLayerProperty(args);
         case "setLayerProperty":         return setLayerProperty(args);
         case "distributeLayers3D":       return distributeLayers3D(args);
+        case "cameraMove":               return cameraMove(args);
+        case "createBackground":         return createBackground(args);
         // text.jsx
         case "createTextLayer":          return createTextLayer(args);
         // fonts.jsx

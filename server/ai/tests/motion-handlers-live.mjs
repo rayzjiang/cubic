@@ -167,6 +167,43 @@ try {
     assert(res.createdLayers && res.createdLayers.length === 2, `expected 2 extracted layers, got ${res.createdLayers && res.createdLayers.length}`);
     return `${res.createdLayers.length} layers extracted`;
   });
+
+  // ── cameraMove ──────────────────────────────────────────────────────────────────
+  await test('cameraMove pushIn creates a camera and keyframes its Zoom', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'SCENE');
+    const res = await call('cameraMove', { compName: comp, move: 'pushIn', duration: 2 });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    assert(res.camera && res.camera.created === true, 'expected a camera to be created');
+    const kf = await run('getLayerKeyframes', { compName: comp, layerIndex: res.camera.index, propertyPath: ['Camera Options', 'Zoom'] });
+    assert(kf.status === 'success' && kf.count === 2, `expected 2 Zoom keyframes, got ${kf.count}`);
+    return `camera "${res.camera.name}", ${kf.count} Zoom keys`;
+  });
+
+  await test('cameraMove orbit keyframes the camera Position around the POI', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'ORBIT');
+    const res = await call('cameraMove', { compName: comp, move: 'orbit', amount: 45, duration: 2 });
+    assert(res.status === 'success', 'expected success, got ' + res.status);
+    const kf = await run('getLayerKeyframes', { compName: comp, layerIndex: res.camera.index, propertyPath: ['Position'] });
+    assert(kf.status === 'success' && kf.count >= 2, `expected Position keyframes, got ${kf.count}`);
+    return `${kf.count} Position keys`;
+  });
+
+  // ── createBackground ──────────────────────────────────────────────────────────────
+  await test('createBackground adds a gradient solid at the bottom with a Ramp effect', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'FRONT');
+    const before = await layerCount(comp);
+    const res = await call('createBackground', { compName: comp, gradient: true });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    const after = await layerCount(comp);
+    assert(after === before + 1, 'expected one new background layer');
+    assert(res.layer.index === after, `expected background at the bottom (index ${after}), got ${res.layer.index}`);
+    const fx = await run('getLayerEffects', { compName: comp, layerIndex: res.layer.index });
+    assert((fx.count || (fx.effects || []).length) >= 1, 'expected a Ramp effect on the background');
+    return `bottom layer ${res.layer.index}, gradient`;
+  });
 } catch (e) {
   console.log(red(`\n  Aborted: ${e.message}`));
 } finally {
