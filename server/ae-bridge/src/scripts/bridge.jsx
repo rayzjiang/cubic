@@ -342,6 +342,7 @@ function _dispatchSwitch(command, args) {
         case "batchSetLayerProperties":  return batchSetLayerProperties(args);
         case "splitLayer":               return splitLayer(args);
         case "trimLayer":                return trimLayer(args);
+        case "retimeClip":               return retimeClip(args);
         case "moveLayer":                return moveLayer(args);
         case "setLayerParent":           return setLayerParent(args);
         case "centerAnchorPoint":        return centerAnchorPoint(args);

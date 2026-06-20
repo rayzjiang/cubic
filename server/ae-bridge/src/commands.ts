@@ -52,6 +52,7 @@ export const COMMANDS: readonly string[] = [
   "splitLayer",
   "mergeLayer",
   "trimLayer",
+  "retimeClip",
   "setTimeRemapEnabled",
   // Layers — nesting / mattes
   "precompose",

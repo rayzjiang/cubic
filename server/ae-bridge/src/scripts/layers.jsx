@@ -1300,6 +1300,100 @@ function trimLayer(args) {
     }
 }
 
+// U: retimeClip — change a clip's playback timing without hand-rolling time-remap keyframes.
+// mode: speed (uniform rate via time-stretch; speed=2 → 2x faster, 0.5 → slow-mo) |
+//       freeze (hold one frame for the whole layer, via a single held Time Remap key) |
+//       reverse (play backwards via negative time-stretch).
+// On slow-mo (speed < 1) frame blending is auto-enabled so the in-between frames stay smooth.
+function retimeClip(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+        var mode = (args.mode || "").toLowerCase();
+
+        if (mode !== "speed" && mode !== "freeze" && mode !== "reverse") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "mode must be speed, freeze, or reverse.");
+        }
+        if (!(layer instanceof AVLayer)) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "retimeClip only works on footage/precomp (AV) layers — not cameras, lights, or nulls.");
+        }
+
+        var previousValues = { stretch: layer.stretch, timeRemapEnabled: layer.timeRemapEnabled, inPoint: layer.inPoint, outPoint: layer.outPoint };
+
+        if (mode === "speed") {
+            var speed = (args.speed !== undefined && args.speed !== null) ? parseFloat(args.speed) : null;
+            if (speed === null || isNaN(speed) || speed <= 0) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "speed must be a positive number (e.g. 2 for 2x, 0.5 for half-speed).");
+            }
+            // Time-stretch is the inverse of speed: 50% stretch = 2x faster, 200% = half-speed.
+            // Preserve any existing reverse (negative stretch) direction.
+            var sign = (layer.stretch < 0) ? -1 : 1;
+            var newStretch = sign * (100 / speed);
+            if (_valuesEqual(newStretch, layer.stretch)) {
+                return JSON.stringify({ status: "noop", message: "Layer is already at that speed." }, null, 2);
+            }
+            layer.stretch = newStretch;
+
+            // Smooth slow-mo: auto-enable frame blending when playing slower than real time.
+            var frameBlended = false;
+            if (speed < 1) {
+                try { layer.frameBlendingType = FrameBlendingType.PIXEL_MOTION; frameBlended = true; }
+                catch (eFB) { try { layer.frameBlendingType = FrameBlendingType.FRAME_MIX; frameBlended = true; } catch (eFB2) {} }
+                try { comp.frameBlending = true; } catch (eCFB) {}
+            }
+            return JSON.stringify({
+                status: "success",
+                message: "Set speed to " + speed + "x" + (frameBlended ? " (frame blending on for smooth slow-mo)" : "") + ".",
+                layer: { index: layer.index, name: layer.name, stretch: layer.stretch, outPoint: layer.outPoint },
+                frameBlended: frameBlended,
+                previousValues: previousValues
+            }, null, 2);
+        }
+
+        if (mode === "reverse") {
+            // Negative time-stretch reverses playback while preserving the current speed magnitude.
+            if (layer.stretch < 0) {
+                return JSON.stringify({ status: "noop", message: "Layer is already playing in reverse." }, null, 2);
+            }
+            layer.stretch = -Math.abs(layer.stretch);
+            return JSON.stringify({
+                status: "success",
+                message: "Reversed playback.",
+                layer: { index: layer.index, name: layer.name, stretch: layer.stretch, inPoint: layer.inPoint, outPoint: layer.outPoint },
+                previousValues: previousValues
+            }, null, 2);
+        }
+
+        // mode === "freeze": hold a single source frame for the whole layer via Time Remap.
+        if (!layer.canSetTimeRemapEnabled) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "This layer can't be frozen (time remapping unsupported — use a footage or precomp layer, not a solid or still).");
+        }
+        var freezeAt = (args.atTime !== undefined && args.atTime !== null) ? parseFloat(args.atTime) : comp.time;
+        // Clamp the freeze point into the layer's visible range.
+        if (freezeAt < layer.inPoint) freezeAt = layer.inPoint;
+        if (freezeAt > layer.outPoint) freezeAt = layer.outPoint;
+
+        if (!layer.timeRemapEnabled) { layer.timeRemapEnabled = true; }
+        var trp = layer.property("Time Remap");
+        // Source time currently shown at the freeze point — the frame we hold.
+        var srcTime = trp.valueAtTime(freezeAt, false);
+        // Collapse to a single held key so the value is constant across the layer.
+        while (trp.numKeys > 0) { trp.removeKey(1); }
+        trp.setValueAtTime(layer.inPoint, srcTime);
+        try { trp.setInterpolationTypeAtKey(1, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD); } catch (eHold) {}
+
+        return JSON.stringify({
+            status: "success",
+            message: "Froze the frame at " + freezeAt.toFixed(3) + "s.",
+            layer: { index: layer.index, name: layer.name, freezeTime: freezeAt, sourceTime: srcTime },
+            previousValues: previousValues
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // U: setTimeRemapEnabled — enable/disable time remapping on a layer (AVLayer only)
 function setTimeRemapEnabled(args) {
     try {

@@ -190,6 +190,12 @@ export const COMMAND_PARAMS = {
     summary: 'Trim a layer in/out (mode or explicit points).',
     params: { mode: 'currentTimeIn|currentTimeOut (omit for explicit)', inPoint: 'float seconds', outPoint: 'float seconds', startTime: 'float seconds' },
   },
+  retimeClip: {
+    domain: 'Layers',
+    summary: 'Change a clip\'s playback timing — use for "speed up / slow down / 2x / slow-mo", "freeze frame", "play in reverse". Never hand-roll time-remap keyframes. mode speed: speed>1 faster, <1 slow-mo (auto frame-blend); mode freeze: holds one frame for the whole layer (atTime = which frame, default playhead); mode reverse: plays backwards.',
+    params: { mode: 'speed|freeze|reverse', speed: 'float (speed mode; 2=2x, 0.5=half)', atTime: 'float seconds (freeze mode; default playhead)' },
+    required: ['mode'],
+  },
   setTimeRemapEnabled: { domain: 'Layers', summary: 'Enable/disable time remapping on a layer.', params: { enabled: 'bool' }, required: ['enabled'] },
 
   // ── Layers — nesting / mattes ─────────────────────────────────────────────
