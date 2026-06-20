@@ -347,6 +347,7 @@ function _dispatchSwitch(command, args) {
         case "centerAnchorPoint":        return centerAnchorPoint(args);
         case "setAnchorPoint":           return setAnchorPoint(args);
         case "alignLayers":              return alignLayers(args);
+        case "distributeLayers":         return distributeLayers(args);
         case "sequenceLayers":           return sequenceLayers(args);
         case "setTimeRemapEnabled":      return setTimeRemapEnabled(args);
         case "deleteLayer":              return deleteLayer(args);

@@ -1615,6 +1615,21 @@ function getLayerProperty(args) {
     }
 }
 
+// Compute a layer's axis-aligned comp-space bbox (ignores rotation). Shared by align/distribute.
+function _getCompBbox(comp, layer) {
+    var rect = layer.sourceRectAtTime(comp.time, false);
+    var anchor = layer.property("Anchor Point").value;
+    var pos = layer.property("Position").value;
+    var scale = layer.property("Scale").value;
+    var sx = scale[0] / 100;
+    var sy = scale[1] / 100;
+    var x1 = pos[0] + (rect.left - anchor[0]) * sx;
+    var x2 = pos[0] + (rect.left + rect.width - anchor[0]) * sx;
+    var y1 = pos[1] + (rect.top - anchor[1]) * sy;
+    var y2 = pos[1] + (rect.top + rect.height - anchor[1]) * sy;
+    return { left: Math.min(x1, x2), right: Math.max(x1, x2), top: Math.min(y1, y2), bottom: Math.max(y1, y2) };
+}
+
 // U: alignLayers — align layers horizontally or vertically to the composition bounds or selection bbox.
 // alignment: LEFT|HORIZONTAL_CENTER|RIGHT|TOP|VERTICAL_CENTER|BOTTOM
 // reference: COMPOSITION|SELECTION
@@ -1642,21 +1657,6 @@ function alignLayers(args) {
             layers.push(comp.layer(idx));
         }
 
-        // Compute comp-space bbox for each layer (axis-aligned, ignores rotation)
-        function getCompBbox(layer) {
-            var rect = layer.sourceRectAtTime(comp.time, false);
-            var anchor = layer.property("Anchor Point").value;
-            var pos = layer.property("Position").value;
-            var scale = layer.property("Scale").value;
-            var sx = scale[0] / 100;
-            var sy = scale[1] / 100;
-            var x1 = pos[0] + (rect.left - anchor[0]) * sx;
-            var x2 = pos[0] + (rect.left + rect.width - anchor[0]) * sx;
-            var y1 = pos[1] + (rect.top - anchor[1]) * sy;
-            var y2 = pos[1] + (rect.top + rect.height - anchor[1]) * sy;
-            return { left: Math.min(x1, x2), right: Math.max(x1, x2), top: Math.min(y1, y2), bottom: Math.max(y1, y2) };
-        }
-
         // Determine reference bounds
         var refLeft, refRight, refTop, refBottom;
         if (reference === "COMPOSITION") {
@@ -1664,7 +1664,7 @@ function alignLayers(args) {
         } else {
             // SELECTION: union of all target layer bboxes
             var allBboxes = [];
-            for (var bi = 0; bi < layers.length; bi++) { allBboxes.push(getCompBbox(layers[bi])); }
+            for (var bi = 0; bi < layers.length; bi++) { allBboxes.push(_getCompBbox(comp, layers[bi])); }
             refLeft = allBboxes[0].left; refRight = allBboxes[0].right;
             refTop = allBboxes[0].top; refBottom = allBboxes[0].bottom;
             for (var ri = 1; ri < allBboxes.length; ri++) {
@@ -1683,7 +1683,7 @@ function alignLayers(args) {
 
         for (var li = 0; li < layers.length; li++) {
             var layer = layers[li];
-            var bbox = getCompBbox(layer);
+            var bbox = _getCompBbox(comp, layer);
             var pos = layer.property("Position").value;
             previousPositions.push({ index: layer.index, name: layer.name, position: pos });
 
@@ -1715,6 +1715,123 @@ function alignLayers(args) {
             status: "success",
             message: "Aligned " + layers.length + " layer(s) (" + alignment + ", reference: " + reference + ").",
             alignment: alignment,
+            reference: reference,
+            modifiedLayers: modifiedLayers,
+            previousPositions: previousPositions
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// U: distributeLayers — evenly space layers along one axis (bounding-box-aware; only moves that axis).
+// axis: horizontal|vertical · gap: optional px between adjacent boxes (omit for a comfy default)
+// reference: COMPOSITION (center the run in the comp) | SELECTION (keep the group's current center;
+//            classic distribute — equalize gaps, extremes fixed — when gap is omitted)
+function distributeLayers(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        var axis = (args.axis || "vertical").toLowerCase();
+        var reference = (args.reference || "COMPOSITION").toUpperCase();
+        var gap = (args.gap !== undefined && args.gap !== null) ? args.gap : null;
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        if (axis !== "horizontal" && axis !== "vertical") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "axis must be horizontal or vertical.");
+        }
+        if (reference !== "COMPOSITION" && reference !== "SELECTION") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "reference must be COMPOSITION or SELECTION.");
+        }
+        if (gap !== null && (typeof gap !== "number" || isNaN(gap))) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "gap must be a number (px) when provided.");
+        }
+
+        // Resolve layers
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            layers.push(comp.layer(idx));
+        }
+        if (layers.length < 2) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "distributeLayers needs at least 2 layers.");
+        }
+
+        var axisIdx = (axis === "vertical") ? 1 : 0;
+        var minKey = (axis === "vertical") ? "top" : "left";
+        var maxKey = (axis === "vertical") ? "bottom" : "right";
+        var compAxisSize = (axis === "vertical") ? comp.height : comp.width;
+
+        // Build entries with bbox + extent, then sort by current visual order along the axis.
+        var entries = [];
+        for (var e = 0; e < layers.length; e++) {
+            var bb = _getCompBbox(comp, layers[e]);
+            entries.push({ layer: layers[e], bbox: bb, min: bb[minKey], extent: bb[maxKey] - bb[minKey] });
+        }
+        entries.sort(function (a, b) { return a.min - b.min; });
+
+        var n = entries.length;
+        var sumExtent = 0;
+        for (var s = 0; s < n; s++) { sumExtent += entries[s].extent; }
+        var avgExtent = sumExtent / n;
+
+        // Current group extent (for SELECTION placement / classic distribute).
+        var groupMin = entries[0].min;
+        var groupMax = entries[n - 1].bbox[maxKey];
+
+        var targets = [];   // target bbox-min along the axis, in sorted order
+        if (gap === null && reference === "SELECTION") {
+            // Classic distribute: keep first/last fixed, equalize the gaps between.
+            var gapEach = ((groupMax - groupMin) - sumExtent) / (n - 1);
+            var cursorA = groupMin;
+            for (var d = 0; d < n; d++) {
+                targets.push(cursorA);
+                cursorA += entries[d].extent + gapEach;
+            }
+        } else {
+            // Fixed-gap layout (explicit gap, or comfy proportional default).
+            var effectiveGap = (gap !== null) ? gap : 0.4 * avgExtent;
+            var runLength = sumExtent + effectiveGap * (n - 1);
+            var start;
+            if (reference === "COMPOSITION") {
+                start = (compAxisSize - runLength) / 2;
+            } else {
+                start = ((groupMin + groupMax) / 2) - runLength / 2;
+            }
+            var cursorB = start;
+            for (var f = 0; f < n; f++) {
+                targets.push(cursorB);
+                cursorB += entries[f].extent + effectiveGap;
+            }
+        }
+
+        var previousPositions = [];
+        var modifiedLayers = [];
+        var anyChanged = false;
+        for (var li = 0; li < n; li++) {
+            var layer = entries[li].layer;
+            var pos = layer.property("Position").value;
+            previousPositions.push({ index: layer.index, name: layer.name, position: pos });
+
+            var delta = targets[li] - entries[li].min;
+            var newPos = layer.threeDLayer ? [pos[0], pos[1], pos[2]] : [pos[0], pos[1]];
+            newPos[axisIdx] = pos[axisIdx] + delta;
+            if (!_valuesEqual(newPos, pos)) { anyChanged = true; }
+            layer.property("Position").setValue(newPos);
+            modifiedLayers.push({ index: layer.index, name: layer.name, newPosition: newPos });
+        }
+
+        if (!anyChanged) {
+            return JSON.stringify({ status: "noop", message: "Those layers are already evenly distributed." }, null, 2);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Distributed " + n + " layer(s) (" + axis + ", reference: " + reference + (gap !== null ? ", gap: " + gap + "px" : ", comfy gap") + ").",
+            axis: axis,
             reference: reference,
             modifiedLayers: modifiedLayers,
             previousPositions: previousPositions

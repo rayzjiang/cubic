@@ -163,6 +163,12 @@ export const COMMAND_PARAMS = {
     params: { layerIndices: 'array of int (1-based)', alignment: 'LEFT|HORIZONTAL_CENTER|RIGHT|TOP|VERTICAL_CENTER|BOTTOM', reference: 'COMPOSITION|SELECTION (default COMPOSITION)' },
     required: ['layerIndices'],
   },
+  distributeLayers: {
+    domain: 'Layers',
+    summary: 'Evenly space layers along one axis (bounding-box-aware; moves only that axis). For even stacks/rows — pair with alignLayers for the cross-axis. COMPOSITION centers the run in the comp; SELECTION keeps the group\'s current center (omit gap for classic distribute: equalize gaps, extremes fixed).',
+    params: { layerIndices: 'array of int (1-based)', axis: 'horizontal|vertical (default vertical)', gap: 'float px between adjacent bounding boxes (optional; omit for a comfy proportional gap)', reference: 'COMPOSITION|SELECTION (default COMPOSITION)' },
+    required: ['layerIndices'],
+  },
   sequenceLayers: {
     domain: 'Layers',
     summary: 'Stagger layer start times in sequence.',
