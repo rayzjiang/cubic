@@ -45,14 +45,31 @@ export const fadeRise: Variants = {
   animate: { opacity: 1, y: 0, transition: { duration: DURATION.fast, ease: EASE_OUT } },
 }
 
+// Stagger timing shared by the home list and the chat transcript cascade so the two feel identical:
+// each item fades+rises over DURATION.fast, STAGGER_STEP apart, after an initial STAGGER_DELAY.
+export const STAGGER_STEP = 0.035
+export const STAGGER_DELAY = 0.04
+
 // Home conversation list: parent staggers its children on view enter.
 export const listStagger: Variants = {
   initial: {},
-  animate: { transition: { staggerChildren: 0.035, delayChildren: 0.04 } },
+  animate: { transition: { staggerChildren: STAGGER_STEP, delayChildren: STAGGER_DELAY } },
 }
 export const listRow: Variants = {
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0, transition: { duration: DURATION.fast, ease: EASE_OUT } },
+}
+
+// Chat transcript row entrance. The transcript renders a flat item list across two scroll containers
+// (so a parent-orchestrated staggerChildren can't span it) — instead each row is handed its own `delay`
+// via Motion's `custom` prop, computed in MessageList (cap the cascade to the visible tail, top-down).
+export const messageEntrance: Variants = {
+  initial: { opacity: 0, y: 6 },
+  animate: (delay: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: DURATION.fast, ease: EASE_OUT, delay },
+  }),
 }
 
 // ── Reduced-motion-aware bundle ──
@@ -73,6 +90,13 @@ export function useMotion() {
     fadeRise: reduce ? fade(DURATION.fast) : fadeRise,
     listStagger: reduce ? ({ initial: {}, animate: { transition: { staggerChildren: 0 } } } as Variants) : listStagger,
     listRow: reduce ? fade(DURATION.fast) : listRow,
+    // Reduced motion: drop the y-rise AND the per-item delay → a plain simultaneous fast fade.
+    messageEntrance: reduce
+      ? ({
+          initial: { opacity: 0 },
+          animate: () => ({ opacity: 1, transition: { duration: DURATION.fast, ease: EASE_OUT } }),
+        } as Variants)
+      : messageEntrance,
     // Send/stop morph transition: spring normally, instant snap when reduced.
     morphTransition: (reduce ? { duration: 0 } : SPRING) as Transition,
   }

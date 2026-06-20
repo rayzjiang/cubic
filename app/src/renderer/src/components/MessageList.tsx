@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { useChatStore } from '../store'
-import { useMotion } from '../motion'
+import { STAGGER_DELAY, STAGGER_STEP, useMotion } from '../motion'
 import type { DisplayItem } from '../protocol'
 import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
@@ -33,7 +33,7 @@ export function MessageList() {
   const progressWord = useChatStore((s) => s.progressWord)
   const compacting = useChatStore((s) => s.compacting)
   const sessionId = useChatStore((s) => s.sessionId)
-  const { fadeRise } = useMotion()
+  const { messageEntrance } = useMotion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
@@ -43,6 +43,22 @@ export function MessageList() {
   const [hasNew, setHasNew] = useState(false) // new content arrived while scrolled up
   const [viewportH, setViewportH] = useState(0)
   const prevLen = useRef(items.length)
+
+  // Distinguish a fresh chat load (→ cascade its visible tail) from a live append (→ single fade). On
+  // openChat the store blanks items, then the async 'history' reply replaces them wholesale — so the
+  // render where items first populate for a session is the load; freeze its length as the baseline.
+  // Rows at index < baseLen are loaded history; index >= baseLen are streamed live afterward.
+  const loadedSessionRef = useRef<string | null | undefined>(undefined)
+  const baseLenRef = useRef(0)
+  if (loadedSessionRef.current !== sessionId) {
+    if (items.length > 0) {
+      loadedSessionRef.current = sessionId
+      baseLenRef.current = items.length
+    }
+  } else if (items.length < baseLenRef.current) {
+    baseLenRef.current = items.length // items shrank (compaction) → keep later rows tagged live
+  }
+  const baseLen = baseLenRef.current
 
   // Callback ref (not an effect) so the ResizeObserver attaches whenever the scroll node mounts — the
   // empty state doesn't render it, so it appears only after the first message. Tracks the viewport's
@@ -119,31 +135,41 @@ export function MessageList() {
     )
   }
 
+  // Cascade only the visible tail: the transcript is bottom-pinned, so the last few items are what's on
+  // screen. Older history appears instantly (off-screen anyway); live-streamed rows (index >= baseLen)
+  // get a single no-delay fade — current behavior. Top-to-bottom: earlier visible rows lead, the newest
+  // lands last. Matches the home list (shared STAGGER_* tokens). `custom` feeds each row's delay to the
+  // messageEntrance variant. y is a transform, not layout → never shifts scrollHeight / the pin math.
+  const CASCADE_CAP = 6
+  const cascadeStart = Math.max(0, baseLen - CASCADE_CAP)
+  const entranceOf = (i: number): { animate: boolean; delay: number } => {
+    if (i >= baseLen) return { animate: true, delay: 0 } // streamed live → single fade
+    if (i < cascadeStart) return { animate: false, delay: 0 } // older history → instant, no animation
+    return { animate: true, delay: STAGGER_DELAY + (i - cascadeStart) * STAGGER_STEP }
+  }
+
   // `suppressTopGap` drops a user prompt's top margin when it's the first row of the last-turn block
   // (that block supplies the spacing via its own padding) — keeps the message off the very top edge.
-  //
-  // Entrance: each row fades+rises in (fadeRise). Only the NEWEST row gets `initial` so a streamed
-  // message animates as it lands, while opening an existing conversation paints all of history
-  // instantly (no replay). y is a transform, not layout, so it never shifts scrollHeight / the pin math.
   const renderItem = (it: DisplayItem, i: number, suppressTopGap = false) => {
-    const enter = i === items.length - 1 ? 'initial' : false
+    const e = entranceOf(i)
+    const enter = e.animate ? 'initial' : false
     if (it.kind === 'user') {
       return (
-        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className={i === 0 || suppressTopGap ? '' : 'mt-7'}>
+        <motion.div key={`${sessionId ?? 'new'}:${i}`} variants={messageEntrance} custom={e.delay} initial={enter} animate="animate" className={i === 0 || suppressTopGap ? '' : 'mt-7'}>
           <UserPrompt text={it.text} turnId={it.turnId} />
         </motion.div>
       )
     }
     if (it.kind === 'assistant') {
       return (
-        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3">
+        <motion.div key={`${sessionId ?? 'new'}:${i}`} variants={messageEntrance} custom={e.delay} initial={enter} animate="animate" className="mt-3">
           <AssistantMessage text={it.text} />
         </motion.div>
       )
     }
     if (it.kind === 'interrupted') {
       return (
-        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
+        <motion.div key={`${sessionId ?? 'new'}:${i}`} variants={messageEntrance} custom={e.delay} initial={enter} animate="animate" className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
           <span className="h-px flex-1 bg-white/10" />
           Stopped
           <span className="h-px flex-1 bg-white/10" />
@@ -152,13 +178,13 @@ export function MessageList() {
     }
     if (it.kind === 'compaction') {
       return (
-        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3">
+        <motion.div key={`${sessionId ?? 'new'}:${i}`} variants={messageEntrance} custom={e.delay} initial={enter} animate="animate" className="mt-3">
           <CompactionSummary summary={it.summary} />
         </motion.div>
       )
     }
     return (
-      <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-1.5">
+      <motion.div key={`${sessionId ?? 'new'}:${i}`} variants={messageEntrance} custom={e.delay} initial={enter} animate="animate" className="mt-1.5">
         <ToolActionRow label={it.label} status={it.status} />
       </motion.div>
     )
