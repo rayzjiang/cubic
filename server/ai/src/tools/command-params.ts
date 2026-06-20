@@ -383,6 +383,12 @@ export const COMMAND_PARAMS = {
     params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
     required: ['recipe', 'layerIndices'],
   },
+  applyTransition: {
+    domain: 'Motion',
+    summary: 'Editorial transitions — use for "cross dissolve / crossfade", "fade to black", "fade in from black", "dip to color". Never hand-roll opacity keyframes for these. crossDissolve takes [outgoing, incoming] (overlap the two clips first); fades/dip take [clip] and use a color solid. atTime places the transition (defaults: dissolve/fadeToBlack at the clip\'s end, fadeFromBlack at its start, dip at the playhead).',
+    params: { type: 'crossDissolve|fadeToBlack|fadeFromBlack|dipToColor', layerIndices: 'array of int (1-based; [outgoing,incoming] for crossDissolve)', durationSeconds: 'float (default 0.5)', atTime: 'float seconds (optional)', color: '[r,g,b] 0-1 for fade/dip solid (default black)' },
+    required: ['type', 'layerIndices'],
+  },
   distributeLayers3D: {
     domain: 'Motion',
     summary: 'Arrange layers in 3D (cylinder or grid).',

@@ -833,6 +833,121 @@ function applyMotionRecipe(args) {
     }
 }
 
+// U: applyTransition — editorial transitions without hand-rolling opacity keyframes.
+// type: crossDissolve (fade clip A out + clip B in over an overlap) |
+//       fadeToBlack | fadeFromBlack | dipToColor (a color solid keyframed over the clip).
+// layerIndices: [A, B] for crossDissolve (A fades out, B fades in); [clip] for the fades.
+// durationSeconds: transition length (default 0.5). atTime: where the transition sits.
+// color: [r,g,b] 0-1 for the fade/dip solid (default black).
+function applyTransition(args) {
+    var createdSolid = null;  // tracked for atomic-create rollback (see catch)
+    try {
+        var comp = _resolveComp(args);
+        var type = (args.type || "");
+        var layerIndices = args.layerIndices;
+        var duration = (args.durationSeconds !== undefined && args.durationSeconds !== null) ? parseFloat(args.durationSeconds) : 0.5;
+
+        var validTypes = { crossDissolve: true, fadeToBlack: true, fadeFromBlack: true, dipToColor: true };
+        if (!validTypes[type]) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "type must be crossDissolve, fadeToBlack, fadeFromBlack, or dipToColor.");
+        }
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        if (isNaN(duration) || duration <= 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "durationSeconds must be a positive number.");
+        }
+        for (var v = 0; v < layerIndices.length; v++) {
+            if (layerIndices[v] < 1 || layerIndices[v] > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + layerIndices[v]);
+        }
+
+        // Set a fade between two opacity keys (linear — editorial dissolves read cleanest un-eased).
+        function fadeOpacity(layer, tStart, vStart, tEnd, vEnd) {
+            var op = layer.property("Transform").property("Opacity");
+            _recipeSetKey(op, tStart, vStart, "linear");
+            _recipeSetKey(op, tEnd, vEnd, "linear");
+        }
+
+        if (type === "crossDissolve") {
+            if (layerIndices.length < 2) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "crossDissolve needs two layers: [outgoing, incoming].");
+            }
+            var outgoing = comp.layer(layerIndices[0]);
+            var incoming = comp.layer(layerIndices[1]);
+            // Default: the dissolve lands right as the outgoing clip ends.
+            var endT = (args.atTime !== undefined && args.atTime !== null) ? (parseFloat(args.atTime) + duration) : outgoing.outPoint;
+            var startT = endT - duration;
+
+            fadeOpacity(outgoing, startT, 100, endT, 0);
+            fadeOpacity(incoming, startT, 0, endT, 100);
+
+            var warning;
+            if (incoming.inPoint > startT + 0.001 || incoming.outPoint < endT - 0.001) {
+                warning = "The incoming clip isn't active across the whole dissolve — overlap the two clips so both cover " + startT.toFixed(2) + "–" + endT.toFixed(2) + "s.";
+            }
+            var result = {
+                status: "success",
+                message: "Cross-dissolved over " + duration + "s (" + startT.toFixed(2) + "–" + endT.toFixed(2) + "s).",
+                type: type,
+                outgoing: { index: outgoing.index, name: outgoing.name },
+                incoming: { index: incoming.index, name: incoming.name }
+            };
+            if (warning) { result.warning = warning; }
+            return JSON.stringify(result, null, 2);
+        }
+
+        // Fades / dip use a color solid keyframed over the target clip.
+        var target = comp.layer(layerIndices[0]);
+        var color = args.color || [0, 0, 0];
+        var col = [
+            (color.length > 0) ? parseFloat(color[0]) : 0,
+            (color.length > 1) ? parseFloat(color[1]) : 0,
+            (color.length > 2) ? parseFloat(color[2]) : 0
+        ];
+        var solidName = (type === "fadeToBlack") ? "Fade to Black" : (type === "fadeFromBlack") ? "Fade from Black" : "Dip to Color";
+        createdSolid = comp.layers.addSolid(col, solidName, comp.width, comp.height, 1);
+        // Solid covers the whole frame, sitting on top of everything.
+        createdSolid.moveToBeginning();
+
+        var sStart, sEnd, solidIn, solidOut;
+        if (type === "fadeFromBlack") {
+            sStart = (args.atTime !== undefined && args.atTime !== null) ? parseFloat(args.atTime) : target.inPoint;
+            sEnd = sStart + duration;
+            fadeOpacity(createdSolid, sStart, 100, sEnd, 0);
+            solidIn = sStart; solidOut = sEnd;
+        } else if (type === "fadeToBlack") {
+            sEnd = (args.atTime !== undefined && args.atTime !== null) ? (parseFloat(args.atTime) + duration) : target.outPoint;
+            sStart = sEnd - duration;
+            fadeOpacity(createdSolid, sStart, 0, sEnd, 100);
+            solidIn = sStart; solidOut = target.outPoint; // stay on the color through the clip's end
+        } else { // dipToColor — fade in to full color and back out, centered on atTime
+            var center = (args.atTime !== undefined && args.atTime !== null) ? parseFloat(args.atTime) : comp.time;
+            sStart = center - duration / 2;
+            sEnd = center + duration / 2;
+            var op = createdSolid.property("Transform").property("Opacity");
+            _recipeSetKey(op, sStart, 0, "linear");
+            _recipeSetKey(op, center, 100, "linear");
+            _recipeSetKey(op, sEnd, 0, "linear");
+            solidIn = sStart; solidOut = sEnd;
+        }
+        // Trim the solid to just its transition window so it isn't a persistent layer.
+        createdSolid.startTime = solidIn;
+        createdSolid.inPoint = solidIn;
+        createdSolid.outPoint = solidOut;
+
+        return JSON.stringify({
+            status: "success",
+            message: solidName + " over " + duration + "s.",
+            type: type,
+            solid: { index: createdSolid.index, name: createdSolid.name, inPoint: createdSolid.inPoint, outPoint: createdSolid.outPoint }
+        }, null, 2);
+    } catch (error) {
+        // Roll back the partially-created solid so a failed transition leaves no orphan.
+        if (createdSolid !== null) { try { createdSolid.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // D: removePropertyKeyframes
 function removePropertyKeyframes(args) {
     try {
