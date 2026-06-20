@@ -184,7 +184,7 @@ console.log(cyan('    • "make this comp vertical 9:16"          → setComposi
 console.log(cyan('    • "slow this down to 50%"                 → retimeClip (speed)'));
 console.log(cyan('    • "freeze the frame here"                 → retimeClip (freeze)'));
 console.log(cyan('    • "play it backwards"                     → retimeClip (reverse)'));
-console.log(cyan('    • "fade to black at the end"              → black solid + applyMotionRecipe fadeIn (no dedicated tool)'));
+console.log(cyan('    • "fade out / fade to black"              → applyMotionRecipe fadeOut (just opacity, no dedicated tool)'));
 console.log(cyan('    • "warm it up / fix the exposure"         → adjustColor'));
 console.log(cyan('    • "give it a teal-and-orange look"        → adjustColor (look)'));
 console.log(cyan('    • "export this as an mp4"                 → polite decline (out of scope)'));
