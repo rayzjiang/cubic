@@ -82,7 +82,6 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "restore",     "sessionId": "<uuid>", "turnId": "<ms-timestamp>" }
 { "type": "rename",      "sessionId": "<uuid>", "title": "<new title>" }
 { "type": "openProject", "sessionId": "<uuid|omitted>", "path": "<.aep path>", "save": "save|discard|omitted" }
-{ "type": "bringChats",  "fromPath": "<.aep path>", "toPath": "<.aep path>" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
@@ -115,9 +114,6 @@ Inbound (UI → backend), the `ChatInbound` union:
   success the new project's `conversations` list is broadcast (so every client auto-follows) and a
   `projectOpened {ok:true}` reply is sent. AE's own save dialog is never allowed to prompt (it would hang
   the bridge) — see `openProject` in `project.jsx`.
-- `bringChats` (version continuity): copy every conversation under `fromPath` to `toPath` with fresh ids
-  (the originals stay), used when AE Increment/Save-As makes a new file and the user opts to carry chats
-  forward. Allowed mid-turn (no Session). No reply — a `conversations` broadcast refreshes the list.
 
 Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json

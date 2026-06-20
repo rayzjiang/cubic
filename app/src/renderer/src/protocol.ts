@@ -68,8 +68,6 @@ export type ClientMessage =
   // the unsaved-changes decision for the project being closed; absent on the first send (the backend
   // replies `projectOpened` with `needsConfirm` so the renderer can ask).
   | { type: 'openProject'; sessionId?: string; path: string; save?: 'save' | 'discard' }
-  // Copy every conversation from one project to another (version continuity: "bring my chats to v2").
-  | { type: 'bringChats'; fromPath: string; toPath: string }
 
 // ── Backend → renderer ──
 export type ServerMessage =

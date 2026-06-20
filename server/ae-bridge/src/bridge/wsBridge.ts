@@ -27,7 +27,7 @@ type BridgeEvent = 'connect' | 'disconnect';
  *  one); `list` requests the current project's conversation list; `loadHistory` fetches one
  *  conversation's committed history as renderable display items. */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename' | 'openProject' | 'bringChats';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename' | 'openProject';
   sessionId?: string;
   text?: string;
   /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
@@ -40,14 +40,11 @@ export interface ChatInbound {
   path?: string;
   /** Unsaved-changes decision for the project being closed (openProject). */
   save?: 'save' | 'discard';
-  /** Source/destination project paths for carrying conversations forward (bringChats). */
-  fromPath?: string;
-  toPath?: string;
 }
 
 /** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
 const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
-  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore', 'rename', 'openProject', 'bringChats',
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore', 'rename', 'openProject',
 ]);
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;

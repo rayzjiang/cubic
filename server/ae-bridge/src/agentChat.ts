@@ -1,7 +1,7 @@
 import { runAgentTurn, compactSession, Session, nextQueueId, sessionCache, getProjectInfo, type AgentEvent, type Message } from "cubic-ai";
 import type { WebSocket } from "ws";
 import { bridge } from "./bridge/wsBridge.js";
-import { appendTurn, appendCompactionMarker, truncateToBeforeTurn, loadSession, loadDisplayMessages, getConversation, deleteConversation, deleteSessionBackups, rekey, copyConversations, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
+import { appendTurn, appendCompactionMarker, truncateToBeforeTurn, loadSession, loadDisplayMessages, getConversation, deleteConversation, deleteSessionBackups, rekey, encodeProjectPath, listConversations, lastActiveProjectPath, renameConversation } from "./persist.js";
 import { messagesToDisplayItems } from "./displayItems.js";
 import { attachSocket, dropSocket, emitFor, resetBuffer, clearBuffer, bufferFor } from "./reattach.js";
 
@@ -251,15 +251,6 @@ export function registerAgentChat(): void {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: false, message }));
-      }
-      return;
-    }
-
-    // Carry every conversation from one project to another (version continuity — "bring my chats to v2").
-    // Pure index.json/JSONL copy (keeps the originals), so it's allowed mid-turn and needs no Session.
-    if (msg.type === "bringChats") {
-      if (typeof msg.fromPath === "string" && typeof msg.toPath === "string") {
-        if (copyConversations(msg.fromPath, msg.toPath) > 0) broadcastConversations();
       }
       return;
     }

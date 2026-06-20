@@ -4,7 +4,6 @@ import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from '.
 import {
   type Connection,
   sendAttach,
-  sendBringChats,
   sendCancel,
   sendDelete,
   sendList,
@@ -91,12 +90,12 @@ interface ChatState {
   // `projectPath` is the project currently DISPLAYED; `liveProjectPath` is the project actually open in AE.
   // Every `conversations` message reflects live AE, so after each adopt the two are equal — Cubic always
   // shows the open project. On a real in-AE switch we auto-follow and remember `prevProject` (the project we
-  // left + its chat count), which drives the bar: "Open <prev> in After Effects" actually re-opens it in AE
-  // (a real switch, not a view-only swap), and — when the new file looks like an increment/Save-As of prev —
-  // "bring your N chats" copies prev's conversations forward. `pendingSwitchPath` defers a switch detected
-  // mid-turn (we don't yank the user out of a running turn; we catch up when it ends).
+  // left), which drives the bar's "Open <prev> in After Effects" — that actually re-opens it in AE (a real
+  // switch, not a view-only swap). Each .aep is its own conversation bucket; switching projects just switches
+  // buckets. `pendingSwitchPath` defers a switch detected mid-turn (we don't yank the user out of a running
+  // turn; we catch up when it ends).
   liveProjectPath: string | null
-  prevProject: { projectPath: string; count: number } | null
+  prevProject: { projectPath: string } | null
   pendingSwitchPath: string | null
   // The "current project has unsaved changes — Save/Discard before opening <path>?" confirm (3-button modal).
   pendingOpenProjectConfirm: { path: string; currentUntitled: boolean } | null
@@ -138,7 +137,6 @@ interface ChatState {
   reopenPrevProject: () => void
   confirmOpenProject: (save: 'save' | 'discard') => void
   cancelOpenProject: () => void
-  bringChatsForward: () => void
   dismissProjectSwitch: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
@@ -223,17 +221,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     sendOpenProject(c.path, save, get().sessionId ?? undefined)
   },
   cancelOpenProject: () => set({ pendingOpenProjectConfirm: null }),
-  // The version bar's "Bring chats" — copy the previous project's conversations into the now-open one (the
-  // backend broadcasts the refreshed list). Clear the bar; a toast confirms on the refresh.
-  bringChatsForward: () => {
-    const s = get()
-    if (!s.prevProject || s.liveProjectPath === null) return
-    sendBringChats(s.prevProject.projectPath, s.liveProjectPath)
-    set({ prevProject: null })
-    get().addToast('Bringing your chats over…')
-  },
-  // The bar's ✕ — accept the now-open project; drop the "Open <prev>" / "bring chats" affordance and any
-  // deferred-switch note.
+  // The bar's ✕ — accept the now-open project; drop the "Open <prev>" affordance and any deferred-switch note.
   dismissProjectSwitch: () => set({ prevProject: null, pendingSwitchPath: null }),
 
   handleServerMessage: (msg) => {
@@ -274,11 +262,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (liveChanged && s.liveProjectPath === '') { adopt(); break }
 
         // A real in-AE project switch (File>Open / Increment-and-Save / recovery). Remember where we were
-        // (the "Open <prev>" target + its chat count for "bring chats"), then auto-follow the now-open
-        // project PRESERVING the view: on a chat open a fresh chat for it (its past chats stay in the
-        // sidebar); on Home just adopt its list. The bar is raised via `prevProject`.
+        // (the "Open <prev>" target), then auto-follow the now-open project PRESERVING the view: on a chat
+        // open a fresh chat for it (its past chats stay in the sidebar); on Home just adopt its list. The bar
+        // is raised via `prevProject`.
         if (liveChanged) {
-          set({ prevProject: { projectPath: s.projectPath, count: s.conversations.length }, pendingSwitchPath: null })
+          set({ prevProject: { projectPath: s.projectPath }, pendingSwitchPath: null })
           adopt()
           if (s.view === 'chat' && s.sessionId) get().newChat()
           break
