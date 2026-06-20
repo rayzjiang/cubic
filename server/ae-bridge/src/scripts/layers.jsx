@@ -82,6 +82,9 @@ function getLayerInfo(args) {
                 masksCount: layer.property("Masks") ? layer.property("Masks").numProperties : 0
             };
 
+            // Motion blur switch — only AVLayers have it (cameras/lights throw), so guard the read.
+            try { layerInfo.motionBlur = layer.motionBlur; } catch (mbErr) {}
+
             // Blend mode as a friendly label (reverse of BLEND_MODES) — enables read-back verification.
             for (var bmk in BLEND_MODES) {
                 if (BLEND_MODES.hasOwnProperty(bmk) && BLEND_MODES[bmk] === layer.blendingMode) { layerInfo.blendMode = bmk; break; }

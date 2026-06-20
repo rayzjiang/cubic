@@ -257,6 +257,16 @@ function _resolveShapeGroupContents(layer, groupPath) {
     return firstContents || firstGroup;
 }
 
+// Count the top-level vector groups in a shape layer's Contents — every access guarded so a malformed
+// or merged layer (groups that share a name) can't throw mid-scan.
+function _countShapeGroups(contents) {
+    var n = 0;
+    for (var i = 1; i <= contents.numProperties; i++) {
+        try { if (contents.property(i).matchName === "ADBE Vector Group") { n++; } } catch (e) {}
+    }
+    return n;
+}
+
 // C/U: animateShape — write-on / draw-on reveal via Trim Paths. Finds or adds a Trim Paths operator on
 // the shape group, then keyframes Start/End over `duration` so the stroke draws on. This is the shape
 // analog of animateText: one call instead of hand-keyframing trim properties.
@@ -329,31 +339,35 @@ function extractShapes(args) {
         var contents = layer.property("Contents");
         if (!contents) { throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' has no Contents — is it a shape layer?"); }
 
-        // Collect the indices of the top-level vector groups (skip operators living at Contents root).
-        var groupIdxs = [];
-        for (var i = 1; i <= contents.numProperties; i++) {
-            try { if (contents.property(i).matchName === "ADBE Vector Group") { groupIdxs.push(i); } } catch (e) {}
-        }
-        if (groupIdxs.length < 2) {
-            throw _err(ERROR_CODES.INVALID_ARGS, "Layer has " + groupIdxs.length + " shape group(s) — need at least 2 to extract.");
+        // Count the top-level vector groups (every property access guarded — a merged layer can hold
+        // groups that share a name, so we select by ORDINAL position, never by name).
+        var groupCount = _countShapeGroups(contents);
+        if (groupCount < 2) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Layer has " + groupCount + " shape group(s) — need at least 2 to extract.");
         }
 
         var deleteSource = args.deleteSource === true;
         var prevEnabled = layer.enabled;
         var out = [];
 
-        // For each group, duplicate the layer and delete every OTHER top-level group on the dup.
-        for (var g = 0; g < groupIdxs.length; g++) {
-            var keepName = contents.property(groupIdxs[g]).name;
+        // For each group ordinal, duplicate the layer and delete every OTHER top-level group on the dup
+        // (matched by ordinal index, not name — robust to duplicate group names).
+        for (var g = 0; g < groupCount; g++) {
             var dup = layer.duplicate();
             createdLayers.push(dup);
             var dupContents = dup.property("Contents");
-            // Remove non-matching groups by name (delete high→low so indices stay valid).
-            for (var d = dupContents.numProperties; d >= 1; d--) {
-                var child = dupContents.property(d);
-                var isGroup = false;
-                try { isGroup = (child.matchName === "ADBE Vector Group"); } catch (e) {}
-                if (isGroup && child.name !== keepName) { try { child.remove(); } catch (e2) {} }
+            // Forward list of this dup's group child-indices (guarded).
+            var dupGroupIdx = [];
+            for (var f = 1; f <= dupContents.numProperties; f++) {
+                var isG = false; try { isG = (dupContents.property(f).matchName === "ADBE Vector Group"); } catch (e) {}
+                if (isG) { dupGroupIdx.push(f); }
+            }
+            var keepChild = dupGroupIdx[g];
+            var keepName = "Shape " + (g + 1);
+            try { keepName = dupContents.property(keepChild).name; } catch (e) {}
+            // Remove every other group by child-index, high→low so indices stay valid.
+            for (var r = dupGroupIdx.length - 1; r >= 0; r--) {
+                if (dupGroupIdx[r] !== keepChild) { try { dupContents.property(dupGroupIdx[r]).remove(); } catch (e2) {} }
             }
             dup.name = layer.name + " [" + keepName + "]";
             out.push({ index: dup.index, name: dup.name, group: keepName });
