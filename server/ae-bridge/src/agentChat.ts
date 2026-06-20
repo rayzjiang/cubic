@@ -213,48 +213,6 @@ export function registerAgentChat(): void {
       return;
     }
 
-    // Drive AE to open a different project (the "Open <project> in After Effects" bar action). Not
-    // session-scoped, but refused while the current chat's turn is in flight (swapping the project out
-    // from under a running agent would corrupt it). The unsaved-changes decision is two-phase: the first
-    // send carries no `save`, so we check the open project's dirty flag and — if dirty — ask the renderer
-    // to confirm; it re-sends with `save: "save" | "discard"`. AE's own save dialog would hang the bridge,
-    // so the panel handler never lets it prompt (see openProject in project.jsx).
-    if (msg.type === "openProject") {
-      if (!msg.path) return;
-      const active = msg.sessionId ? sessions.get(msg.sessionId) : undefined;
-      if (active?.running) {
-        ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: false, message: "Finish or stop the current turn before switching projects." }));
-        return;
-      }
-      if (!msg.save) {
-        // Phase 1 — no decision yet: inspect the open project for unsaved changes.
-        try {
-          const raw = await bridge.sendCommand("getProjectPath", {}, 10000);
-          const info = JSON.parse(raw) as { path?: string | null; dirty?: boolean };
-          if (info.dirty) {
-            ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: false, needsConfirm: true, dirty: true, currentUntitled: !info.path, path: msg.path }));
-            return;
-          }
-        } catch { /* couldn't read dirty state → fall through and just try to open (close uses DO_NOT_SAVE) */ }
-      }
-      // Phase 2 (or already clean): open it, then push the now-open project's list to every client.
-      try {
-        const raw = await bridge.sendCommand("openProject", { path: msg.path, save: msg.save }, 30000);
-        const result = JSON.parse(raw) as { status?: string; message?: string };
-        if (result.status === "error") {
-          ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: false, message: result.message ?? "Couldn't open that project." }));
-          return;
-        }
-        sessionCache.invalidate();   // the open project changed → drop cached live state for the next turn
-        broadcastConversations();    // new project's conversations → every renderer auto-follows
-        ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: true }));
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        ws.send(JSON.stringify({ type: "projectOpened", sessionId: msg.sessionId, ok: false, message }));
-      }
-      return;
-    }
-
     const id = msg.sessionId ?? "default";
     let session = sessions.get(id);
     if (!session) {

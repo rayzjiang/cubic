@@ -6,7 +6,6 @@ import { bindWs, connectBackend, sendList } from './ws'
 import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
-import { ProjectSwitchBar } from './components/ProjectSwitchBar'
 import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { ConfirmModal } from './components/ConfirmModal'
@@ -70,9 +69,9 @@ export function App() {
     body = (
       <div className="flex h-full flex-col">
         <TopBar />
-        {/* Non-blocking "AE switched projects" bar — shows on both Home and chat; self-gates on the store's
-            displayed-vs-live project state (post-switch "Back to …" / detour "Return to …"). */}
-        <ProjectSwitchBar />
+        {/* An AE project switch surfaces as a toast (see store `conversations` handler); the now-open
+            project name shows in the TopBar. The slim ProjectSwitchBar component is kept (unmounted) for
+            possible future reuse. */}
         <div className="relative min-h-0 flex-1">
           <AnimatePresence initial={false}>
             {view === 'home' ? (

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { CHROME_BG } from '../ui'
@@ -12,59 +11,31 @@ const isMac = navigator.platform.startsWith('Mac')
 /**
  * Full-width window chrome bar (VSCode-style) above the sidebar+chat split. Owns the macOS
  * traffic-light zone + window drag. Three regions: a left spacer clearing the traffic lights, the
- * active chat title centered across the full width, and the After Effects status pinned right.
+ * currently-open After Effects project name centered across the full width, and the AE status pinned right.
  */
 export function TopBar() {
-  const view = useChatStore((s) => s.view)
-  const sessionId = useChatStore((s) => s.sessionId)
-  const conversations = useChatStore((s) => s.conversations)
-  const pendingNewChats = useChatStore((s) => s.pendingNewChats)
-  const sidebarCollapsed = useChatStore((s) => s.sidebarCollapsed)
+  const liveProjectPath = useChatStore((s) => s.liveProjectPath)
   const { reduce } = useMotion()
 
-  // Center the title over the CHAT pane, not the whole window: offset its left edge by the sidebar's
-  // current width (matched to Sidebar.tsx: w-12 collapsed / w-64 expanded). Home has no sidebar → 0.
-  const titleLeft = view === 'chat' ? (sidebarCollapsed ? 48 : 256) : 0
-
-  // Decouple the two reasons `left` changes: a SIDEBAR TOGGLE should glide the (already-visible) title
-  // horizontally, but a VIEW SWAP (home↔chat) should SNAP it to position so the title only fades in —
-  // no slide-from-left. We snap on the exact render where `view` flips, then re-enable the glide.
-  const prevView = useRef(view)
-  useEffect(() => {
-    prevView.current = view
-  }, [view])
-  const glideLeft = prevView.current === view && !reduce
-
-  // Active chat title — same precedence the Sidebar uses for its rows. Empty on Home (no active chat).
-  const title = (() => {
-    if (view !== 'chat' || !sessionId) return ''
-    const committed = conversations.find((c) => c.id === sessionId)
-    if (committed) return committed.title
-    const pending = pendingNewChats.find((p) => p.id === sessionId)
-    if (pending) return pending.title.trim() || 'New chat'
-    return 'New chat' // brand-new ephemeral chat, nothing sent yet
-  })()
+  // The currently-open After Effects project name (Cubic mirrors AE) — a window-global label, so it's
+  // centered over the whole window and shown on both Home and chat. Empty until the first list resolves;
+  // '' = an unsaved project.
+  const title =
+    liveProjectPath === null ? '' : liveProjectPath ? liveProjectPath.split('/').pop() || liveProjectPath : 'Untitled Project'
 
   return (
     <header className={`relative flex h-9 shrink-0 items-center border-b border-white/5 ${CHROME_BG} [-webkit-app-region:drag]`}>
       {/* Left: clear the macOS traffic lights (no controls — the sidebar owns its toggle). */}
       <div className={isMac ? 'w-[78px] shrink-0' : 'w-3 shrink-0'} />
 
-      {/* Center: title centered over the chat pane (left edge offset past the sidebar) so it stays
-          visually centered in the conversation regardless of sidebar state. The CONTAINER owns the
-          horizontal position (glides on sidebar toggle, snaps on view swap — see glideLeft). The inner
-          span owns the FADE: keyed on sessionId so it cross-fades when the chat changes but not when the
-          sidebar toggles. Because the container is empty on Home (title ''), the home→chat position
-          snap is invisible and the user only sees the title fade in. pointer-events-none so it never
-          blocks window drag; truncates when long. */}
-      <div
-        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center"
-        style={{ left: titleLeft, transition: glideLeft ? 'left 200ms ease-out' : 'none' }}
-      >
+      {/* Center: the open project name, centered across the window. pointer-events-none so it never blocks
+          window drag; truncates when long. The span is keyed on the project path so it cross-fades only when
+          AE actually switches projects. */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <AnimatePresence mode="wait">
           {title && (
             <motion.span
-              key={sessionId ?? 'none'}
+              key={liveProjectPath ?? 'none'}
               className="max-w-[40%] truncate text-[13px] text-white/70"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

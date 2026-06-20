@@ -25,36 +25,6 @@ export function ConfirmModal() {
   const pendingRestore = useChatStore((s) => s.pendingRestoreConfirm)
   const confirmRestore = useChatStore((s) => s.confirmRestore)
   const cancelRestore = useChatStore((s) => s.cancelRestore)
-  const pendingOpen = useChatStore((s) => s.pendingOpenProjectConfirm)
-  const confirmOpenProject = useChatStore((s) => s.confirmOpenProject)
-  const cancelOpenProject = useChatStore((s) => s.cancelOpenProject)
-
-  if (pendingOpen) {
-    const name = pendingOpen.path.split('/').pop() || 'that project'
-    return (
-      <Shell onCancel={cancelOpenProject}>
-        <h2 className="text-[15px] font-semibold text-white/90">Open {name}?</h2>
-        <p className="mt-2 text-[13px] text-white/55">
-          The project currently open in After Effects has unsaved changes. Opening {name} will close it.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={cancelOpenProject} className="rounded-md px-3 py-1.5 text-[13px] text-white/70 hover:bg-white/10">
-            Cancel
-          </button>
-          <button onClick={() => confirmOpenProject('discard')} className="rounded-md px-3 py-1.5 text-[13px] text-white/70 hover:bg-white/10">
-            Discard &amp; open
-          </button>
-          {/* An unsaved (never-saved) project can't be saved without a Save-As dialog (which would hang the
-              bridge), so offer Save only when the current project has a file. */}
-          {!pendingOpen.currentUntitled && (
-            <button onClick={() => confirmOpenProject('save')} className="rounded-md bg-blue-500/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-blue-500">
-              Save &amp; open
-            </button>
-          )}
-        </div>
-      </Shell>
-    )
-  }
 
   if (pendingRestore) {
     return (

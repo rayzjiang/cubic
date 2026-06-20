@@ -81,7 +81,6 @@ Inbound (UI → backend), the `ChatInbound` union:
 { "type": "loadHistory", "sessionId": "<uuid>" }
 { "type": "restore",     "sessionId": "<uuid>", "turnId": "<ms-timestamp>" }
 { "type": "rename",      "sessionId": "<uuid>", "title": "<new title>" }
-{ "type": "openProject", "sessionId": "<uuid|omitted>", "path": "<.aep path>", "save": "save|discard|omitted" }
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
@@ -107,13 +106,6 @@ Inbound (UI → backend), the `ChatInbound` union:
 - `rename`: set a conversation's `title` (index.json metadata only). Sanitized server-side
   (whitespace-collapsed, capped at 60) and marks the entry `renamed`. Allowed mid-turn (no Session
   touched). No reply — the renderer updates the row optimistically; the next `list` confirms.
-- `openProject` (the "Open <project> in After Effects" bar action): drive AE to open `path`, replacing
-  the open project so Cubic mirrors AE. Refused while the `sessionId`'s turn is in flight. Two-phase on
-  unsaved changes: a send WITHOUT `save` first checks the open project's dirty flag and, if dirty, replies
-  `projectOpened {needsConfirm:true}` so the UI can ask; the UI re-sends with `save:"save"|"discard"`. On
-  success the new project's `conversations` list is broadcast (so every client auto-follows) and a
-  `projectOpened {ok:true}` reply is sent. AE's own save dialog is never allowed to prompt (it would hang
-  the bridge) — see `openProject` in `project.jsx`.
 
 Outbound (backend → UI) — streamed per iteration as the turn runs, plus the one-shot replies:
 ```json
@@ -122,7 +114,6 @@ Outbound (backend → UI) — streamed per iteration as the turn runs, plus the 
 { "type": "conversations", "projectPath": "<path>", "conversations": [ <ConversationMeta>, ... ] }
 { "type": "history",       "sessionId": "<uuid>", "items": [ <DisplayItem>, ... ], "running": false }
 { "type": "restored",      "sessionId": "<uuid>", "ok": true, "message": "<reason when ok:false>" }
-{ "type": "projectOpened", "sessionId": "<uuid|omitted>", "ok": false, "needsConfirm": true, "dirty": true, "currentUntitled": false, "message": "<reason when ok:false & !needsConfirm>" }
 { "type": "aeStatus",      "connected": true }
 ```
 `conversations` is scoped to the current project, newest-first (`ConversationMeta` = id, title,

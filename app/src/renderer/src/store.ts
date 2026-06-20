@@ -8,7 +8,6 @@ import {
   sendDelete,
   sendList,
   sendLoadHistory,
-  sendOpenProject,
   sendQueue,
   sendRemoveQueue,
   sendRename,
@@ -89,16 +88,10 @@ interface ChatState {
   // ── Project-switch (Cubic mirrors AE) ──
   // `projectPath` is the project currently DISPLAYED; `liveProjectPath` is the project actually open in AE.
   // Every `conversations` message reflects live AE, so after each adopt the two are equal — Cubic always
-  // shows the open project. On a real in-AE switch we auto-follow and remember `prevProject` (the project we
-  // left), which drives the bar's "Open <prev> in After Effects" — that actually re-opens it in AE (a real
-  // switch, not a view-only swap). Each .aep is its own conversation bucket; switching projects just switches
-  // buckets. `pendingSwitchPath` defers a switch detected mid-turn (we don't yank the user out of a running
-  // turn; we catch up when it ends).
+  // shows the open project. A real in-AE switch auto-follows the now-open project and raises a toast (each
+  // .aep is its own conversation bucket; switching projects just switches buckets). A switch detected while a
+  // turn is running is deferred (we don't update `liveProjectPath` until the turn ends, then auto-follow).
   liveProjectPath: string | null
-  prevProject: { projectPath: string } | null
-  pendingSwitchPath: string | null
-  // The "current project has unsaved changes — Save/Discard before opening <path>?" confirm (3-button modal).
-  pendingOpenProjectConfirm: { path: string; currentUntitled: boolean } | null
   // Brand-new chats that have sent a first message but whose turn hasn't committed to disk yet. The
   // renderer owns these rows (it knows it just sent a message — no AE project lookup needed), so they
   // persist across chat switches like Claude.ai. An entry is dropped once the backend list contains its
@@ -134,10 +127,6 @@ interface ChatState {
   setConnection: (c: Connection) => void
   setBackendStatus: (s: BackendStatus) => void
   toggleSidebar: () => void
-  reopenPrevProject: () => void
-  confirmOpenProject: (save: 'save' | 'discard') => void
-  cancelOpenProject: () => void
-  dismissProjectSwitch: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -190,9 +179,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   listLoaded: false,
   sidebarCollapsed: false,
   liveProjectPath: null,
-  prevProject: null,
-  pendingSwitchPath: null,
-  pendingOpenProjectConfirm: null,
   pendingNewChats: [],
   ...blankConversation(),
   pendingDeletes: new Set(),
@@ -204,25 +190,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setConnection: (c) => set({ connection: c }),
   setBackendStatus: (s) => set({ backendStatus: s }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-
-  // The bar's "Open <prev> in After Effects" — drive AE to actually open the previous project (a real
-  // switch, not a view swap), so Cubic stays a mirror of AE. The backend decides whether the project being
-  // closed has unsaved changes; if so it replies `projectOpened {needsConfirm}` → we raise the modal.
-  reopenPrevProject: () => {
-    const s = get()
-    if (!s.prevProject) return
-    sendOpenProject(s.prevProject.projectPath, undefined, s.sessionId ?? undefined)
-  },
-  // The unsaved-changes modal resolved → re-send the open with the user's decision.
-  confirmOpenProject: (save) => {
-    const c = get().pendingOpenProjectConfirm
-    if (!c) return
-    set({ pendingOpenProjectConfirm: null })
-    sendOpenProject(c.path, save, get().sessionId ?? undefined)
-  },
-  cancelOpenProject: () => set({ pendingOpenProjectConfirm: null }),
-  // The bar's ✕ — accept the now-open project; drop the "Open <prev>" affordance and any deferred-switch note.
-  dismissProjectSwitch: () => set({ prevProject: null, pendingSwitchPath: null }),
 
   handleServerMessage: (msg) => {
     const s = get()
@@ -251,47 +218,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // chat path, where projectPath is still '').
         if (!s.listLoaded) { adopt(); break }
 
-        // A switch detected WHILE A TURN IS RUNNING → defer. Don't yank the user out of the live turn or
-        // swap the sidebar; just note the new path so the bar can say "Cubic will catch up". Crucially we do
-        // NOT update `liveProjectPath`, so the list that arrives after the turn ends still reads as a switch
-        // and auto-follows then.
-        if (liveChanged && s.running) { set({ pendingSwitchPath: live }); break }
+        // A switch detected WHILE A TURN IS RUNNING → defer silently. Don't yank the user out of the live
+        // turn or swap the sidebar; and crucially DON'T update `liveProjectPath`, so the list that arrives
+        // after the turn ends still reads as a switch and auto-follows then (with its toast).
+        if (liveChanged && s.running) break
 
         // Untitled project just got SAVED ('' → '/path'): same project gaining a name, not a switch. Adopt
         // the new path but keep the current chat in place (its first/next turn rekeys it on the backend).
         if (liveChanged && s.liveProjectPath === '') { adopt(); break }
 
-        // A real in-AE project switch (File>Open / Increment-and-Save / recovery). Remember where we were
-        // (the "Open <prev>" target), then auto-follow the now-open project PRESERVING the view: on a chat
-        // open a fresh chat for it (its past chats stay in the sidebar); on Home just adopt its list. The bar
-        // is raised via `prevProject`.
+        // A real in-AE project switch (File>Open / Increment-and-Save / recovery). Auto-follow the now-open
+        // project PRESERVING the view (on a chat, a fresh chat for it; on Home, just its list) and surface a
+        // toast so the change isn't silent. Each .aep is its own conversation bucket.
         if (liveChanged) {
-          set({ prevProject: { projectPath: s.projectPath }, pendingSwitchPath: null })
           adopt()
+          get().addToast(`After Effects switched to ${live.split('/').pop() || 'an untitled project'}`)
           if (s.view === 'chat' && s.sessionId) get().newChat()
           break
         }
 
         // Same live project, normal refresh (a `done`/`cancelled`/delete/rename push, or AE returning to the
-        // project we're on) → adopt the fresh list, clear any stale deferred-switch note, but leave
-        // `prevProject` alone so the bar persists until dismissed and a mere refocus never clears it.
+        // project we're on) → just adopt the fresh list.
         adopt()
-        if (s.pendingSwitchPath !== null) set({ pendingSwitchPath: null })
         break
       }
-      case 'projectOpened':
-        // Reply to a drive-AE open. ok → the new project's list was broadcast separately (we auto-follow on
-        // that). needsConfirm → the project being closed is dirty: raise the Save/Discard modal. Otherwise
-        // surface the failure.
-        if (msg.ok) {
-          // Nothing to do — the `conversations` broadcast handles the view; just drop the bar.
-          set({ prevProject: null, pendingSwitchPath: null })
-        } else if (msg.needsConfirm) {
-          set({ pendingOpenProjectConfirm: { path: msg.path ?? s.prevProject?.projectPath ?? '', currentUntitled: !!msg.currentUntitled } })
-        } else {
-          get().addToast(msg.message ?? "Couldn't open that project.")
-        }
-        break
       case 'history':
         // Guard against a stale reply painting a chat the user already navigated away from.
         if (msg.sessionId === get().sessionId) set({ items: msg.items, running: msg.running })
