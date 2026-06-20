@@ -35,6 +35,13 @@ describe('buildSystemPrompt', () => {
     expect(cached).not.toContain('{{COMMAND_CATALOG}}');
   });
 
+  it('cached prefix carries the design-knowledge sections', () => {
+    const { cached } = buildSystemPrompt(fullState);
+    expect(cached).toContain('<motion_design_principles>');
+    expect(cached).toContain('<visual_design>');
+    expect(cached).toContain('<editing_craft>');
+  });
+
   it('cached prefix does NOT contain the volatile state block', () => {
     const out = buildSystemPrompt(fullState);
     // The rules prose may reference the <live_ae_state> tag name, but the actual

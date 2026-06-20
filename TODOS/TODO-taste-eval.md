@@ -14,7 +14,7 @@ Each failure is one of two buckets — labeling which is the most valuable outpu
 ## Setup (one-time, ~5 min)
 One AE project, identical start for every trial:
 - Comp `1920x1080 @ 30fps`, 10s.
-- Text layer: `Acme` (fake brand).
+- Text layer: `Acne` (fake brand).
 - Text layer: `Ship faster with AI` (tagline).
 - Any logo PNG dropped in the project panel.
 - Save as `taste-eval.aep`. Duplicate before each trial (or `restoreProject` / Cmd+Z between runs) so every trial is clean.
