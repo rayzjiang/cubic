@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { useChatStore } from '../store'
-import { STAGGER_DELAY, STAGGER_STEP, useMotion } from '../motion'
+import { MSG_STAGGER_STEP, useMotion } from '../motion'
 import type { DisplayItem } from '../protocol'
 import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
@@ -145,7 +145,7 @@ export function MessageList() {
   const entranceOf = (i: number): { animate: boolean; delay: number } => {
     if (i >= baseLen) return { animate: true, delay: 0 } // streamed live → single fade
     if (i < cascadeStart) return { animate: false, delay: 0 } // older history → instant, no animation
-    return { animate: true, delay: STAGGER_DELAY + (i - cascadeStart) * STAGGER_STEP }
+    return { animate: true, delay: (i - cascadeStart) * MSG_STAGGER_STEP }
   }
 
   // `suppressTopGap` drops a user prompt's top margin when it's the first row of the last-turn block

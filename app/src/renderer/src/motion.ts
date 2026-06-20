@@ -60,15 +60,18 @@ export const listRow: Variants = {
   animate: { opacity: 1, y: 0, transition: { duration: DURATION.fast, ease: EASE_OUT } },
 }
 
-// Chat transcript row entrance. The transcript renders a flat item list across two scroll containers
-// (so a parent-orchestrated staggerChildren can't span it) — instead each row is handed its own `delay`
-// via Motion's `custom` prop, computed in MessageList (cap the cascade to the visible tail, top-down).
+// Chat transcript row entrance. Deliberately quicker + subtler than the home list (tighter step, no
+// lead-in delay, smaller rise, shorter fade) — it fires on every chat open so it must stay unobtrusive.
+// The transcript renders a flat item list across two scroll containers (so a parent-orchestrated
+// staggerChildren can't span it) — instead each row is handed its own `delay` via Motion's `custom`
+// prop, computed in MessageList (cap the cascade to the visible tail, top-down).
+export const MSG_STAGGER_STEP = 0.02
 export const messageEntrance: Variants = {
-  initial: { opacity: 0, y: 6 },
+  initial: { opacity: 0, y: 4 },
   animate: (delay: number = 0) => ({
     opacity: 1,
     y: 0,
-    transition: { duration: DURATION.fast, ease: EASE_OUT, delay },
+    transition: { duration: 0.12, ease: EASE_OUT, delay },
   }),
 }
 
