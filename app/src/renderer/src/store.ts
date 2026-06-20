@@ -86,10 +86,12 @@ interface ChatState {
   listLoaded: boolean
   sidebarCollapsed: boolean
   // Set when a focus-driven `list` reveals AE switched to a DIFFERENT project while a chat (tied to the
-  // old project) is open → drives the non-blocking "project switched" bar. `dismissedSwitchPath` remembers
-  // the target the user dismissed so the bar doesn't re-nag on the next focus for the same project.
+  // old project) is open → drives the non-blocking "project switched" bar. `lastListedProjectPath` is the
+  // project the PREVIOUS list reflected, so a change between two lists is an edge-triggered "AE just
+  // switched" signal: the bar fires once per switch (not on every focus), and dismiss sticks until the
+  // next switch with no extra bookkeeping.
   projectSwitch: { projectPath: string } | null
-  dismissedSwitchPath: string | null
+  lastListedProjectPath: string | null
   // Brand-new chats that have sent a first message but whose turn hasn't committed to disk yet. The
   // renderer owns these rows (it knows it just sent a message — no AE project lookup needed), so they
   // persist across chat switches like Claude.ai. An entry is dropped once the backend list contains its
@@ -179,7 +181,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   listLoaded: false,
   sidebarCollapsed: false,
   projectSwitch: null,
-  dismissedSwitchPath: null,
+  lastListedProjectPath: null,
   pendingNewChats: [],
   ...blankConversation(),
   pendingDeletes: new Set(),
@@ -193,34 +195,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   // "View its chats" on the project-switch bar → drop to Home for the now-open project. goHome's sendList
-  // replies with the new project's list (view is Home → adopted silently, clearing the bar).
+  // replies with the new project's list (view is Home → not foreign → adopted silently, clearing the bar).
   adoptProjectSwitch: () => {
-    set({ projectSwitch: null, dismissedSwitchPath: null })
+    set({ projectSwitch: null })
     get().goHome()
   },
-  // Dismiss the bar but remember the target so the next focus doesn't immediately re-raise it for the same
-  // project. Adopting any list (or switching to yet another project) clears the memo.
-  dismissProjectSwitch: () => set((s) => ({ projectSwitch: null, dismissedSwitchPath: s.projectSwitch?.projectPath ?? null })),
+  // Hide the bar. It won't re-raise on refocus (edge detection: same foreign project ≠ a new switch); the
+  // next time AE actually moves to a different project, it pops again.
+  dismissProjectSwitch: () => set({ projectSwitch: null }),
 
   handleServerMessage: (msg) => {
     const s = get()
     switch (msg.type) {
       case 'conversations': {
         // Project-switch detection: a focus-driven `list` can reveal AE now has a DIFFERENT project open
-        // (File>Open / Increment-and-Save / recovery). Guard on `listLoaded` so the FIRST list — where
-        // `projectPath` is still '' — never counts as a switch (even when restoring into a chat on reload).
-        const isSwitch = s.listLoaded && msg.projectPath !== s.projectPath
-        if (isSwitch && s.view === 'chat' && s.sessionId) {
-          // The open chat belongs to the OLD project. Don't swap the sidebar out from under it (that would
-          // let a send operate on the wrong project) — raise the non-blocking bar instead, unless the user
-          // already dismissed this exact target. The active chat + its list stay as-is.
-          if (msg.projectPath !== s.dismissedSwitchPath) set({ projectSwitch: { projectPath: msg.projectPath } })
+        // (File>Open / Increment-and-Save / recovery). While a chat is open and AE is on a project that
+        // ISN'T that chat's, keep the sidebar as-is (don't let a send operate on the wrong project) and
+        // surface the non-blocking bar. We raise it only on the EDGE — when the foreign project first
+        // appears or changes vs the last list — so it pops once per switch, not on every refocus; dismiss
+        // then sticks until the next switch. `listLoaded` guards the FIRST list (projectPath still '').
+        const foreign = s.listLoaded && s.view === 'chat' && !!s.sessionId && msg.projectPath !== s.projectPath
+        if (foreign) {
+          const isNewSwitch = msg.projectPath !== s.lastListedProjectPath
+          set({
+            lastListedProjectPath: msg.projectPath,
+            ...(isNewSwitch ? { projectSwitch: { projectPath: msg.projectPath } } : {}),
+          })
           break
         }
-        // A fresh list reconciles any optimistic deletes (backend sends no success ack). listLoaded
-        // flips the initial loading screen off once the first list lands (no UI-before-data flash).
-        // Drop any pending new-chat row the backend now has persisted (its real row takes over). Adopting
-        // a (possibly new) project's list clears any pending switch bar — we're now showing that project.
+        // Not foreign (Home, back on the chat's own project, or first load) → adopt the list. This
+        // reconciles optimistic deletes (no success ack), flips the initial loading screen off, drops any
+        // now-persisted pending new-chat row, and clears the bar (we're now showing this project).
         const committed = new Set(msg.conversations.map((c) => c.id))
         set({
           conversations: msg.conversations,
@@ -229,7 +234,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           pendingDeletes: new Set(),
           pendingNewChats: s.pendingNewChats.filter((p) => !committed.has(p.id)),
           projectSwitch: null,
-          dismissedSwitchPath: null,
+          lastListedProjectPath: msg.projectPath,
         })
         break
       }
