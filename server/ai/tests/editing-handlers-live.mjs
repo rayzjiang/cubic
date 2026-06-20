@@ -73,22 +73,21 @@ await test('fitToFrame fill scales a 400×400 solid to cover 1920×1080 and cent
   await addSolid('Clip', [400, 400]);
   const res = await call('fitToFrame', { layerIndices: [1], mode: 'fill' });
   assert(res.status === 'success', 'expected success, got ' + res.status);
-  const info = await run('getLayerInfo', { layerIndex: 1 });
-  const sc = info.layer ? info.layer.scale : info.scale;
-  const pos = info.layer ? info.layer.position : info.position;
-  assert(near(sc[0], 480, 1) && near(sc[1], 480, 1), `expected ~480% scale, got [${sc[0]}, ${sc[1]}]`);
-  assert(near(pos[0], 960, 1) && near(pos[1], 540, 1), `expected center (960,540), got (${pos[0]},${pos[1]})`);
-  return `scale ${Math.round(sc[0])}%, centered`;
+  // The handler reads scale/position back from AE after applying — assert on that.
+  const m = res.modifiedLayers[0];
+  assert(near(m.scale[0], 480, 1) && near(m.scale[1], 480, 1), `expected ~480% scale, got [${m.scale[0]}, ${m.scale[1]}]`);
+  assert(near(m.position[0], 960, 1) && near(m.position[1], 540, 1), `expected center (960,540), got (${m.position[0]},${m.position[1]})`);
+  return `scale ${Math.round(m.scale[0])}%, centered`;
 });
 
 await test('fitToFrame fit (contain) uses the smaller ratio', async () => {
   await scenarioComp(1920, 1080);
   await addSolid('Clip', [400, 400]);
-  await call('fitToFrame', { layerIndices: [1], mode: 'fit' });
-  const info = await run('getLayerInfo', { layerIndex: 1 });
-  const sc = info.layer ? info.layer.scale : info.scale;
-  assert(near(sc[0], 270, 1), `expected ~270% (contain), got ${sc[0]}`);
-  return `scale ${Math.round(sc[0])}%`;
+  const res = await call('fitToFrame', { layerIndices: [1], mode: 'fit' });
+  assert(res.status === 'success', 'expected success, got ' + res.status);
+  const m = res.modifiedLayers[0];
+  assert(near(m.scale[0], 270, 1), `expected ~270% (contain), got ${m.scale[0]}`);
+  return `scale ${Math.round(m.scale[0])}%`;
 });
 
 // ── retimeClip ──────────────────────────────────────────────────────────────────
@@ -97,20 +96,18 @@ await test('retimeClip speed 0.5 doubles time-stretch to 200%', async () => {
   await addSolid('Clip', [400, 400]);
   const res = await call('retimeClip', { layerIndex: 1, mode: 'speed', speed: 0.5 });
   assert(res.status === 'success', 'expected success, got ' + res.status);
-  const info = await run('getLayerInfo', { layerIndex: 1 });
-  const stretch = info.layer ? info.layer.stretch : info.stretch;
-  assert(near(stretch, 200, 0.5), `expected 200% stretch, got ${stretch}`);
-  return `stretch ${stretch}%`;
+  // retimeClip returns the post-mutation stretch read back from AE (getLayerInfo doesn't expose stretch).
+  assert(near(res.layer.stretch, 200, 0.5), `expected 200% stretch, got ${res.layer.stretch}`);
+  return `stretch ${res.layer.stretch}%`;
 });
 
 await test('retimeClip reverse makes the stretch negative', async () => {
   await scenarioComp();
   await addSolid('Clip', [400, 400]);
-  await call('retimeClip', { layerIndex: 1, mode: 'reverse' });
-  const info = await run('getLayerInfo', { layerIndex: 1 });
-  const stretch = info.layer ? info.layer.stretch : info.stretch;
-  assert(stretch < 0, `expected negative stretch, got ${stretch}`);
-  return `stretch ${stretch}%`;
+  const res = await call('retimeClip', { layerIndex: 1, mode: 'reverse' });
+  assert(res.status === 'success', 'expected success, got ' + res.status);
+  assert(res.layer.stretch < 0, `expected negative stretch, got ${res.layer.stretch}`);
+  return `stretch ${res.layer.stretch}%`;
 });
 
 await test('retimeClip freeze holds a frame on a time-remappable precomp layer', async () => {

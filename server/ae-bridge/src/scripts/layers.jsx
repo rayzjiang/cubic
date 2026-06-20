@@ -1374,13 +1374,16 @@ function retimeClip(args) {
         if (freezeAt < layer.inPoint) freezeAt = layer.inPoint;
         if (freezeAt > layer.outPoint) freezeAt = layer.outPoint;
 
-        if (!layer.timeRemapEnabled) { layer.timeRemapEnabled = true; }
+        if (!layer.timeRemapEnabled) { layer.timeRemapEnabled = true; }  // AE auto-adds keys here
         var trp = layer.property("Time Remap");
         // Source time currently shown at the freeze point — the frame we hold.
         var srcTime = trp.valueAtTime(freezeAt, false);
-        // Collapse to a single held key so the value is constant across the layer.
-        while (trp.numKeys > 0) { trp.removeKey(1); }
-        trp.setValueAtTime(layer.inPoint, srcTime);
+        // Collapse to a SINGLE held key. Never empty the property: with 0 keys AE hides Time Remap and
+        // the next setValue throws "property or a parent property is hidden" — so we leave one key, then
+        // overwrite its value, rather than removing all and re-adding.
+        while (trp.numKeys > 1) { trp.removeKey(trp.numKeys); }
+        if (trp.numKeys === 1) { trp.setValueAtKey(1, srcTime); }
+        else { trp.setValueAtTime(layer.inPoint, srcTime); }
         try { trp.setInterpolationTypeAtKey(1, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD); } catch (eHold) {}
 
         return JSON.stringify({
