@@ -68,6 +68,11 @@ export const COMMAND_PARAMS = {
     summary: 'Duplicate a composition (compName/compIndex).',
     params: { newName: 'string', deep: 'bool — also duplicate nested pre-comps (default false)' },
   },
+  cropComp: {
+    domain: 'Compositions',
+    summary: 'Autocrop a comp to its visible content bounds (union of every layer\'s bbox), shifting content to the new origin — the Motion-Tools "Crop Comp" move. optional padding (px) on all sides.',
+    params: { padding: 'float px — margin kept on all sides (default 0)' },
+  },
 
   // ── Playhead ─────────────────────────────────────────────────────────────
   getCurrentTime: { domain: 'Playhead', summary: 'Get the playhead time (seconds + frames) of a comp.', params: {} },
@@ -150,6 +155,17 @@ export const COMMAND_PARAMS = {
 
   // ── Layers — hierarchy & transform ────────────────────────────────────────
   setLayerParent: { domain: 'Layers', summary: 'Parent a layer (parentIndex/parentName; omit both to unparent).', params: { parentIndex: 'int (1-based)', parentName: 'string' } },
+  addNullToLayers: {
+    domain: 'Layers',
+    summary: 'Add a parent null and parent the layers to it — the canonical control-rig setup. mode "single" = one null centered on the combined bbox; "perLayer" = one null per layer. Centers on the real visual bbox, not raw anchors.',
+    params: { layerIndices: 'array of int (1-based)', mode: 'single|perLayer (default single)', name: 'string (null name; default "Control")' },
+    required: ['layerIndices'],
+  },
+  getLayerColors: {
+    domain: 'Layers',
+    summary: 'Collect a layer\'s colors (text fill + shape fills/strokes) and drop them onto a "Colors" controller null as Color Control swatches (palette extraction). Pass createController:false to just return the colors.',
+    params: { createController: 'bool — build the controller null (default true); false = read-only' },
+  },
   moveLayer: { domain: 'Layers', summary: 'Reorder a layer relative to a target.', params: { targetIndex: 'int (1-based)', targetName: 'string', position: 'before|after (default before)' } },
   setAnchorPoint: {
     domain: 'Layers',

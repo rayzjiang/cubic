@@ -241,6 +241,37 @@ try {
     assert(kf2.keyframes[0].time >= 0.49, `expected layer 2's first key shifted to ~0.5s, got ${kf2.keyframes[0].time}`);
     return `layer 2 first key @ ${kf2.keyframes[0].time.toFixed(2)}s`;
   });
+
+  // ── addNullToLayers / cropComp / getLayerColors ─────────────────────────────────
+  await test('addNullToLayers (single) adds one control null and parents the layers', async () => {
+    const comp = await freshComp();
+    await addText(comp, 'A');
+    await addText(comp, 'B');
+    const before = await layerCount(comp);
+    const res = await call('addNullToLayers', { compName: comp, layerIndices: [1, 2], mode: 'single' });
+    assert(res.status === 'success', 'expected success, got ' + res.status);
+    assert((await layerCount(comp)) === before + 1, 'expected exactly one new null');
+    return res.message;
+  });
+
+  await test('cropComp shrinks the comp to its content bounds', async () => {
+    const comp = await freshComp(1920, 1080);
+    await addShape(comp); // a 300×300 shape near center
+    const res = await call('cropComp', { compName: comp, padding: 20 });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    assert(res.newSize[0] < 1920 && res.newSize[1] < 1080, `expected a smaller comp, got ${res.newSize.join('x')}`);
+    return `${res.newSize.join('x')} (was ${res.previousSize.join('x')})`;
+  });
+
+  await test('getLayerColors extracts a shape\'s colors into a controller null', async () => {
+    const comp = await freshComp();
+    await addShape(comp, [0.9, 0.2, 0.3]); // red fill + white stroke
+    const res = await call('getLayerColors', { compName: comp, layerIndex: 1 });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    assert(res.colors && res.colors.length >= 1, 'expected at least one color');
+    assert(res.controller && res.controller.count === res.colors.length, 'expected a controller with one swatch per color');
+    return `${res.colors.length} color(s)`;
+  });
 } catch (e) {
   console.log(red(`\n  Aborted: ${e.message}`));
 } finally {

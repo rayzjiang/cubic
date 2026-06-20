@@ -327,6 +327,7 @@ function _dispatchSwitch(command, args) {
         case "setCurrentTime":           return setCurrentTime(args);
         case "saveFrameToPng":           return saveFrameToPng(args);
         case "getCompositionInfo":       return getCompositionInfo(args);
+        case "cropComp":                 return cropComp(args);
         // layers.jsx (core)
         case "getLayerInfo":             return getLayerInfo(args);
         case "getSelectedLayers":        return getSelectedLayers(args);
@@ -362,6 +363,8 @@ function _dispatchSwitch(command, args) {
         case "distributeLayers3D":       return distributeLayers3D(args);
         case "cameraMove":               return cameraMove(args);
         case "createBackground":         return createBackground(args);
+        case "addNullToLayers":          return addNullToLayers(args);
+        case "getLayerColors":           return getLayerColors(args);
         // text.jsx
         case "createTextLayer":          return createTextLayer(args);
         // fonts.jsx

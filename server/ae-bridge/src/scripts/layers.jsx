@@ -2488,3 +2488,135 @@ function createBackground(args) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
+
+// C: addNullToLayers — add a parent null and parent the layers to it. mode "single" = one null centered
+// on the selection's combined bbox (the canonical control-rig move); "perLayer" = one null per layer.
+// Reuses _getCompBbox so the null lands on the real visual center, not a raw anchor point.
+function addNullToLayers(args) {
+    var createdNulls = [];  // tracked for atomic-create rollback
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        var mode = args.mode ? String(args.mode) : "single";
+        var baseName = args.name || "Control";
+
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) { throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx); }
+            layers.push(comp.layer(idx));
+        }
+
+        var result = [];
+        if (mode === "perLayer") {
+            for (var p = 0; p < layers.length; p++) {
+                var L = layers[p];
+                var bb = _getCompBbox(comp, L);
+                var nul = comp.layers.addNull();
+                createdNulls.push(nul);
+                nul.name = baseName + " " + L.name;
+                nul.property("Position").setValue([(bb.left + bb.right) / 2, (bb.top + bb.bottom) / 2]);
+                try { nul.moveBefore(L); } catch (e) {}
+                var prevParent = L.parent ? { name: L.parent.name, index: L.parent.index } : null;
+                L.parent = nul;
+                result.push({ nullName: nul.name, child: L.name, prevParent: prevParent });
+            }
+        } else {
+            var left = null, right = null, top = null, bottom = null, minIdx = layers[0].index;
+            for (var u = 0; u < layers.length; u++) {
+                var b = _getCompBbox(comp, layers[u]);
+                if (left === null || b.left < left) { left = b.left; }
+                if (right === null || b.right > right) { right = b.right; }
+                if (top === null || b.top < top) { top = b.top; }
+                if (bottom === null || b.bottom > bottom) { bottom = b.bottom; }
+                if (layers[u].index < minIdx) { minIdx = layers[u].index; }
+            }
+            var nul2 = comp.layers.addNull();
+            createdNulls.push(nul2);
+            nul2.name = baseName;
+            nul2.property("Position").setValue([(left + right) / 2, (top + bottom) / 2]);
+            try { nul2.moveBefore(comp.layer(minIdx)); } catch (e) {}
+            var children = [];
+            for (var c = 0; c < layers.length; c++) {
+                var prevP = layers[c].parent ? { name: layers[c].parent.name, index: layers[c].parent.index } : null;
+                layers[c].parent = nul2;
+                children.push({ name: layers[c].name, prevParent: prevP });
+            }
+            result.push({ nullName: nul2.name, children: children });
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Added " + createdNulls.length + " control null" + (createdNulls.length === 1 ? "" : "s") + " (" + mode + ") and parented " + layers.length + " layer(s).",
+            mode: mode,
+            nulls: result
+        }, null, 2);
+    } catch (error) {
+        for (var r = createdNulls.length - 1; r >= 0; r--) { try { createdNulls[r].remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// R/C: getLayerColors — collect a layer's colors (text fill + shape fills/strokes) and, unless
+// createController:false, drop them onto a "Colors" controller null as ADBE Color Control effects.
+function getLayerColors(args) {
+    var controller = null;  // tracked for atomic-create rollback
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp = resolved.comp;
+        var layer = resolved.layer;
+
+        var colors = [];
+        function pushColor(c) {
+            if (!c || c.length < 3) { return; }
+            var r = Math.round(c[0] * 1000) / 1000, g = Math.round(c[1] * 1000) / 1000, bl = Math.round(c[2] * 1000) / 1000;
+            for (var i = 0; i < colors.length; i++) {
+                if (Math.abs(colors[i][0] - r) < 0.004 && Math.abs(colors[i][1] - g) < 0.004 && Math.abs(colors[i][2] - bl) < 0.004) { return; }
+            }
+            colors.push([r, g, bl]);
+        }
+        try { var td = layer.property("Text"); if (td) { pushColor(td.property("ADBE Text Document").value.fillColor); } } catch (e) {}
+        function scanShape(group) {
+            for (var i = 1; i <= group.numProperties; i++) {
+                var p = group.property(i);
+                var mn = null; try { mn = p.matchName; } catch (e) {}
+                if (mn === "ADBE Vector Graphic - Fill" || mn === "ADBE Vector Graphic - Stroke") {
+                    try { pushColor(p.property("Color").value); } catch (e) {}
+                } else if (p.numProperties && p.numProperties > 0) { scanShape(p); }
+            }
+        }
+        try { var cont = layer.property("Contents"); if (cont) { scanShape(cont); } } catch (e) {}
+
+        if (colors.length === 0) { return JSON.stringify({ status: "noop", message: "No fill/stroke colors found on '" + layer.name + "'." }, null, 2); }
+
+        if (args.createController === false) {
+            return JSON.stringify({ status: "success", message: "Found " + colors.length + " color(s) on '" + layer.name + "'.", colors: colors, controller: null }, null, 2);
+        }
+
+        controller = comp.layers.addNull();
+        controller.name = layer.name + " Colors";
+        for (var k = 0; k < colors.length; k++) {
+            try {
+                var fx = controller.Effects.addProperty("ADBE Color Control");
+                fx.name = "Color " + (k + 1);
+                var cp = null;
+                try { cp = fx.property("Color"); } catch (e) {}
+                if (!cp) { for (var pi = 1; pi <= fx.numProperties; pi++) { if (fx.property(pi).name === "Color") { cp = fx.property(pi); break; } } }
+                if (cp) { var col = colors[k]; try { cp.setValue([col[0], col[1], col[2], 1]); } catch (e) { try { cp.setValue(col); } catch (e2) {} } }
+            } catch (e) {}
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Extracted " + colors.length + " color(s) from '" + layer.name + "' into a controller null.",
+            colors: colors,
+            controller: { name: controller.name, index: controller.index, count: colors.length }
+        }, null, 2);
+    } catch (error) {
+        if (controller !== null) { try { controller.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}

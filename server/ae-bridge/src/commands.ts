@@ -22,6 +22,7 @@ export const COMMANDS: readonly string[] = [
   "setCompositionProperties",
   "deleteComposition",
   "duplicateComposition",
+  "cropComp",
   // Playhead
   "getCurrentTime",
   "setCurrentTime",
@@ -41,6 +42,8 @@ export const COMMANDS: readonly string[] = [
   "setLayerProperty",
   // Layers — hierarchy & transform
   "setLayerParent",
+  "addNullToLayers",
+  "getLayerColors",
   "moveLayer",
   "setAnchorPoint",
   "centerAnchorPoint",

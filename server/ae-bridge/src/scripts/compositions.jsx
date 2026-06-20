@@ -463,3 +463,70 @@ function getCompositionInfo(args) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
 }
+
+// U: cropComp — autocrop a comp to its visible content bounds (union of every layer's bbox), then
+// shift the content to the new origin. The Motion-Tools "Crop Comp" move. Only unparented layers are
+// shifted (parented children follow their parent). Reuses _getCompBbox (layers.jsx) + _readKeys/_writeKey
+// (animation.jsx) so keyframed positions move too. optional padding (px) on all sides.
+function cropComp(args) {
+    try {
+        var comp = _resolveComp(args);
+        var padding = (args.padding !== undefined && args.padding !== null) ? +args.padding : 0;
+        if (comp.numLayers === 0) { return JSON.stringify({ status: "noop", message: "Comp has no layers to crop to." }, null, 2); }
+
+        var left = null, right = null, top = null, bottom = null;
+        for (var i = 1; i <= comp.numLayers; i++) {
+            var bb = null;
+            try { bb = _getCompBbox(comp, comp.layer(i)); } catch (e) { continue; }
+            if (!bb) { continue; }
+            if (left === null || bb.left < left) { left = bb.left; }
+            if (right === null || bb.right > right) { right = bb.right; }
+            if (top === null || bb.top < top) { top = bb.top; }
+            if (bottom === null || bb.bottom > bottom) { bottom = bb.bottom; }
+        }
+        if (left === null) { return JSON.stringify({ status: "noop", message: "No layers with measurable bounds to crop to." }, null, 2); }
+
+        left -= padding; top -= padding; right += padding; bottom += padding;
+        var newW = Math.max(1, Math.round(right - left));
+        var newH = Math.max(1, Math.round(bottom - top));
+        var prevW = comp.width, prevH = comp.height;
+        var dx = left, dy = top;  // shift content so its top-left lands at (0,0)
+
+        var shifted = 0;
+        for (var s = 1; s <= comp.numLayers; s++) {
+            var L = comp.layer(s);
+            if (L.parent) { continue; }  // parented children move with their parent
+            var pos = null;
+            try { pos = L.property("Position"); } catch (e) { continue; }
+            if (!pos) { continue; }
+            var threeD = false; try { threeD = L.threeDLayer; } catch (e) {}
+            if (pos.numKeys > 0) {
+                var snap = _readKeys(pos);
+                while (pos.numKeys > 0) { pos.removeKey(1); }
+                for (var w = 0; w < snap.keys.length; w++) {
+                    var rec = snap.keys[w];
+                    var v = rec.value;
+                    rec.value = (threeD && v.length > 2) ? [v[0] - dx, v[1] - dy, v[2]] : [v[0] - dx, v[1] - dy];
+                    _writeKey(pos, rec, rec.time, snap.spatial);
+                }
+            } else {
+                var pv = pos.value;
+                pos.setValue((threeD && pv.length > 2) ? [pv[0] - dx, pv[1] - dy, pv[2]] : [pv[0] - dx, pv[1] - dy]);
+            }
+            shifted++;
+        }
+
+        comp.width = newW;
+        comp.height = newH;
+
+        return JSON.stringify({
+            status: "success",
+            message: "Cropped '" + comp.name + "' to content: " + newW + "x" + newH + " (was " + prevW + "x" + prevH + ").",
+            newSize: [newW, newH],
+            previousSize: [prevW, prevH],
+            shiftedLayers: shifted
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
