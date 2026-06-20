@@ -39,7 +39,8 @@ function createTextLayer(args) {
         if (duration > 0) { textLayer.outPoint = startTime + duration; }
         return JSON.stringify({
             status: "success", message: "Text layer created successfully",
-            layer: { name: textLayer.name, index: textLayer.index, type: "text", inPoint: textLayer.inPoint, outPoint: textLayer.outPoint, position: textLayer.property("Position").value }
+            layer: { name: textLayer.name, index: textLayer.index, type: "text", inPoint: textLayer.inPoint, outPoint: textLayer.outPoint, position: textLayer.property("Position").value },
+            configurableProperties: _configurableChildren(textLayer, [])
         }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
@@ -131,7 +132,7 @@ function addTextAnimator(args) {
                 propertyPath: ["Text", "Animators", animator.name],
                 properties: addedProperties
             },
-            keyframeableProperties: _keyframeableChildren(animator, ["Text", "Animators", animator.name])
+            configurableProperties: _configurableChildren(animator, ["Text", "Animators", animator.name])
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -411,7 +412,7 @@ function setTextAnimatorRangeSelector(args) {
                 end: selector.property("End").value,
                 offset: selector.property("Offset").value
             },
-            keyframeableProperties: _keyframeableChildren(animator, ["Text", "Animators", animator.name]),
+            configurableProperties: _configurableChildren(animator, ["Text", "Animators", animator.name]),
             previousValues: previousValues
         }, null, 2);
     } catch (error) {
@@ -571,7 +572,7 @@ function animateText(args) {
             preset: presetName,
             animator: { index: animators.numProperties, name: animator.name, propertyPath: ["Text", "Animators", animator.name] },
             animatedProperties: addedProps,
-            keyframeableProperties: _keyframeableChildren(animator, ["Text", "Animators", animator.name]),
+            configurableProperties: _configurableChildren(animator, ["Text", "Animators", animator.name]),
             motionBlur: !!motionBlur,
             previousValues: { motionBlur: prevMotionBlur }
         }, null, 2);

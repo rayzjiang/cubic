@@ -204,6 +204,7 @@ function applyEffect(args) {
             effect: effectResult,
             layer: { name: layer.name, index: layer.index },
             composition: { name: comp.name },
+            configurableProperties: effect ? _configurableChildren(effect, ["Effects", effect.name]) : undefined,
             warning: warning,
             failedProperties: failedProps.length > 0 ? failedProps : undefined
         }, null, 2);
@@ -350,7 +351,10 @@ function adjustColor(args) {
             if (unapplied.length > 0) {
                 for (var ua = 0; ua < unapplied.length; ua++) { unappliedAny.push(unapplied[ua]); }
             }
-            perLayer.push({ index: layer.index, name: layer.name, applied: applied, unapplied: unapplied });
+            perLayer.push({
+                index: layer.index, name: layer.name, applied: applied, unapplied: unapplied,
+                configurableProperties: lumetri ? _configurableChildren(lumetri, ["Effects", lumetri.name]) : undefined
+            });
         }
 
         var warning;
@@ -442,7 +446,7 @@ function applyEffectTemplate(args) {
             addedEffects.push(effect);
             var fp = applyEffectSettings(effect, steps[i].settings);
             for (var fpi = 0; fpi < fp.length; fpi++) { allFailed.push({ effectName: effect.name, name: fp[fpi].name, reason: fp[fpi].reason }); }
-            appliedEffects.push({ name: effect.name, matchName: effect.matchName });
+            appliedEffects.push({ name: effect.name, matchName: effect.matchName, configurableProperties: _configurableChildren(effect, ["Effects", effect.name]) });
         }
 
         return JSON.stringify({

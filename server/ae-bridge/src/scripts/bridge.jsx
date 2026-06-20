@@ -280,16 +280,20 @@ function _resolvePropertyByPath(layer, propertyPath) {
     return current;
 }
 
-// Walks the subtree under `rootProp` and returns every keyframeable leaf as
-// { name, path, value, numKeys }. `path` is the UI-style display-name array that
-// _resolvePropertyByPath accepts (implicit-container levels are skipped, NOT appended), so the
-// caller can hand it straight to setLayerKeyframe/getLayerKeyframes with no guessing. `rootPath`
-// is the path prefix of `rootProp` itself (e.g. ["Text","Animators",<animatorName>]). Depth/count
-// bounded so the payload stays small.
-function _keyframeableChildren(rootProp, rootPath) {
+// Walks the subtree under `rootProp` and returns every SETTABLE leaf as
+// { name, path, value, keyframeable[, numKeys] }. A leaf is settable when it exposes setValue
+// (mirrors setLayerProperty's guard), so the agent can drive it with no guessing — animatable
+// entries (keyframeable:true) via setLayerKeyframe, the rest (dropdowns/checkboxes/menus) via
+// setLayerProperty. `path` is the UI-style display-name array that _resolvePropertyByPath accepts
+// (implicit-container levels are skipped, NOT appended). `rootPath` is the path prefix of `rootProp`
+// itself (e.g. ["Text","Animators",<animatorName>] or ["Effects",<effectName>]). Depth/count bounded;
+// if the count cap is hit, a final { name:"(truncated)", truncated:true } sentinel is appended so the
+// caller knows the list is incomplete and can introspect.
+function _configurableChildren(rootProp, rootPath) {
     var out = [];
     var MAX_DEPTH = 8;
-    var MAX_ENTRIES = 60;
+    var MAX_ENTRIES = 120;
+    var truncated = false;
     function isImplicit(prop) {
         var mn = null;
         try { mn = prop.matchName; } catch (e) {}
@@ -304,7 +308,7 @@ function _keyframeableChildren(rootProp, rootPath) {
         var n = 0;
         try { n = group.numProperties; } catch (e) { n = 0; }
         for (var i = 1; i <= n; i++) {
-            if (out.length >= MAX_ENTRIES) { return; }
+            if (out.length >= MAX_ENTRIES) { truncated = true; return; }
             var prop = null;
             try { prop = group.property(i); } catch (e) { continue; }
             if (!prop) { continue; }
@@ -315,18 +319,34 @@ function _keyframeableChildren(rootProp, rootPath) {
                 var childPath = isImplicit(prop) ? path : path.concat([prop.name]);
                 walk(prop, childPath, depth + 1);
             } else {
-                var canVary = false;
-                try { canVary = (prop.canVaryOverTime === true); } catch (e) {}
-                if (!canVary) { continue; }
-                var entry = { name: prop.name, path: path.concat([prop.name]) };
-                try { entry.value = prop.value; } catch (e) {}
-                try { entry.numKeys = prop.numKeys; } catch (e) {}
+                var settable = false;
+                try { settable = !!prop.setValue; } catch (e) {}
+                if (!settable) { continue; }
+                var keyframeable = false;
+                try { keyframeable = (prop.canVaryOverTime === true); } catch (e2) {}
+                var entry = { name: prop.name, path: path.concat([prop.name]), keyframeable: keyframeable };
+                try { entry.value = prop.value; } catch (e3) {}
+                if (keyframeable) { try { entry.numKeys = prop.numKeys; } catch (e4) {} }
                 out.push(entry);
             }
         }
     }
     try { walk(rootProp, rootPath, 0); } catch (e) {}
+    if (truncated) { out.push({ name: "(truncated)", truncated: true }); }
     return out;
+}
+
+// Single-leaf variant of _configurableChildren: for a command that creates/exposes ONE specific
+// property (e.g. Time Remap) where walking the whole layer would be noise. Returns the same
+// { name, path, value, keyframeable[, numKeys] } entry shape, wrapped in an array (empty if no prop).
+function _configurableLeaf(prop, path) {
+    if (!prop) { return []; }
+    var keyframeable = false;
+    try { keyframeable = (prop.canVaryOverTime === true); } catch (e) {}
+    var entry = { name: prop.name, path: path, keyframeable: keyframeable };
+    try { entry.value = prop.value; } catch (e2) {}
+    if (keyframeable) { try { entry.numKeys = prop.numKeys; } catch (e3) {} }
+    return [entry];
 }
 
 

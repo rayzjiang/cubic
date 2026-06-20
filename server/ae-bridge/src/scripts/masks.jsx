@@ -159,6 +159,7 @@ function setLayerMask(args) {
             message: "Mask set successfully",
             layer: { name: layer.name, index: layer.index },
             mask: { name: mask.name, index: mask.propertyIndex, mode: maskMode, changedProperties: changed },
+            configurableProperties: _configurableChildren(mask, ["Masks", mask.name]),
             previousValues: previousValues
         }, null, 2);
     } catch (error) {
