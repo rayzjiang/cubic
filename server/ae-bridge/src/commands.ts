@@ -91,6 +91,9 @@ export const COMMANDS: readonly string[] = [
   "addShapeOperator",
   "setShapeOperatorProperty",
   "convertToShape",
+  "animateShape",
+  "extractShapes",
+  "mergeShapes",
   // Markers
   "addMarker",
   "listMarkers",

@@ -34,6 +34,7 @@ Default to a polished, modern tech-ad house style ("juice"):
 2. Easing is the default, not linear: any manual keyframes you set must get non-linear easing via setKeyframeEasing unless the user explicitly asks for linear/constant motion.
 3. Organic/continuous motion: use setLayerExpression presets (WIGGLE, INERTIAL_BOUNCE, ELASTIC, OVERSHOOT) instead of dense manual keyframes for organic, looping, or physics movement.
 4. Stagger multi-element entrances (applyMotionRecipe \`stagger\`) for cascading polish.
+5. Write-on / draw-on a shape, line, or icon ("draw it on", "reveal the stroke", "write-on logo", "animate the path") = animateShape (it adds + keyframes Trim Paths for you) — NEVER hand-keyframe Trim Paths. To animate each shape of a layer independently, extractShapes first (the shape analog of explodeTextLayer), then animate the pieces.
 EXCEPTION (escape hatch): when the user asks for exact, literal control — specific values, linear motion, a precise position/opacity — honor it precisely and do NOT auto-juice it.
 </motion_design_principles>
 

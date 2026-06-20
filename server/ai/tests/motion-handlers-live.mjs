@@ -65,6 +65,13 @@ async function freshComp(w, h) {
 async function addText(compName, text) {
   return run('createLayer', { compName, type: 'text', text: text ?? 'KINETIC TYPE', fontSize: 120 });
 }
+async function addShape(compName, fill) {
+  return run('createLayer', { compName, type: 'shape', shapeType: 'rectangle', size: [300, 300], fillColor: fill ?? [0.9, 0.2, 0.3], strokeColor: [1, 1, 1], strokeWidth: 8 });
+}
+async function layerCount(compName) {
+  const info = await run('getLayerInfo', { compName });
+  return (info.layers || []).length;
+}
 
 // ── clean-only mode ───────────────────────────────────────────────────────────
 if (CLEAN_ONLY) {
@@ -126,6 +133,39 @@ try {
     assert(res.status === 'success', 'expected success, got ' + res.status);
     assert(res.motionBlur === false, 'expected NO auto motion blur when ease=linear');
     return 'motion blur suppressed';
+  });
+
+  // ── animateShape (write-on) ────────────────────────────────────────────────────
+  await test('animateShape draws on a shape stroke via Trim Paths (2 keys on End)', async () => {
+    const comp = await freshComp();
+    await addShape(comp);
+    const res = await call('animateShape', { compName: comp, layerIndex: 1, trimProperty: 'end' });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    assert(res.trim && res.trim.keyframes === 2 && res.trim.animated === 'End', 'expected 2 keyframes on Trim End');
+    return `Trim ${res.trim.animated}, ${res.trim.keyframes} keys`;
+  });
+
+  // ── mergeShapes → extractShapes round-trip ──────────────────────────────────────
+  await test('mergeShapes combines two shape layers into one', async () => {
+    const comp = await freshComp();
+    await addShape(comp, [0.9, 0.2, 0.3]);
+    await addShape(comp, [0.2, 0.5, 0.9]);
+    assert((await layerCount(comp)) === 2, 'setup should have 2 shape layers');
+    const res = await call('mergeShapes', { compName: comp, layerIndices: [1, 2] });
+    assert(res.status === 'success', 'expected success, got ' + res.status);
+    assert((await layerCount(comp)) === 1, 'expected 1 layer after merge');
+    return res.message + (res.warning ? ' (with warning)' : '');
+  });
+
+  await test('extractShapes explodes a multi-group shape layer back into separate layers', async () => {
+    const comp = await freshComp();
+    await addShape(comp, [0.9, 0.2, 0.3]);
+    await addShape(comp, [0.2, 0.5, 0.9]);
+    await call('mergeShapes', { compName: comp, layerIndices: [1, 2] }); // now one layer, two groups
+    const res = await call('extractShapes', { compName: comp, layerIndex: 1, deleteSource: true });
+    assert(res.status === 'success', 'expected success, got ' + res.status + (res.message ? ' — ' + res.message : ''));
+    assert(res.createdLayers && res.createdLayers.length === 2, `expected 2 extracted layers, got ${res.createdLayers && res.createdLayers.length}`);
+    return `${res.createdLayers.length} layers extracted`;
   });
 } catch (e) {
   console.log(red(`\n  Aborted: ${e.message}`));

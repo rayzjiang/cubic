@@ -374,6 +374,9 @@ function _dispatchSwitch(command, args) {
         case "addShapeOperator":         return addShapeOperator(args);
         case "setShapeOperatorProperty": return setShapeOperatorProperty(args);
         case "convertToShape":           return convertToShape(args);
+        case "animateShape":             return animateShape(args);
+        case "extractShapes":            return extractShapes(args);
+        case "mergeShapes":              return mergeShapes(args);
         // markers.jsx
         case "addMarker":                return addMarker(args);
         case "listMarkers":              return listMarkers(args);

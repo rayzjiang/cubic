@@ -339,6 +339,22 @@ export const COMMAND_PARAMS = {
     required: ['operatorPath', 'propertyName', 'value'],
   },
   convertToShape: { domain: 'Shapes', summary: 'Convert a text/solid/parametric layer to editable shapes.', params: {} },
+  animateShape: {
+    domain: 'Shapes',
+    summary: 'Write-on / draw-on reveal for a shape layer — finds or adds Trim Paths and keyframes it so the stroke draws on. Use for "draw it on", "reveal the stroke/line", "write-on logo", "animate the path" — NEVER hand-keyframe Trim Paths. Defaults to a clean ease-out draw-on (End 0→100).',
+    params: { trimProperty: 'start|end (which trim end animates; default end)', startValue: 'float 0-100 (default 0)', endValue: 'float 0-100 (default 100)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 1.0)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easeOut)', offset: 'float deg (static Trim Offset)', groupPath: 'array e.g. ["Contents","Group 1","Contents"] (default first group)', overwriteKeyframes: 'bool' },
+  },
+  extractShapes: {
+    domain: 'Shapes',
+    summary: 'Explode a shape layer\'s top-level groups onto separate shape layers (the shape analog of explodeTextLayer) so each can animate independently. Source is hidden unless deleteSource.',
+    params: { deleteSource: 'bool — remove the source instead of hiding it (default false)' },
+  },
+  mergeShapes: {
+    domain: 'Shapes',
+    summary: 'Merge several shape layers into the first one (deep-clones each layer\'s groups, then removes the merged-away layers). Returns a warning for any sub-property it could not copy.',
+    params: { layerIndices: 'array of int (1-based; first is the target)' },
+    required: ['layerIndices'],
+  },
 
   // ── Markers ───────────────────────────────────────────────────────────────
   addMarker: {

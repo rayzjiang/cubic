@@ -150,20 +150,7 @@ function addShapeOperator(args) {
             throw _err(ERROR_CODES.INVALID_ARGS, "Invalid operator type '" + type + "'. Use: trimPaths, repeater, roundedCorners, gradientFill, gradientStroke.");
         }
 
-        var groupContents;
-        var groupPath = args.groupPath;
-        if (groupPath && groupPath.length > 0) {
-            var targetGroup = _resolvePropertyByPath(layer, groupPath);
-            var inner = targetGroup.property("Contents");
-            groupContents = inner || targetGroup;
-        } else {
-            var contents = layer.property("Contents");
-            if (!contents) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Layer has no Contents group — is it a shape layer?"); }
-            var firstGroup = contents.property(1);
-            if (!firstGroup) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Contents group is empty."); }
-            var firstContents = firstGroup.property("Contents");
-            groupContents = firstContents || firstGroup;
-        }
+        var groupContents = _resolveShapeGroupContents(layer, args.groupPath);
 
         var operator = groupContents.addProperty(matchNames[type]);
 
@@ -248,6 +235,219 @@ function setShapeOperatorProperty(args) {
             property: { name: prop.name, value: prop.value },
             previousValue: previousValue
         }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// Shared: resolve the Contents group a shape operator/group lives in. With groupPath, walks to that
+// group and returns its Contents (or the group itself); otherwise returns the first group's Contents.
+// Used by addShapeOperator and animateShape so both target shape groups identically.
+function _resolveShapeGroupContents(layer, groupPath) {
+    if (groupPath && groupPath.length > 0) {
+        var targetGroup = _resolvePropertyByPath(layer, groupPath);
+        var inner = targetGroup.property("Contents");
+        return inner || targetGroup;
+    }
+    var contents = layer.property("Contents");
+    if (!contents) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Layer has no Contents group — is it a shape layer?"); }
+    var firstGroup = contents.property(1);
+    if (!firstGroup) { throw _err(ERROR_CODES.PROPERTY_NOT_FOUND, "Contents group is empty."); }
+    var firstContents = firstGroup.property("Contents");
+    return firstContents || firstGroup;
+}
+
+// C/U: animateShape — write-on / draw-on reveal via Trim Paths. Finds or adds a Trim Paths operator on
+// the shape group, then keyframes Start/End over `duration` so the stroke draws on. This is the shape
+// analog of animateText: one call instead of hand-keyframing trim properties.
+function animateShape(args) {
+    var addedTrim = null;  // tracked for atomic-create rollback when we add the Trim operator
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var comp  = resolved.comp;
+        var layer = resolved.layer;
+
+        var trimProperty = args.trimProperty ? String(args.trimProperty) : "end"; // start|end
+        var startValue   = args.startValue !== undefined ? +args.startValue : 0;
+        var endValue     = args.endValue   !== undefined ? +args.endValue   : 100;
+        var startTime    = args.startTime  !== undefined ? +args.startTime  : 0;
+        var duration     = args.duration   !== undefined ? +args.duration   : 1.0;
+        var ease         = args.ease ? String(args.ease) : "easeOut";
+        var overwrite    = args.overwriteKeyframes === true;
+
+        if (duration <= 0) { throw _err(ERROR_CODES.INVALID_ARGS, "duration must be > 0."); }
+        if (startTime + duration > comp.duration + 0.001) {
+            throw _err(ERROR_CODES.TIME_OUT_OF_RANGE, "Reveal extends to " + (startTime + duration).toFixed(3) + "s, exceeding comp duration " + comp.duration.toFixed(3) + "s.");
+        }
+        if (trimProperty !== "start" && trimProperty !== "end") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "trimProperty must be 'start' or 'end'.");
+        }
+
+        var groupContents = _resolveShapeGroupContents(layer, args.groupPath);
+
+        // Find an existing Trim Paths operator in this group; otherwise add one (atomic-create).
+        var trim = null;
+        for (var i = 1; i <= groupContents.numProperties; i++) {
+            try { if (groupContents.property(i).matchName === "ADBE Vector Filter - Trim") { trim = groupContents.property(i); break; } } catch (e) {}
+        }
+        if (!trim) { trim = groupContents.addProperty("ADBE Vector Filter - Trim"); addedTrim = trim; }
+
+        // Static Offset (rotates where the trim begins) if requested.
+        if (args.offset !== undefined && args.offset !== null) {
+            try { trim.property("Offset").setValue(+args.offset); } catch (e) {}
+        }
+
+        var animated = (trimProperty === "start") ? "Start" : "End";
+        var prop = trim.property(animated);
+        if (overwrite) { while (prop.numKeys > 0) { prop.removeKey(1); } }
+        var prevValue = null; try { prevValue = prop.value; } catch (e) {}
+        _recipeSetKey(prop, startTime, startValue, ease);
+        _recipeSetKey(prop, startTime + duration, endValue, ease);
+
+        return JSON.stringify({
+            status: "success",
+            message: "Drew on '" + layer.name + "' — Trim " + animated + " " + startValue + " to " + endValue + " over " + duration + "s.",
+            layer: { name: layer.name, index: layer.index },
+            trim: { animated: animated, addedTrim: (addedTrim !== null), keyframes: 2 },
+            previousValues: { value: prevValue, trimAdded: (addedTrim !== null) }
+        }, null, 2);
+    } catch (error) {
+        if (addedTrim !== null) { try { addedTrim.remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// C: extractShapes — explode a shape layer's top-level groups onto separate shape layers (the shape
+// analog of explodeTextLayer). Each duplicate keeps exactly one group; the source is hidden (or
+// removed when deleteSource). Lets the user animate each shape independently.
+function extractShapes(args) {
+    var createdLayers = [];  // tracked for atomic-create rollback
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var contents = layer.property("Contents");
+        if (!contents) { throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' has no Contents — is it a shape layer?"); }
+
+        // Collect the indices of the top-level vector groups (skip operators living at Contents root).
+        var groupIdxs = [];
+        for (var i = 1; i <= contents.numProperties; i++) {
+            try { if (contents.property(i).matchName === "ADBE Vector Group") { groupIdxs.push(i); } } catch (e) {}
+        }
+        if (groupIdxs.length < 2) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "Layer has " + groupIdxs.length + " shape group(s) — need at least 2 to extract.");
+        }
+
+        var deleteSource = args.deleteSource === true;
+        var prevEnabled = layer.enabled;
+        var out = [];
+
+        // For each group, duplicate the layer and delete every OTHER top-level group on the dup.
+        for (var g = 0; g < groupIdxs.length; g++) {
+            var keepName = contents.property(groupIdxs[g]).name;
+            var dup = layer.duplicate();
+            createdLayers.push(dup);
+            var dupContents = dup.property("Contents");
+            // Remove non-matching groups by name (delete high→low so indices stay valid).
+            for (var d = dupContents.numProperties; d >= 1; d--) {
+                var child = dupContents.property(d);
+                var isGroup = false;
+                try { isGroup = (child.matchName === "ADBE Vector Group"); } catch (e) {}
+                if (isGroup && child.name !== keepName) { try { child.remove(); } catch (e2) {} }
+            }
+            dup.name = layer.name + " [" + keepName + "]";
+            out.push({ index: dup.index, name: dup.name, group: keepName });
+        }
+
+        if (deleteSource) { layer.remove(); } else { layer.enabled = false; }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Extracted " + out.length + " shape group(s) from '" + layer.name + "'.",
+            createdLayers: out,
+            previousValues: { sourceEnabled: prevEnabled, sourceDeleted: deleteSource }
+        }, null, 2);
+    } catch (error) {
+        for (var r = createdLayers.length - 1; r >= 0; r--) { try { createdLayers[r].remove(); } catch (e2) {} }
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
+// Recursively clone a vector property (group or leaf) from src into destParent by matchName, copying
+// values. Handles the standard shape tree (groups, shapes, fills, strokes, operators). Anything that
+// can't be re-added or set is skipped and counted as a warning — never throws.
+function _cloneVectorProperty(src, destParent, warn) {
+    var added = null;
+    try { added = destParent.addProperty(src.matchName); } catch (e) { warn.push(src.name); return; }
+    try { if (added.name !== src.name && added.canSetName !== false) { added.name = src.name; } } catch (e) {}
+    if (src.numProperties && src.numProperties > 0) {
+        // A group/container: AE auto-creates default children on addProperty, so recurse by clearing
+        // auto-children we'll re-add only for the "Contents" group; for leaf-bearing operators, copy
+        // child VALUES by matchName instead of re-adding (those children are fixed).
+        if (src.matchName === "ADBE Vector Group" || src.name === "Contents") {
+            var destContents = added.property("Contents") || added;
+            var srcContents  = src.property("Contents") || src;
+            for (var i = 1; i <= srcContents.numProperties; i++) {
+                _cloneVectorProperty(srcContents.property(i), destContents, warn);
+            }
+        } else {
+            for (var j = 1; j <= src.numProperties; j++) {
+                var sc = src.property(j);
+                var dc = null;
+                try { dc = added.property(sc.matchName); } catch (e) {}
+                if (dc && dc.setValue) { try { dc.setValue(sc.value); } catch (e) { warn.push(sc.name); } }
+            }
+        }
+    } else if (added.setValue) {
+        try { added.setValue(src.value); } catch (e) { warn.push(src.name); }
+    }
+}
+
+// C: mergeShapes — combine several shape layers' groups into the first layer, then remove the others.
+// Best-effort deep clone of each vector group (see _cloneVectorProperty); reports any sub-property it
+// couldn't copy via a warning rather than failing the whole merge.
+function mergeShapes(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length < 2) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must list at least 2 shape layers to merge.");
+        }
+        // Resolve target (first) + sources, validating they're shape layers, before mutating anything.
+        var target = comp.layer(layerIndices[0]);
+        var targetContents = target.property("Contents");
+        if (!targetContents) { throw _err(ERROR_CODES.INVALID_ARGS, "Target layer is not a shape layer."); }
+
+        var warn = [];
+        var mergedFrom = [];
+        // Clone each source's top-level groups onto the target (high→low source order keeps stacking).
+        for (var s = 1; s < layerIndices.length; s++) {
+            var src = comp.layer(layerIndices[s]);
+            var srcContents = src.property("Contents");
+            if (!srcContents) { warn.push(src.name + " (not a shape layer)"); continue; }
+            for (var i = 1; i <= srcContents.numProperties; i++) {
+                var grp = srcContents.property(i);
+                var isGroup = false;
+                try { isGroup = (grp.matchName === "ADBE Vector Group"); } catch (e) {}
+                if (isGroup) { _cloneVectorProperty(grp, targetContents, warn); }
+            }
+            mergedFrom.push({ index: src.index, name: src.name });
+        }
+        // Remove the merged-away layers (resolve by name AFTER cloning so indices don't shift mid-clone).
+        for (var m = 0; m < mergedFrom.length; m++) {
+            for (var li = 1; li <= comp.numLayers; li++) {
+                if (comp.layer(li).name === mergedFrom[m].name && comp.layer(li) !== target) { comp.layer(li).remove(); break; }
+            }
+        }
+
+        var resultObj = {
+            status: "success",
+            message: "Merged " + mergedFrom.length + " shape layer(s) into '" + target.name + "'.",
+            target: { name: target.name, index: target.index },
+            mergedFrom: mergedFrom
+        };
+        if (warn.length > 0) { resultObj.warning = "Some sub-properties couldn't be copied: " + warn.join(", ") + "."; }
+        return JSON.stringify(resultObj, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
