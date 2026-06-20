@@ -667,12 +667,37 @@ function _recipeSetKey(prop, time, rawVal, easeType) {
     } catch (easeErr) {}
 }
 
+// Internal: set one keyframe at `time` with explicit bezier in/out influence (0-100).
+// The graph-editor primitive behind keyframed overshoot — shapes each key by hand so the
+// curve is editable in the graph editor (vs. a baked expression).
+function _recipeSetKeyInfluence(prop, time, rawVal, inInf, outInf) {
+    prop.setValueAtTime(time, rawVal);
+    var ki = -1;
+    for (var k = 1; k <= prop.numKeys; k++) {
+        if (Math.abs(prop.keyTime(k) - time) < 0.002) { ki = k; break; }
+    }
+    if (ki === -1) return;
+    prop.setInterpolationTypeAtKey(ki, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+    try {
+        var dim = prop.keyInTemporalEase(ki).length;
+        var inArr = [], outArr = [];
+        for (var d = 0; d < dim; d++) {
+            inArr.push(new KeyframeEase(0, inInf));
+            outArr.push(new KeyframeEase(0, outInf));
+        }
+        prop.setTemporalEaseAtKey(ki, inArr, outArr);
+    } catch (easeErr) {}
+}
+
 // Internal: apply a motion recipe to one layer. Returns per-layer result object.
 // Called directly from applyMotionRecipe — NOT through dispatchCommand, to stay
 // inside the single outer undo group that dispatchCommand already opened.
 function _applyRecipeToLayer(layer, recipeName, t0, duration, opts) {
     var easeType  = opts.easeType || "easyEase";
     var bounce    = !!opts.bounce;
+    // Where a pop's overshoot lives: keyframes (default — editable in the graph editor) or an
+    // INERTIAL_BOUNCE expression (legacy — convenient but baked). Only consulted when bounce is on.
+    var bounceStyle = (opts.bounceStyle === "expression") ? "expression" : "keyframes";
     var intensity = (opts.intensity !== undefined) ? +opts.intensity : 1.0;
     var overwrite = opts.overwriteKeyframes === true;
     var fromArg   = opts.from;
@@ -706,14 +731,32 @@ function _applyRecipeToLayer(layer, recipeName, t0, duration, opts) {
         if (recipeName === "bounceIn") { bounce = true; }
         var scaleProp = getTransformProp("Scale");
         if (scaleProp) {
-            var curSc  = scaleProp.value;
-            var zeroSc = [];
+            var curSc   = scaleProp.value;
+            var targetSc = nativeArr(curSc);
+            var zeroSc  = [];
             for (var si = 0; si < curSc.length; si++) { zeroSc[si] = (si < 2) ? 0 : +curSc[si]; }
-            applyTwoKeys(scaleProp, "Scale", zeroSc, nativeArr(curSc));
-            if (bounce) {
-                try { prevVals.ScaleExpression = scaleProp.expression || ""; } catch (e) {}
-                scaleProp.expression = _buildPresetExpression("INERTIAL_BOUNCE", { amp: 0.1 * intensity, freq: 2.5, decay: 4 });
-                exprsApplied.push("Scale: INERTIAL_BOUNCE");
+            if (bounce && bounceStyle === "keyframes") {
+                // Keyframed overshoot: 0 -> peak (~109% at intensity 1) -> settle to target.
+                // Three shaped keys (snappy launch, rounded peak, decelerating settle) so the
+                // bounce reads as designed AND stays editable in the graph editor.
+                try { prevVals.Scale = scaleProp.value; } catch (e) {}
+                if (overwrite) { while (scaleProp.numKeys > 0) { scaleProp.removeKey(1); } }
+                var peakSc = [];
+                for (var pi = 0; pi < targetSc.length; pi++) {
+                    peakSc[pi] = (pi < 2) ? targetSc[pi] * (1 + 0.09 * intensity) : targetSc[pi];
+                }
+                _recipeSetKeyInfluence(scaleProp, t0,                zeroSc,   33.33, 85);    // fast launch out of 0
+                _recipeSetKeyInfluence(scaleProp, t0 + duration * 0.62, peakSc, 70, 55);     // round over the top
+                _recipeSetKeyInfluence(scaleProp, t0 + duration,    targetSc, 75,    33.33); // decelerate into rest
+                appliedKfs += 3;
+            } else {
+                applyTwoKeys(scaleProp, "Scale", zeroSc, targetSc);
+                if (bounce) {
+                    // bounceStyle === "expression": legacy baked overshoot on top of the 2-key scale.
+                    try { prevVals.ScaleExpression = scaleProp.expression || ""; } catch (e) {}
+                    scaleProp.expression = _buildPresetExpression("INERTIAL_BOUNCE", { amp: 0.1 * intensity, freq: 2.5, decay: 4 });
+                    exprsApplied.push("Scale: INERTIAL_BOUNCE");
+                }
             }
         }
         if (recipeName !== "scaleIn") {
@@ -825,6 +868,7 @@ function applyMotionRecipe(args) {
         var opts = {
             easeType:           args.ease || "easyEase",
             bounce:             !!args.bounce,
+            bounceStyle:        args.bounceStyle,
             intensity:          (args.intensity !== undefined) ? +args.intensity : 1.0,
             overwriteKeyframes: args.overwriteKeyframes === true,
             from:               args.from

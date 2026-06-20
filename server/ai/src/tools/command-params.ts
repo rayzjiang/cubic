@@ -451,7 +451,7 @@ export const COMMAND_PARAMS = {
   applyMotionRecipe: {
     domain: 'Motion',
     summary: 'Apply a juicy motion preset to layers. To reveal N layers in sequence, pass the whole layerIndices array with a stagger (and orderType for the cascade direction) — one call, not N.',
-    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add INERTIAL_BOUNCE on Scale', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
+    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add overshoot/settle to the Scale pop', bounceStyle: 'keyframes|expression (default keyframes — a 3-key overshoot you can shape in the graph editor; expression bakes INERTIAL_BOUNCE on Scale instead)', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
     required: ['recipe', 'layerIndices'],
   },
   distributeLayers3D: {

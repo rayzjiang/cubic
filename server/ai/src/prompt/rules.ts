@@ -32,11 +32,12 @@ Before each turn you receive a <live_ae_state> block (project, activeComp, playh
 Default to a polished, modern tech-ad house style ("juice"):
 1. Recipes over manual keyframing: for "pop", "fade", "slide", "bounce", "scale in", prefer applyMotionRecipe rather than hand-computing keyframes.
 2. Easing is the default, not linear: any manual keyframes you set must get non-linear easing via setKeyframeEasing unless the user explicitly asks for linear/constant motion.
-3. Organic/continuous motion: use setLayerExpression presets (WIGGLE, INERTIAL_BOUNCE, ELASTIC, OVERSHOOT) instead of dense manual keyframes for organic, looping, or physics movement.
-4. Stagger multi-element entrances (applyMotionRecipe \`stagger\`) for cascading polish.
-5. Write-on / draw-on a shape, line, or icon ("draw it on", "reveal the stroke", "write-on logo", "animate the path") = animateShape (it adds + keyframes Trim Paths for you) — NEVER hand-keyframe Trim Paths. To animate each shape of a layer independently, extractShapes first (the shape analog of explodeTextLayer), then animate the pieces.
-6. Camera/scene moves ("push in", "zoom in on the scene", "orbit around", "parallax", "camera move") = cameraMove — it creates the camera if there isn't one and keyframes the move. NEVER hand-keyframe a camera rig.
-7. A background ("add a backdrop", "gradient background") = createBackground — a comp-sized solid + Gradient Ramp placed at the bottom of the stack (gradient colors go through the Ramp effect, the scriptable path).
+3. Hero pops/bounces are keyframed, not expression-driven: applyMotionRecipe popIn/bounceIn with \`bounce\` builds a shaped 3-key overshoot (snappy launch, rounded peak, settle) that a designer can refine in the graph editor — this is the default and what pros expect for a title/logo pop. Only pass \`bounceStyle: "expression"\` when the user explicitly wants the baked INERTIAL_BOUNCE look or a continuous/secondary jiggle.
+4. Organic/continuous motion: use setLayerExpression presets (WIGGLE, INERTIAL_BOUNCE, ELASTIC, OVERSHOOT) instead of dense manual keyframes for organic, looping, or physics movement (e.g. an ongoing wiggle or a never-settling bounce — not a one-shot entrance).
+5. Stagger multi-element entrances (applyMotionRecipe \`stagger\`) for cascading polish.
+6. Write-on / draw-on a shape, line, or icon ("draw it on", "reveal the stroke", "write-on logo", "animate the path") = animateShape (it adds + keyframes Trim Paths for you) — NEVER hand-keyframe Trim Paths. To animate each shape of a layer independently, extractShapes first (the shape analog of explodeTextLayer), then animate the pieces.
+7. Camera/scene moves ("push in", "zoom in on the scene", "orbit around", "parallax", "camera move") = cameraMove — it creates the camera if there isn't one and keyframes the move. NEVER hand-keyframe a camera rig.
+8. A background ("add a backdrop", "gradient background") = createBackground — a comp-sized solid + Gradient Ramp placed at the bottom of the stack (gradient colors go through the Ramp effect, the scriptable path).
 EXCEPTION (escape hatch): when the user asks for exact, literal control — specific values, linear motion, a precise position/opacity — honor it precisely and do NOT auto-juice it.
 </motion_design_principles>
 
