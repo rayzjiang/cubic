@@ -1,4 +1,6 @@
+import { motion } from 'motion/react'
 import { useChatStore } from '../store'
+import { useMotion } from '../motion'
 import { ConversationRow } from './ConversationRow'
 
 /**
@@ -9,6 +11,7 @@ import { ConversationRow } from './ConversationRow'
 export function HomeView() {
   const conversations = useChatStore((s) => s.conversations)
   const newChat = useChatStore((s) => s.newChat)
+  const { listStagger, listRow } = useMotion()
 
   return (
     <div className="flex h-full flex-col bg-neutral-900">
@@ -29,13 +32,15 @@ export function HomeView() {
           ) : (
             <>
               <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-white/35">Recent</h2>
-              <ul className="space-y-0.5">
+              {/* Rows stagger-fade in on each home enter (HomeView remounts via App's AnimatePresence).
+                  The stagger lives here, not in ConversationRow, so the sidebar's rows never stagger. */}
+              <motion.ul className="space-y-0.5" variants={listStagger} initial="initial" animate="animate">
                 {conversations.map((c, i) => (
-                  <li key={c.id}>
+                  <motion.li key={c.id} variants={listRow}>
                     <ConversationRow conv={c} badge={i === 0 ? 'most recent' : undefined} />
-                  </li>
+                  </motion.li>
                 ))}
-              </ul>
+              </motion.ul>
             </>
           )}
         </div>

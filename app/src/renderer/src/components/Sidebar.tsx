@@ -1,5 +1,7 @@
+import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { CHROME_BG } from '../ui'
+import { EASE_OUT, useMotion } from '../motion'
 import { ConversationRow } from './ConversationRow'
 
 /**
@@ -20,6 +22,7 @@ export function Sidebar() {
   const newChat = useChatStore((s) => s.newChat)
   const openChat = useChatStore((s) => s.openChat)
   const goHome = useChatStore((s) => s.goHome)
+  const { reduce } = useMotion()
 
   // A brand-new chat only enters `conversations` once its first turn commits. Until then the renderer owns
   // its row so it survives chat switches (Claude.ai behavior):
@@ -34,8 +37,11 @@ export function Sidebar() {
     !pendingNewChats.some((p) => p.id === sessionId)
 
   return (
-    <aside
-      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 ${CHROME_BG} transition-[width] duration-200 ease-out ${collapsed ? 'w-12' : 'w-64'}`}
+    <motion.aside
+      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 ${CHROME_BG}`}
+      initial={false}
+      animate={{ width: collapsed ? 48 : 256 }}
+      transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
     >
       {/* Collapsed icon rail — overlaid, fades in when collapsed. Starts at the top (the TopBar above
           owns the traffic-light zone), pt-2 to vertically align with the expanded header row. */}
@@ -95,7 +101,7 @@ export function Sidebar() {
           ))}
         </ul>
       </div>
-    </aside>
+    </motion.aside>
   )
 }
 

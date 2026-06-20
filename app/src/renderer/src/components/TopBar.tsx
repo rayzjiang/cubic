@@ -1,5 +1,8 @@
+import { useEffect, useRef } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { CHROME_BG } from '../ui'
+import { EASE_OUT, useMotion } from '../motion'
 import { AeStatus } from './AeStatus'
 
 // macOS insets the traffic lights into the top-left; reserve room so nothing sits under them.
@@ -17,11 +20,20 @@ export function TopBar() {
   const conversations = useChatStore((s) => s.conversations)
   const pendingNewChats = useChatStore((s) => s.pendingNewChats)
   const sidebarCollapsed = useChatStore((s) => s.sidebarCollapsed)
+  const { reduce } = useMotion()
 
   // Center the title over the CHAT pane, not the whole window: offset its left edge by the sidebar's
   // current width (matched to Sidebar.tsx: w-12 collapsed / w-64 expanded). Home has no sidebar → 0.
-  // The transition mirrors the sidebar's own width animation so the title slides in lockstep.
   const titleLeft = view === 'chat' ? (sidebarCollapsed ? 48 : 256) : 0
+
+  // Decouple the two reasons `left` changes: a SIDEBAR TOGGLE should glide the (already-visible) title
+  // horizontally, but a VIEW SWAP (home↔chat) should SNAP it to position so the title only fades in —
+  // no slide-from-left. We snap on the exact render where `view` flips, then re-enable the glide.
+  const prevView = useRef(view)
+  useEffect(() => {
+    prevView.current = view
+  }, [view])
+  const glideLeft = prevView.current === view && !reduce
 
   // Active chat title — same precedence the Sidebar uses for its rows. Empty on Home (no active chat).
   const title = (() => {
@@ -39,13 +51,30 @@ export function TopBar() {
       <div className={isMac ? 'w-[78px] shrink-0' : 'w-3 shrink-0'} />
 
       {/* Center: title centered over the chat pane (left edge offset past the sidebar) so it stays
-          visually centered in the conversation regardless of sidebar state. pointer-events-none so it
-          never blocks window drag; truncates when long. */}
+          visually centered in the conversation regardless of sidebar state. The CONTAINER owns the
+          horizontal position (glides on sidebar toggle, snaps on view swap — see glideLeft). The inner
+          span owns the FADE: keyed on sessionId so it cross-fades when the chat changes but not when the
+          sidebar toggles. Because the container is empty on Home (title ''), the home→chat position
+          snap is invisible and the user only sees the title fade in. pointer-events-none so it never
+          blocks window drag; truncates when long. */}
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center transition-[left] duration-200 ease-out"
-        style={{ left: titleLeft }}
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center"
+        style={{ left: titleLeft, transition: glideLeft ? 'left 200ms ease-out' : 'none' }}
       >
-        <span className="max-w-[40%] truncate text-[13px] text-white/70">{title}</span>
+        <AnimatePresence mode="wait">
+          {title && (
+            <motion.span
+              key={sessionId ?? 'none'}
+              className="max-w-[40%] truncate text-[13px] text-white/70"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reduce ? 0.1 : 0.2, ease: EASE_OUT }}
+            >
+              {title}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Right: AE status pushed to the edge. */}

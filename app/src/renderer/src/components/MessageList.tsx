@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { motion } from 'motion/react'
 import { useChatStore } from '../store'
+import { useMotion } from '../motion'
 import type { DisplayItem } from '../protocol'
 import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
@@ -31,6 +33,7 @@ export function MessageList() {
   const progressWord = useChatStore((s) => s.progressWord)
   const compacting = useChatStore((s) => s.compacting)
   const sessionId = useChatStore((s) => s.sessionId)
+  const { fadeRise } = useMotion()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
@@ -118,41 +121,46 @@ export function MessageList() {
 
   // `suppressTopGap` drops a user prompt's top margin when it's the first row of the last-turn block
   // (that block supplies the spacing via its own padding) — keeps the message off the very top edge.
+  //
+  // Entrance: each row fades+rises in (fadeRise). Only the NEWEST row gets `initial` so a streamed
+  // message animates as it lands, while opening an existing conversation paints all of history
+  // instantly (no replay). y is a transform, not layout, so it never shifts scrollHeight / the pin math.
   const renderItem = (it: DisplayItem, i: number, suppressTopGap = false) => {
+    const enter = i === items.length - 1 ? 'initial' : false
     if (it.kind === 'user') {
       return (
-        <div key={i} className={i === 0 || suppressTopGap ? '' : 'mt-7'}>
+        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className={i === 0 || suppressTopGap ? '' : 'mt-7'}>
           <UserPrompt text={it.text} turnId={it.turnId} />
-        </div>
+        </motion.div>
       )
     }
     if (it.kind === 'assistant') {
       return (
-        <div key={i} className="mt-3">
+        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3">
           <AssistantMessage text={it.text} />
-        </div>
+        </motion.div>
       )
     }
     if (it.kind === 'interrupted') {
       return (
-        <div key={i} className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
+        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3 flex items-center gap-2 text-[12px] text-white/30">
           <span className="h-px flex-1 bg-white/10" />
           Stopped
           <span className="h-px flex-1 bg-white/10" />
-        </div>
+        </motion.div>
       )
     }
     if (it.kind === 'compaction') {
       return (
-        <div key={i} className="mt-3">
+        <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-3">
           <CompactionSummary summary={it.summary} />
-        </div>
+        </motion.div>
       )
     }
     return (
-      <div key={i} className="mt-1.5">
+      <motion.div key={i} variants={fadeRise} initial={enter} animate="animate" className="mt-1.5">
         <ToolActionRow label={it.label} status={it.status} />
-      </div>
+      </motion.div>
     )
   }
 

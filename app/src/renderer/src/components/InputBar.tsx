@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { motion } from 'motion/react'
 import { useChatStore } from '../store'
+import { useMotion } from '../motion'
 
 /**
  * Composer. Enter or the send button (↑) submit — both call submit(). Shift+Enter newlines. Sending
@@ -16,6 +18,7 @@ export function InputBar() {
   const cancelSteer = useChatStore((s) => s.cancelSteer)
   const restoreDraft = useChatStore((s) => s.restoreDraft)
   const clearRestoreDraft = useChatStore((s) => s.clearRestoreDraft)
+  const { morphTransition } = useMotion()
   const [draft, setDraft] = useState('')
 
   // A discarded turn (stopped before any output) returns its text to the composer — as if never sent.
@@ -94,19 +97,23 @@ export function InputBar() {
           aria-label={running ? 'Stop' : 'Send'}
           title={running ? 'Stop (Esc)' : 'Send (Enter)'}
         >
-          <svg
+          <motion.svg
             viewBox="0 0 16 16"
-            className={`absolute h-4 w-4 transition-all duration-200 ${running ? 'scale-50 opacity-0' : 'scale-100 opacity-100'}`}
+            className="absolute h-4 w-4"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            animate={running ? { scale: 0.5, opacity: 0 } : { scale: 1, opacity: 1 }}
+            transition={morphTransition}
           >
             <path d="M8 13V3M4 7l4-4 4 4" />
-          </svg>
-          <span
-            className={`absolute block h-2.5 w-2.5 rounded-[2px] bg-current transition-all duration-200 ${running ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`}
+          </motion.svg>
+          <motion.span
+            className="absolute block h-2.5 w-2.5 rounded-[2px] bg-current"
+            animate={running ? { scale: 1, opacity: 1 } : { scale: 0.5, opacity: 0 }}
+            transition={morphTransition}
           />
         </button>
       </div>

@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from './store'
+import { useMotion } from './motion'
 import { bindWs, connectBackend, sendList } from './ws'
 import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
@@ -20,6 +22,7 @@ export function App() {
   const listLoaded = useChatStore((s) => s.listLoaded)
   const view = useChatStore((s) => s.view)
   const backendPhase = useChatStore((s) => s.backendStatus.phase)
+  const { crossfade } = useMotion()
 
   useEffect(() => {
     const store = useChatStore.getState()
@@ -47,22 +50,44 @@ export function App() {
   } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
   } else {
-    // Home + chat share the global top bar; only the region below it differs.
+    // Home + chat share the global top bar; only the region below it differs. The two views
+    // overlapping-crossfade (+subtle rise) into each other: both are absolutely positioned inside the
+    // relative region so they can occupy the same box while one fades out and the other fades in.
+    // `initial={false}` suppresses any crossfade on first paint. TopBar stays OUTSIDE AnimatePresence
+    // (always mounted) — its title runs its own fade in TopBar.tsx.
     body = (
       <div className="flex h-full flex-col">
         <TopBar />
-        {view === 'home' ? (
-          <div className="min-h-0 flex-1">
-            <HomeView />
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1">
-            <Sidebar />
-            <div className="min-w-0 flex-1">
-              <ChatPane />
-            </div>
-          </div>
-        )}
+        <div className="relative min-h-0 flex-1">
+          <AnimatePresence initial={false}>
+            {view === 'home' ? (
+              <motion.div
+                key="home"
+                className="absolute inset-0"
+                variants={crossfade}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <HomeView />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="chat"
+                className="absolute inset-0 flex"
+                variants={crossfade}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <Sidebar />
+                <div className="min-w-0 flex-1">
+                  <ChatPane />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     )
   }
