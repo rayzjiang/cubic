@@ -46,6 +46,7 @@ export const COMMANDS: readonly string[] = [
   "centerAnchorPoint",
   "alignLayers",
   "distributeLayers",
+  "fitToFrame",
   "sequenceLayers",
   // Layers — time ops
   "splitLayer",

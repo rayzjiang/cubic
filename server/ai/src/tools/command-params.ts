@@ -169,6 +169,12 @@ export const COMMAND_PARAMS = {
     params: { layerIndices: 'array of int (1-based)', axis: 'horizontal|vertical (default vertical)', gap: 'float px between adjacent bounding boxes (optional; omit for a comfy proportional gap)', reference: 'COMPOSITION|SELECTION (default COMPOSITION)' },
     required: ['layerIndices'],
   },
+  fitToFrame: {
+    domain: 'Layers',
+    summary: 'Scale footage/layers to the comp frame (bounding-box-aware), then center. Use for "fit to frame", "fill the frame", "scale to fit/fill" — never hand-set Scale/Position. fit = contain (whole layer visible); fill = cover (frame filled, edges cropped); stretch = exact fit, may distort. offset nudges from center.',
+    params: { layerIndices: 'array of int (1-based)', mode: 'fit|fill|stretch (default fit)', offset: '[x,y] px nudge from center (optional)' },
+    required: ['layerIndices'],
+  },
   sequenceLayers: {
     domain: 'Layers',
     summary: 'Stagger layer start times in sequence.',

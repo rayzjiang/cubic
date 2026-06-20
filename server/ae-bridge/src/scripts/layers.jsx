@@ -1841,6 +1841,98 @@ function distributeLayers(args) {
     }
 }
 
+// U: fitToFrame — scale a layer to the composition frame (bounding-box-aware), then center it.
+// mode: fit (contain — whole layer visible) | fill (cover — frame fully covered, edges cropped) |
+//       stretch (independent x/y — fills exactly, may distort). offset: [x,y] px nudge from center.
+// Computes scale from the layer's natural source rect vs the comp size, so the model never
+// hand-computes scale %. Centering reuses the same anchor-aware delta math as alignLayers.
+function fitToFrame(args) {
+    try {
+        var comp = _resolveComp(args);
+        var layerIndices = args.layerIndices;
+        var mode = (args.mode || "fit").toLowerCase();
+        var offset = args.offset || [0, 0];
+
+        if (!layerIndices || typeof layerIndices.length === "undefined" || layerIndices.length === 0) {
+            throw _err(ERROR_CODES.INVALID_ARGS, "layerIndices must be a non-empty array.");
+        }
+        if (mode !== "fit" && mode !== "fill" && mode !== "stretch") {
+            throw _err(ERROR_CODES.INVALID_ARGS, "mode must be fit, fill, or stretch.");
+        }
+        var offX = (offset && offset.length > 0) ? parseFloat(offset[0]) : 0;
+        var offY = (offset && offset.length > 1) ? parseFloat(offset[1]) : 0;
+
+        // Resolve layers
+        var layers = [];
+        for (var i = 0; i < layerIndices.length; i++) {
+            var idx = layerIndices[i];
+            if (idx < 1 || idx > comp.numLayers) throw _err(ERROR_CODES.LAYER_INDEX_OOB, "Layer index out of bounds: " + idx);
+            layers.push(comp.layer(idx));
+        }
+
+        var compCenterX = comp.width / 2;
+        var compCenterY = comp.height / 2;
+
+        var previousValues = [];
+        var modifiedLayers = [];
+        var anyChanged = false;
+
+        for (var li = 0; li < layers.length; li++) {
+            var layer = layers[li];
+            // Natural (unscaled) source bounds at the current time.
+            var rect = layer.sourceRectAtTime(comp.time, false);
+            if (rect.width <= 0 || rect.height <= 0) {
+                throw _err(ERROR_CODES.INVALID_ARGS, "Layer '" + layer.name + "' has no measurable bounds to fit.");
+            }
+
+            var scaleProp = layer.property("Scale");
+            var posProp = layer.property("Position");
+            var prevScale = scaleProp.value;
+            var prevPos = posProp.value;
+            previousValues.push({ index: layer.index, name: layer.name, scale: prevScale, position: prevPos });
+
+            // Scale factors (percent) to make the source exactly span each comp axis at 100% = natural size.
+            var ratioX = (comp.width / rect.width) * 100;
+            var ratioY = (comp.height / rect.height) * 100;
+            var sx, sy;
+            if (mode === "stretch")    { sx = ratioX; sy = ratioY; }
+            else if (mode === "fill")  { sx = sy = Math.max(ratioX, ratioY); }
+            else                       { sx = sy = Math.min(ratioX, ratioY); } // fit (contain)
+
+            // Write scale via the current value as a template so z survives (AE Scale is [x,y,z]).
+            var newScale = scaleProp.value;
+            newScale[0] = sx;
+            newScale[1] = sy;
+            scaleProp.setValue(newScale);
+
+            // Center anchor-awarely: recompute the bbox at the new scale, then shift Position so the
+            // bbox center lands on the comp center (+ offset). Same delta math as alignLayers.
+            var bbox = _getCompBbox(comp, layer);
+            var deltaX = (compCenterX + offX) - (bbox.left + bbox.right) / 2;
+            var deltaY = (compCenterY + offY) - (bbox.top + bbox.bottom) / 2;
+            var newPos = layer.threeDLayer ? [prevPos[0] + deltaX, prevPos[1] + deltaY, prevPos[2]] : [prevPos[0] + deltaX, prevPos[1] + deltaY];
+            posProp.setValue(newPos);
+
+            if (!_valuesEqual(newScale, prevScale) || !_valuesEqual(newPos, prevPos)) { anyChanged = true; }
+            modifiedLayers.push({ index: layer.index, name: layer.name, scale: newScale, position: newPos });
+        }
+
+        if (!anyChanged) {
+            return JSON.stringify({ status: "noop", message: "Those layers already fit the frame." }, null, 2);
+        }
+
+        return JSON.stringify({
+            status: "success",
+            message: "Fit " + layers.length + " layer(s) to frame (" + mode + ").",
+            mode: mode,
+            modifiedLayers: modifiedLayers,
+            previousValues: previousValues
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // U: sequenceLayers — stagger the inPoint of layers in a staircase pattern.
 // orderType: TOP_DOWN (ascending layer index), BOTTOM_UP (descending), RANDOM (Fisher-Yates)
 function sequenceLayers(args) {
