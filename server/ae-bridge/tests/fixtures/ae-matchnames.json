@@ -1,5 +1,12 @@
 {
   "effects": {
+    "ADBE Lumetri": {
+      "valid": true,
+      "canonicalMatchName": "ADBE Lumetri",
+      "displayName": "Lumetri Color",
+      "note": "Hand-added for adjustColor; knobs are reached by display-name DFS, not by hardcoded property matchNames. Regenerate via scripts/introspect-matchnames.mjs against live AE to capture properties (Sprint 7).",
+      "properties": []
+    },
     "ADBE Gaussian Blur 2": {
       "valid": true,
       "canonicalMatchName": "ADBE Gaussian Blur 2",

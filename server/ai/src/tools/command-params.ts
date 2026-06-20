@@ -262,6 +262,12 @@ export const COMMAND_PARAMS = {
     summary: 'Apply an effect. Prefer a known effectName (resolves to the right AE matchName for you; don\'t guess matchNames): gaussian-blur, directional-blur, color-balance, brightness-contrast, curves, glow, drop-shadow, vibrance. Power use: pass effectMatchName (raw AE matchName) or presetPath. Returns a "warning" if some effectSettings didn\'t apply.',
     params: { effectName: 'string (known effect or AE display name)', effectMatchName: 'string (raw AE matchName, e.g. "ADBE Ramp")', presetPath: 'string (.ffx path)', effectSettings: 'object {propertyName: value}' },
   },
+  adjustColor: {
+    domain: 'Effects',
+    summary: 'Color correction / grade — use for "warm it up", "fix the exposure", "more contrast/saturation", "cinematic look". Knobs are signed deltas, 0 = no change (drive Lumetri Color). look applies a curated preset. Never improvise a raw effect stack for color. Returns a "warning" if a knob couldn\'t apply.',
+    params: { layerIndices: 'array of int (1-based)', exposure: 'float stops (+ brighter)', contrast: 'float -100..100', saturation: 'float -100..100 (0 neutral)', temperature: 'float -100..100 (+ warmer)', tint: 'float -100..100 (+ magenta)', highlights: 'float -100..100', shadows: 'float -100..100', look: 'warm|cool|teal-orange|vintage|bw|high-contrast' },
+    required: ['layerIndices'],
+  },
   applyEffectTemplate: {
     domain: 'Effects',
     summary: 'Apply a preset effect template with sensible defaults.',

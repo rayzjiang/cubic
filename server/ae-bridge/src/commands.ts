@@ -75,6 +75,7 @@ export const COMMANDS: readonly string[] = [
   // Effects
   "getLayerEffects",
   "applyEffect",
+  "adjustColor",
   "applyEffectTemplate",
   "setEffectProperty",
   "deleteEffect",

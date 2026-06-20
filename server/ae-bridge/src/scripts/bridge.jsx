@@ -401,6 +401,7 @@ function _dispatchSwitch(command, args) {
         // effects.jsx
         case "getLayerEffects":          return getLayerEffects(args);
         case "applyEffect":              return applyEffect(args);
+        case "adjustColor":              return adjustColor(args);
         case "applyEffectTemplate":      return applyEffectTemplate(args);
         case "setEffectProperty":        return setEffectProperty(args);
         case "deleteEffect":             return deleteEffect(args);
