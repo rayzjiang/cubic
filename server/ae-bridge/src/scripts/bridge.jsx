@@ -245,14 +245,17 @@ function _sessionBackupDir(projectFile, args) {
     return new Folder(root + "/" + id);
 }
 
+// AE's UI flattens certain container groups; paths address their children directly. Shared by the
+// path resolver (transparent fallback) and the keyframeable-children walker (skip these levels when
+// emitting paths) so both agree on which levels are invisible — single source of truth.
+var IMPLICIT_CONTAINERS = ["Contents", "ADBE Text Animator Properties", "ADBE Text Selectors"];
+
 // Walks a property path array on a layer (e.g. ["Contents","Group 1","Trim Paths 1","Start"]).
 // Throws with path context on missing step.
 function _resolvePropertyByPath(layer, propertyPath) {
     if (!propertyPath || propertyPath.length === 0) {
         throw _err(ERROR_CODES.INVALID_ARGS, "propertyPath must be a non-empty array.");
     }
-    // AE's UI flattens certain container groups; transparent fallback matches UI-level paths.
-    var IMPLICIT_CONTAINERS = ["Contents", "ADBE Text Animator Properties", "ADBE Text Selectors"];
     var current = layer;
     for (var i = 0; i < propertyPath.length; i++) {
         var step = propertyPath[i];
@@ -275,6 +278,55 @@ function _resolvePropertyByPath(layer, propertyPath) {
         current = next;
     }
     return current;
+}
+
+// Walks the subtree under `rootProp` and returns every keyframeable leaf as
+// { name, path, value, numKeys }. `path` is the UI-style display-name array that
+// _resolvePropertyByPath accepts (implicit-container levels are skipped, NOT appended), so the
+// caller can hand it straight to setLayerKeyframe/getLayerKeyframes with no guessing. `rootPath`
+// is the path prefix of `rootProp` itself (e.g. ["Text","Animators",<animatorName>]). Depth/count
+// bounded so the payload stays small.
+function _keyframeableChildren(rootProp, rootPath) {
+    var out = [];
+    var MAX_DEPTH = 8;
+    var MAX_ENTRIES = 60;
+    function isImplicit(prop) {
+        var mn = null;
+        try { mn = prop.matchName; } catch (e) {}
+        if (!mn) { return false; }
+        for (var c = 0; c < IMPLICIT_CONTAINERS.length; c++) {
+            if (IMPLICIT_CONTAINERS[c] === mn) { return true; }
+        }
+        return false;
+    }
+    function walk(group, path, depth) {
+        if (depth > MAX_DEPTH || out.length >= MAX_ENTRIES) { return; }
+        var n = 0;
+        try { n = group.numProperties; } catch (e) { n = 0; }
+        for (var i = 1; i <= n; i++) {
+            if (out.length >= MAX_ENTRIES) { return; }
+            var prop = null;
+            try { prop = group.property(i); } catch (e) { continue; }
+            if (!prop) { continue; }
+            var kids = undefined;
+            try { kids = prop.numProperties; } catch (e) {}
+            if (kids !== undefined && kids > 0) {
+                // Container: implicit levels are flattened in addressable paths, so don't append them.
+                var childPath = isImplicit(prop) ? path : path.concat([prop.name]);
+                walk(prop, childPath, depth + 1);
+            } else {
+                var canVary = false;
+                try { canVary = (prop.canVaryOverTime === true); } catch (e) {}
+                if (!canVary) { continue; }
+                var entry = { name: prop.name, path: path.concat([prop.name]) };
+                try { entry.value = prop.value; } catch (e) {}
+                try { entry.numKeys = prop.numKeys; } catch (e) {}
+                out.push(entry);
+            }
+        }
+    }
+    try { walk(rootProp, rootPath, 0); } catch (e) {}
+    return out;
 }
 
 
