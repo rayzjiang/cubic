@@ -368,6 +368,7 @@ function _dispatchSwitch(command, args) {
         case "setTextAnimatorProperty":  return setTextAnimatorProperty(args);
         case "setTextAnimatorRangeSelector": return setTextAnimatorRangeSelector(args);
         case "explodeTextLayer":         return explodeTextLayer(args);
+        case "animateText":              return animateText(args);
         // shapes.jsx
         case "createShapeLayer":         return createShapeLayer(args);
         case "addShapeOperator":         return addShapeOperator(args);

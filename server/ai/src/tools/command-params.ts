@@ -306,6 +306,23 @@ export const COMMAND_PARAMS = {
     required: ['animatorIndex'],
   },
   explodeTextLayer: { domain: 'Text', summary: 'Split a text layer into per-unit layers.', params: { splitMethod: 'CHARACTERS|WORDS|LINES (default CHARACTERS)' } },
+  animateText: {
+    domain: 'Text',
+    summary: 'Animate text in/out in ONE call — kinetic typography. Builds the text animator + range selector + keyframed Offset that drives the reveal across characters/words/lines. Use for "type on", "kinetic type", "words fly up", "typewriter", "reveal the title" — NEVER hand-wire addTextAnimator + setTextAnimatorRangeSelector + setLayerKeyframe. Pick a preset and override knobs as needed. Auto-enables motion blur on positional reveals + an ease-out settle unless ease=linear or motionBlur=false.',
+    params: {
+      preset: 'typewriter|wordByWord|lineByLine|fadeUpByWord|cascade|wave|scaleUp (presets every knob; default typewriter)',
+      animateProps: 'array of: Position|Opacity|Scale|Rotation|Tracking (overrides the preset set)',
+      basedOn: 'characters|charactersExcludingSpaces|words|lines',
+      shape: 'square|rampUp|rampDown|triangle|round|smooth (range-selector shape)',
+      easeHigh: 'float 0-100 (range-selector Ease High)', easeLow: 'float 0-100 (range-selector Ease Low)',
+      startTime: 'float seconds (default 0)', duration: 'float seconds (preset default ~1.5)',
+      ease: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easeOut)',
+      direction: 'on|off (reveal in vs out; default on)',
+      positionOffset: '[x,y] px the chars travel from (default [0,-100])',
+      scaleFrom: 'float % chars scale up from (default 0)', rotationAmount: 'float deg', trackingAmount: 'float',
+      motionBlur: 'bool (override the auto motion-blur default)', name: 'string (animator name)',
+    },
+  },
   listFonts: { domain: 'Text', summary: 'List installed font families (optional substring filter). Common display names auto-resolve when you set fontFamily; call this to pick a real installed font for vague requests ("a fun font").', params: { filter: 'string — case-insensitive substring to narrow families' } },
 
   // ── Shapes ────────────────────────────────────────────────────────────────

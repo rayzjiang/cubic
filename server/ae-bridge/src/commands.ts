@@ -85,6 +85,7 @@ export const COMMANDS: readonly string[] = [
   "setTextAnimatorProperty",
   "setTextAnimatorRangeSelector",
   "explodeTextLayer",
+  "animateText",
   "listFonts",
   // Shapes
   "addShapeOperator",
