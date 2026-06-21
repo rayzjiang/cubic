@@ -8,9 +8,9 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 cubic/
 ├── docs/PRD.md              # Product vision + phase roadmap (source of truth for scope)
 ├── TODO.md                  # Phase checklist (keep in sync when completing tasks)
-├── app/                     # Phase 4: standalone Electron desktop app (React chat UI + hosts the Node backend) — to build
+├── app/                     # Standalone Electron desktop app (React chat UI + hosts the Node backend) — see app/README.md
 ├── server/
-│   ├── ai/                  # Phase 2 ✅ Claude API backend / agent brain (loop, self-heal, compaction, sessions)
+│   ├── ai/                  # Claude API backend / agent brain (loop, self-heal, compaction, sessions) — see server/ai/CLAUDE.md
 │   └── ae-bridge/           # AE bridge + ExtendScript handlers + CEP extension + optional MCP-server dev interface (this package)
 │       ├── src/
 │       │   ├── index.ts         # MCP server entrypoint (dev): tool/resource registration + stdio transport for Claude Code
@@ -23,7 +23,7 @@ cubic/
 │       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
 │       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
 │       │       ├── bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
-│       │       ├── compositions.jsx / layers.jsx / animation.jsx / effects.jsx / masks.jsx / footage.jsx / text.jsx / shapes.jsx / markers.jsx / project.jsx
+│       │       ├── compositions.jsx / fonts.jsx / layers.jsx / text.jsx / shapes.jsx / animation.jsx / masks.jsx / effects.jsx / footage.jsx / markers.jsx / project.jsx
 │       ├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (Phase 4: strip its UI, app auto-installs it)
 │       ├── scripts/build-cep-extension.mjs  # Bundles .jsx files → handlers.bundled.jsx
 │       └── tests/               # Per-domain integration tests (require live AE + panel)
@@ -59,37 +59,22 @@ Two components over WebSocket: the **Node backend** hosts WS on `127.0.0.1:17923
 
 > **Wire protocol contract:** the full WS message contract (both channels + `AgentEvent` + error codes) is locked in [`PROTOCOL.md`](./PROTOCOL.md) — the single source future host adapters depend on.
 
-**Handler bundle** (concatenated by build script, domain files first, `bridge.jsx` last):
+**Handler bundle** — the build script concatenates the domain files (then `bridge.jsx` last); `fonts.jsx` must precede `text.jsx` (text resolves fonts via its `_resolveFont`). Each file owns one slice of the AE surface. **`src/commands.ts` is the authoritative command list** (kept in lockstep with the `server/ai` param registry by `test:drift`) — consult it rather than re-listing commands here, so this map doesn't drift as handlers are added.
 ```
-compositions.jsx  ← getProjectInfo, listCompositions, getCompositionInfo, createComposition,
-                     setCompositionProperties, deleteComposition, duplicateComposition,
-                     getCurrentTime, setCurrentTime, saveFrameToPng
-layers.jsx        ← getLayerInfo, getSelectedLayers, getSelectionDetails, setSelectedLayers, createLayer (dispatcher), createSolidLayer,
-                     createCamera, createLightLayer, createNullLayer, duplicateLayer, setLayerProperties,
-                     batchSetLayerProperties, splitLayer, mergeLayer, trimLayer, setTimeRemapEnabled, setLayerParent, moveLayer,
-                     setAnchorPoint, centerAnchorPoint (alias), alignLayers, sequenceLayers,
-                     precompose, decomposeLayer, setTrackMatte, deleteLayer, getLayerProperty, setLayerProperty,
-                     distributeLayers3D (shape: cylinder|grid; backend computes XYZ coords)
-text.jsx          ← createTextLayer, addTextAnimator, setTextAnimatorProperty, setTextAnimatorRangeSelector,
-                     explodeTextLayer
-shapes.jsx        ← createShapeLayer, addShapeOperator, setShapeOperatorProperty, convertToShape
-animation.jsx     ← getLayerKeyframes, setLayerKeyframe, setKeyframeEasing, setKeyframeSpatial, removePropertyKeyframes,
-                     setLayerExpression (+ preset: INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|
-                     LOOP_OUT|LOOP_IN|LOOP_PINGPONG), getLayerExpressions, copyKeyframeEasing,
-                     applyMotionRecipe (recipe: popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle; layerIndices[] + stagger)
-masks.jsx         ← getLayerMasks, setLayerMask, deleteLayerMask
-effects.jsx       ← getLayerEffects, applyEffect (friendly effectName resolved via EFFECT_DICT — the
-                     single source of truth for matchNames + default settings; raw matchName/presetPath
-                     still work), applyEffectTemplate, setEffectProperty, deleteEffect,
-                     introspectMatchNames (internal/diagnostic — asks AE for real matchNames; feeds the
-                     ae-matchnames.json fixture + the test:matchnames CI guard)
-footage.jsx       ← listProjectItems, importFootage, addFootageToComp, importAssetToComp,
-                     deleteProjectItem, deleteUnusedSolids
-markers.jsx       ← addMarker, listMarkers, updateMarker, removeMarker
-project.jsx       ← getProjectPath, saveProject, restoreProject (reopens the .aep from a .cubic-backups/ copy; skips the undo wrapper),
-                     backupProject (internal: copies the .aep to .cubic-backups/ — NOT in COMMANDS, called only by the agent loop)
-bridge.jsx    ← JSON polyfill + ERROR_CODES + _err() + _resolveComp() + _resolveCompAndLayer() +
-                     _resolvePropertyByPath() + READ_ONLY_COMMANDS + dispatchCommand() + _dispatchSwitch() + batch()
+compositions.jsx ← comps + project info, playhead, single-frame PNG render
+fonts.jsx        ← font listing + display-name→postScriptName resolution (helper for text.jsx)
+layers.jsx       ← layers: create/dupe/delete, transforms & properties, parent/nulls, align/distribute, anchor,
+                    fit, sequence, time ops (split/merge/trim/retime), nesting/mattes, 3D layout, camera, background
+text.jsx         ← text layers, animators + range selectors, explode, kinetic-type presets
+shapes.jsx       ← shape layers, vector operators, convert-to-shape, write-on, extract/merge
+animation.jsx    ← keyframes (CRUD/easing/spatial/clone/sequence/fix-timing), expression presets, motion recipes
+masks.jsx        ← layer masks
+effects.jsx      ← effects (friendly name → matchName via EFFECT_DICT), color grading, templates, introspectMatchNames (diagnostic)
+footage.jsx      ← project-panel items: import, add-to-comp, folders, prune
+markers.jsx      ← comp/layer markers
+project.jsx      ← project path/save, restoreProject + internal backupProject (.cubic-backups/ snapshots)
+bridge.jsx       ← NOT a handler: JSON polyfill, ERROR_CODES/_err, comp/layer/property resolvers,
+                    READ_ONLY_COMMANDS, dispatchCommand/_dispatchSwitch, batch
 ```
 
 ## Adding a new command

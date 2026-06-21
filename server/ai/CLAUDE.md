@@ -37,6 +37,7 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
 - `prompt/rules.ts` — `STATIC_RULES` system-prompt text (user-edited) with a `{{COMMAND_CATALOG}}` placeholder; no logic.
 - `tools/command-params.ts` — **single source of truth** for every command + its params (`COMMAND_PARAMS`); `COMMAND_NAMES`/`CommandName` are derived from its keys.
+- `tools/definitions.ts` — builds the zod schemas for the model's tool surface (`runScript`/`batch`/`createComposition`) off `COMMAND_NAMES`; `runScript` excludes `batch` so it's reachable only via the dedicated `batch` tool.
 - `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
 - `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
 - `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).

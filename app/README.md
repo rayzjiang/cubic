@@ -67,8 +67,8 @@ What to expect:
 
 - **Port is owned by main** (`config.ts`): default `17923`, overridable via
   `AE_BRIDGE_PORT`. Main passes it to the child AND answers `getBackendPort()` with the
-  same value — it never reads `~/.ae-mcp-bridge/port` (that file is for the
-  independently-launched CEP/loopback clients).
+  same value — it never reads the bridge's on-disk port file (that file is owned by
+  the bridge, for the independently-launched CEP/loopback clients).
 - **ESM main**: with `"type":"module"`, electron-vite emits ESM for the main process.
   If a CJS-only native dep ever forces it, drop `"type":"module"` to flip to CJS.
 - **Packaging** (signing, electron-builder) is Phase 5; `backend.ts` has an
