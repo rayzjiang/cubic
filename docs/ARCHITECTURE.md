@@ -9,7 +9,31 @@ to find and modify any part of Cubic with confidence.
 > what to do, and writes the animation directly into your comp — recovering from
 > errors on its own.
 
+### How this document is organized
+
+This doc is in two halves plus a workflows section. Read the part you need:
+
+- **Part I — The codebase today** (§1-10). The system exactly as it is built and runs
+  right now: four programs on one machine, the brain talking to Anthropic directly with
+  a local key. This is what you get from `npm run dev`. **Everything here exists today.**
+- **Part II — The production system after Phase 5.** The planned hosted design: the
+  shipped app no longer holds the Anthropic key or the secret prompt — a hosted proxy
+  does, behind sign-in and billing. **None of Part II is built yet** (Phase 5 has not
+  started); it is the target documented in [`TODOS/TODO-phase5.md`](../TODOS/TODO-phase5.md).
+- **Dev & test workflows.** The four ways to run Cubic and what infrastructure (and cost)
+  each one touches — useful for picking a mode without burning cloud or token spend.
+
+Part I and Part II describe the *same* local programs; Part II only adds a cloud tier and
+re-points one call. Wherever they differ, Part II says so explicitly.
+
 ---
+
+# Part I — The codebase today
+
+> **Current as of 2026-06-21 (pre-Phase-5).** This part describes the system that runs
+> from `npm run dev` on the developer's machine, with no hosted services involved. It is
+> the live, built architecture. Part II (further down) covers the planned production
+> design layered on top of it.
 
 ## 1. Concepts you need first
 
@@ -361,8 +385,181 @@ all within the same turn (Section 7, self-healing).
 | Validation / data | Zod, JSON/JSONL files |
 | Testing | Vitest + live tests against AE |
 
+---
+
+# Part II — Production system design (after Phase 5)
+
+> **Planned, not yet built.** Nothing in this part exists in the codebase today — Phase 5
+> has not started. This is the target architecture for the first public, paid release.
+> The authoritative spec (every component, with rationale and a build order) is
+> [`TODOS/TODO-phase5.md`](../TODOS/TODO-phase5.md); this section is the architectural
+> map, not a substitute for it. Section IDs below (§A, §B, …) point into that spec.
+
+The whole of Part I keeps running unchanged in production — the four local programs, the
+WebSocket switchboard, the agent loop, the ExtendScript handlers. Part II only **adds a
+cloud tier** and **re-points one call**. If you understand Part I, you already understand
+90% of production.
+
+## 11. The one change that matters — inversion of trust
+
+Today the shipped machine holds three secrets: the **Anthropic API key**, the **system
+prompt** (`prompt/rules.ts`), and the **tool definitions** (`tools/definitions.ts`). That
+is fine on the developer's laptop; it is fatal once strangers can install the app — anyone
+could extract the key (and spend your money) or lift the prompt (the product's IP).
+
+Phase 5 inverts this. A **hosted proxy** (a Cloudflare Worker) takes custody of all three.
+The shipped app keeps only the parts that *must* be local because they drive After Effects:
+the agent loop, tool dispatch, and the ExtendScript handlers. Only the tool **names** ship;
+their meanings, the prompt, and the key live server-side.
+
+So the brain no longer calls Anthropic directly. It calls the proxy with a **sign-in token**;
+the proxy checks you are signed in (§B) and paid up (§C), meters your usage (§A), injects the
+secret prompt + tool catalog + key, forwards to Anthropic, and streams the answer back. The
+brain receives the same `tool_use` it gets today and dispatches it locally to AE, exactly as
+in Part I §8. The loop is unchanged; only its *first hop* moved.
+
+## 12. The whole system, deployed in prod
+
+Two tiers. The **on-device tier** is Part I, untouched. The **cloud tier** is new. The only
+wire that crosses between them for an AI turn is the brain → proxy call.
+
+```
+ON-DEVICE  (the user's signed, installed app)            CLOUD  (hosted services)
+┌──────────────────────────────────────────┐
+│  1. The UI (React)                         │  sign-in / pay (system browser)
+│     + sign-in, paywall, account menu  ─────┼───────────────►  Google / Apple OAuth
+│                                            │                        │
+│  The Launcher (Electron main)              │                        ▼
+│     CUBIC_ENV=prod, deep-link cubic://,   │◄── cubic:// ──┐  ┌──────────────────────┐
+│     session in OS keychain (safeStorage)   │   redirect    └──│  Supabase             │
+└───────────────┬────────────────────────────┘                  │  • Auth (OAuth)  (§B) │
+                │ local WebSocket (authenticated, dynamic port)  │  • Postgres:          │
+   ┌────────────┴───────────────┐                                │    subscriptions/     │
+   │  2. The Backend             │                               │    usage         (§C) │
+   │   • WS bridge (router)      │                               └──────┬──────▲─────────┘
+   │   • Claude brain (loop) ────┼── HTTPS + sign-in token ──┐    verify │ meter│ entitlement
+   └────────────┬───────────────┘                           │           ▼      │
+                │ runs ExtendScript                          │    ┌─────────────┴─────────┐
+                ▼                                            └───►│  Cloudflare Worker     │
+   ┌────────────────────────────┐                                │  = the proxy      (§A) │
+   │  3. The AE panel (CEP)      │                                │  holds KEY + PROMPT +  │
+   │     inside After Effects    │                                │  tool defs; gates +    │
+   └────────────────────────────┘                                │  meters every call     │
+                                                                  └──────────┬─────────────┘
+   app  ◄── signed update feed ──  Cloudflare R2  (§F)                       │ inject + forward
+   backend  ── events ──►  PostHog  (§H)                                     ▼
+   Stripe  (Checkout/Portal + webhooks → Supabase)  (§C)            Anthropic API (Claude)
+```
+
+The on-device half is identical to Part I §2 — the four programs in a ring. Everything to
+the right of the dividing line is new and hosted.
+
+## 13. What stays local vs what moves to the cloud
+
+| Stays **on-device** (drives AE, must be local) | Moves to the **cloud** (secrets / shared state) |
+|---|---|
+| Agent loop, iteration/cancel/steer (`agent/loop.ts`) | Anthropic **API key** (Worker secret) |
+| Tool **dispatch** + `executeTool.ts` | **System prompt** (`prompt/rules.ts`) |
+| ExtendScript handlers (`scripts/*.jsx`) | **Tool definitions / schemas** (`tools/definitions.ts`) |
+| WebSocket bridge (`wsBridge.ts`) | Auth + identity (Supabase) |
+| Live AE state fetch (`context/`) | Billing + entitlement (Stripe → Supabase `subscriptions`) |
+| The UI, the Launcher | Usage metering + rate-limit (proxy) |
+| | Update feed (R2), analytics (PostHog) |
+
+The local list is "anything that touches AE or the user's screen." The cloud list is
+"anything that is a secret or must be shared/enforced across all users."
+
+## 14. The cloud components (and why)
+
+Each maps to a section of [`TODO-phase5.md`](../TODOS/TODO-phase5.md); rationale lives there
+as `WHY:` notes — not duplicated here.
+
+| Component | Role in production | Spec |
+|---|---|---|
+| **Cloudflare Worker** (the proxy) | Holds key + prompt + tool defs; verifies sign-in, checks entitlement, meters usage, rate-limits, then forwards to Anthropic and streams back. Gates everything. | §A |
+| **Supabase Auth** | Google / Apple sign-in (OAuth only — the audience is non-technical). Issues the token the proxy verifies. | §B |
+| **Supabase Postgres** | `subscriptions` table = the single source of truth for "is this user paid," written only by Stripe webhooks; plus usage rows. | §C |
+| **Stripe** | Hosted Checkout + Customer Portal (no payment UI to build); webhooks sync paid-state into Supabase. | §C |
+| **Cloudflare R2** | Object storage holding signed update artifacts + `latest.yml` for the auto-updater. | §F |
+| **PostHog** | Product analytics — verb usage, activation + conversion funnels. Fired server-side from the backend; no prompt or project content ever sent. | §H |
+
+## 15. Key production flows
+
+Same walkthrough style as Part I §8. Each is new in Phase 5.
+
+- **Sign-in (§B).** The app opens the *system browser* to Google/Apple → Supabase →
+  redirects back into the app via a `cubic://` deep link. The session is stored in the OS
+  keychain via Electron `safeStorage` and auto-refreshed, so the user stays signed in
+  across launches.
+- **Subscribe / manage (§C, §D).** "Upgrade" opens Stripe Checkout in the browser →
+  `cubic://` back; "Manage subscription" opens the Stripe Customer Portal. The **Stripe
+  webhook is the only writer** of the `subscriptions` table — the client can never grant
+  itself access.
+- **An AI turn in prod (§A).** The brain sends `messages` + live `<live_ae_state>` to the
+  proxy with the sign-in token. The proxy: verifies the token → checks entitlement (cached
+  ~30-60s, so a cancel revokes access in seconds) → rate-limits → injects the system prompt
+  + full tool catalog + key → forwards to Anthropic → **streams the response straight back**.
+  The brain gets `tool_use`, dispatches it locally through the bridge to AE, and feeds the
+  result back — the entire local half is identical to Part I §8. After the response, the
+  proxy meters the token usage and deducts it from the user's monthly allowance.
+- **Auto-update (§F).** `electron-updater` checks the R2 feed, downloads a **signed** update
+  in the background, and prompts "restart to update." Updates reuse the app's signing
+  identity (no Gatekeeper re-prompt) and never touch or reload the AE panel.
+- **Analytics (§H).** The backend agent loop emits events to PostHog — `command_run`
+  (verb + outcome + retries) plus activation/conversion funnel events. Server-side only;
+  event payloads carry verb names and counts, never prompt text or project contents.
+
+## 16. What changes from Part I (the diff)
+
+Everything else in Part I is unchanged. These are the only edits production makes, by file:
+
+| Seam (file) | Today (Part I) | Production (Part II) | Spec |
+|---|---|---|---|
+| `server/ai/src/prompt/rules.ts`, `tools/command-params.ts`, `tools/definitions.ts` | Live in the shipped backend | **Relocated into the Worker**; client keeps only tool *names* | §A-1 |
+| `server/ai/src/llm/anthropic.ts` | `new Anthropic({apiKey})`, direct, no `baseURL` | `baseURL` = proxy URL, auth = sign-in token, **no key on device** | §A-3 |
+| `app/src/main/config.ts` | `CUBIC_ENV` switch exists; `prod` is an inert stub | Ships defaulting to `prod` → real proxy URL | §A-8 |
+| `app/src/renderer/` | Chat UI only | Adds sign-in, paywall, and account/billing menu | §B-4, §D |
+| `server/ae-bridge/src/bridge/wsBridge.ts` | Fixed port `17923`, **any socket accepted** | Per-launch token required + **dynamic OS-assigned port** | §??? |
+
+> **Note — supersedes Part I.** The hardening above changes a fact stated in Part I §1 and
+> §3: the backend port is **no longer the fixed `17923`** in production — it is an
+> OS-assigned free port discovered via the same `getBackendPort()` channel, and the socket
+> now requires a per-launch token. Read Part I's "17923" as "the (then-fixed) backend port."
+
+---
+
+# Dev & test workflows
+
+There are four ways to run Cubic, ordered by how much infrastructure (and money) they
+touch. The first two exist today; the last two arrive with Phase 5. The guiding rule is
+**local-first: never burn real cloud or token spend just to test** — develop each paid
+component against a local emulator first.
+
+| Surface | What runs | Infra touched | Token / cloud cost | How to launch | Status |
+|---|---|---|---|---|---|
+| **MCP-only** | The AE bridge alone, over stdio, driven by Claude Code or integration tests | Local AE only | None | The bridge's MCP entrypoint (`server/ae-bridge/src/index.ts`) | **Works today** |
+| **direct-local** | The full app; the brain calls Anthropic **directly** with a local key | Local only + Anthropic | Your API tokens | `npm run dev` (`CUBIC_ENV=local`) | **Works today — the default** |
+| **full-stack-local** | The full app through the real proxy / auth / billing path, against **local emulators** | `wrangler dev` + `supabase start` + Stripe test mode | Test-mode only — no real cloud spend | `CUBIC_ENV=prod` + `CUBIC_PROXY_URL=http://localhost:8787` | **Not built yet — needs Phase 5 (§A-§C)** |
+| **prod** | The full app against real deployed infrastructure | Worker + Supabase + Stripe + R2 (real) | Real money | Signed build, `CUBIC_ENV=prod` + prod proxy URL | **Not built yet — needs Phase 5 (§A-8, §G-3)** |
+
+The single lever between these is the `CUBIC_ENV` switch in `app/src/main/config.ts` (Part I
+§5.2): `local` = direct Anthropic; `prod` = forward the call to whatever `CUBIC_PROXY_URL`
+points at (a local emulator or the deployed Worker). Phase 5 makes the client *fork* at this
+seam (proxy vs. direct) — it does **not** remove the direct-local branch, so today's
+`npm run dev` flow keeps working forever.
+
+**Local-first rule (§A-0).** Every paid-backend component is built and tested in
+**full-stack-local** against its emulator before anything deploys. Real cloud/Supabase
+compute is spent only at two points: flipping the shipped app to the prod URL (§A-8) and the
+final clean-machine end-to-end test (§G-3). The authoritative statement of this rule lives in
+[`TODO-phase5.md`](../TODOS/TODO-phase5.md) §A-0.
+
+---
+
 For build/run instructions and project status, see the root
 [`README.md`](../README.md); for the message contract, see
 [`server/ae-bridge/PROTOCOL.md`](../server/ae-bridge/PROTOCOL.md); for product vision
-and roadmap, see [`PRD.md`](PRD.md) and [`TODOS/`](../TODOS).
+and roadmap, see [`PRD.md`](PRD.md) and [`TODOS/`](../TODOS). The production design (Part II)
+is specified in full in [`TODOS/TODO-phase5.md`](../TODOS/TODO-phase5.md), with its build
+order in [`TODOS/TODO-phase5-parallel.md`](../TODOS/TODO-phase5-parallel.md).
 ```
