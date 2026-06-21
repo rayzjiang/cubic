@@ -275,7 +275,7 @@ export const COMMAND_PARAMS = {
   setLayerExpression: {
     domain: 'Expressions',
     summary: 'Set/remove an expression (expressionString OR preset).',
-    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG|LOOP_OUT_CONTINUE|LOOP_IN_CONTINUE|LOOP_OUT_OFFSET|LOOP_IN_OFFSET', presetParams: 'object (preset-specific: amp/freq/decay, fadeIn/fadeOut, ...)' },
+    params: { propertyPath: 'array', propertyName: 'string', expressionString: 'string ("" removes)', preset: 'INERTIAL_BOUNCE|ELASTIC|OVERSHOOT|WIGGLE|AUTO_FADE|LOOP_OUT|LOOP_IN|LOOP_PINGPONG|LOOP_OUT_CONTINUE|LOOP_IN_CONTINUE|LOOP_OUT_OFFSET|LOOP_IN_OFFSET', presetParams: 'object (preset-specific: INERTIAL_BOUNCE=elasticity/gravity/maxBounces (ball-on-floor bounce that never crosses the target); OVERSHOOT/ELASTIC=amp/freq/decay (decaying-sine over+undershoot settle); WIGGLE=freq/amp; AUTO_FADE=fadeIn/fadeOut)' },
   },
 
   // ── Masks ─────────────────────────────────────────────────────────────────
@@ -451,7 +451,7 @@ export const COMMAND_PARAMS = {
   applyMotionRecipe: {
     domain: 'Motion',
     summary: 'Apply a juicy motion preset to layers. To reveal N layers in sequence, pass the whole layerIndices array with a stagger (and orderType for the cascade direction) — one call, not N.',
-    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add overshoot/settle to the Scale pop', bounceStyle: 'keyframes|expression (default keyframes — a 3-key overshoot you can shape in the graph editor; expression bakes INERTIAL_BOUNCE on Scale instead)', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
+    params: { recipe: 'popIn|popOut|fadeIn|fadeOut|slideIn|slideOut|scaleIn|bounceIn|wiggle', layerIndices: 'array of int (1-based)', startTime: 'float seconds (default 0)', duration: 'float seconds (default 0.5)', stagger: 'float seconds (cascade)', orderType: 'TOP_DOWN|BOTTOM_UP|RANDOM (stagger order; default = given order)', ease: 'easyEase|easeIn|easeOut|linear|hold|bezier', bounce: 'bool — add overshoot/settle to the Scale pop', bounceStyle: 'keyframes|expression (default keyframes — a 3-key overshoot you can shape in the graph editor; expression bakes an OVERSHOOT decaying-sine on Scale instead)', intensity: 'float (default 1.0)', overwriteKeyframes: 'bool', from: '[x,y] offset (slide origin)' },
     required: ['recipe', 'layerIndices'],
   },
   distributeLayers3D: {

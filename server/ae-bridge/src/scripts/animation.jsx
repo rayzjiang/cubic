@@ -6,7 +6,11 @@
 // Each entry: { defaults: {...}, template: "..." }
 // Template uses ${paramName} placeholders substituted at apply-time.
 var EXPRESSION_PRESETS = (function() {
-    var _bounceTpl = [
+    // Decaying-sine overshoot (motionscripts.com / BOUNCr "Overshoot+"). Velocity-driven:
+    // settles past the target with a symmetric over/under oscillation. amp is the heavy-lifting
+    // knob; freq 2 + decay 4 are the BOUNCr-documented good defaults. Use for pendulum/spring
+    // overshoot and springy settles — NOT a ball hitting a floor (that's INERTIAL_BOUNCE).
+    var _overshootTpl = [
         "var amp=${amp};var freq=${freq};var decay=${decay};",
         "var n=0;",
         "if(numKeys>0){n=nearestKey(time).index;if(nearestKey(time).time>time)n--;}",
@@ -14,10 +18,25 @@ var EXPRESSION_PRESETS = (function() {
         "if(n>0){var v=velocityAtTime(key(n).time-thisComp.frameDuration/10);",
         "value+v*amp*Math.sin(freq*2*Math.PI*t)/Math.exp(decay*t);}else{value;}"
     ].join("\n");
+    // Realistic bounce (Dan Ebberts / BOUNCr "Bounce Back"). Velocity-driven ballistic bounce
+    // that never crosses the target — like a ball bouncing on a floor — losing energy each
+    // bounce. elasticity = bounciness (0-1), gravity = stopping force, maxBounces caps it.
+    var _bounceTpl = [
+        "var e=${elasticity};var g=${gravity};var nMax=${maxBounces};",
+        "var n=0;",
+        "if(numKeys>0){n=nearestKey(time).index;if(nearestKey(time).time>time)n--;}",
+        "if(n>0){var t=time-key(n).time;",
+        "var v=-velocityAtTime(key(n).time-thisComp.frameDuration/10)*e;var vl=length(v);",
+        "var vu=(value instanceof Array)?((vl>0)?normalize(v):[0,0,0]):((v<0)?-1:1);",
+        "var tCur=0;var segDur=2*vl/g;var tNext=segDur;var nb=1;",
+        "while(tNext<t&&nb<=nMax){vl*=e;segDur*=e;tCur=tNext;tNext+=segDur;nb++;}",
+        "if(nb<=nMax){var delta=t-tCur;value+vu*delta*(vl-g*delta/2);}else{value;}",
+        "}else{value;}"
+    ].join("\n");
     return {
-        INERTIAL_BOUNCE: { defaults: { amp: 0.1,  freq: 2.5, decay: 4 }, template: _bounceTpl },
-        ELASTIC:         { defaults: { amp: 0.1,  freq: 4,   decay: 3 }, template: _bounceTpl },
-        OVERSHOOT:       { defaults: { amp: 0.05, freq: 1.5, decay: 8 }, template: _bounceTpl },
+        INERTIAL_BOUNCE: { defaults: { elasticity: 0.7, gravity: 5000, maxBounces: 9 }, template: _bounceTpl },
+        ELASTIC:         { defaults: { amp: 0.1,  freq: 4,   decay: 3 }, template: _overshootTpl },
+        OVERSHOOT:       { defaults: { amp: 0.1,  freq: 2,   decay: 4 }, template: _overshootTpl },
         WIGGLE: {
             defaults: { freq: 3, amp: 25 },
             template: "wiggle(${freq},${amp});"
@@ -753,9 +772,11 @@ function _applyRecipeToLayer(layer, recipeName, t0, duration, opts) {
                 applyTwoKeys(scaleProp, "Scale", zeroSc, targetSc);
                 if (bounce) {
                     // bounceStyle === "expression": legacy baked overshoot on top of the 2-key scale.
+                    // OVERSHOOT (decaying sine) is correct for a scale pop — it settles past 100%
+                    // and back; INERTIAL_BOUNCE is a floor-bounce that would never cross the target.
                     try { prevVals.ScaleExpression = scaleProp.expression || ""; } catch (e) {}
-                    scaleProp.expression = _buildPresetExpression("INERTIAL_BOUNCE", { amp: 0.1 * intensity, freq: 2.5, decay: 4 });
-                    exprsApplied.push("Scale: INERTIAL_BOUNCE");
+                    scaleProp.expression = _buildPresetExpression("OVERSHOOT", { amp: 0.1 * intensity, freq: 2, decay: 4 });
+                    exprsApplied.push("Scale: OVERSHOOT");
                 }
             }
         }
