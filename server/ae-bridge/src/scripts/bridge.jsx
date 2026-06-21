@@ -584,7 +584,13 @@ function batch(args) {
         var resultStr, resultObj, cmdSuccess;
 
         try {
-            resultStr = dispatchCommand(entryCmd, cmdArgs);
+            // Call the UNWRAPPED dispatcher: batch already owns the outer undo group, so sub-commands
+            // must NOT each open their own (dispatchCommand wraps every write in begin/endUndoGroup).
+            // Nesting begin/endUndoGroup makes AE report "undo group mismatch" and leaks the outer group
+            // open, so the user's next manual edit merges into the AI's turn (one Cmd+Z undoes both).
+            // _dispatchSwitch is exactly what dispatchCommand runs internally minus that wrapper, so the
+            // whole batch stays one clean undo entry.
+            resultStr = _dispatchSwitch(entryCmd, cmdArgs);
         } catch (e) {
             resultStr = JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.HANDLER_UNCAUGHT, message: "Uncaught error: " + e.toString() });
         }
