@@ -56,10 +56,7 @@
   (`executeTool.ts`); keep 10/chat (prune in `project.jsx`); folder deleted on conversation-delete AND
   `/clear` (`deleteSessionBackups` in `persist.ts`, called from `agentChat.ts`).
 - [x] **BUG (6/16/26) - on new chat start, the sidebar isnt showing a loading animation/displaying the new chat in the sidebar, unless u go back to home and click the new chat**
-- [ ] **DEFERRED TO POSTMVP - BUG/LIMITATION — undo depth capped ~10 turns/chat** (can't always rewind to a long chat's start).
-  Cause: each backup is a full `.aep` copy (binary, big) — unlike Claude Code's cheap text diffs. Future
-  options for deeper "rewind anywhere": (1) gzip each copy, (2) binary deltas (xdelta/bsdiff), (3) git repo
-  in `.cubic-backups/`. Ship keep-10 now.
+- _→ moved to [`POSTMVP.md`](POSTMVP.md) (Rewind / restore): undo depth capped ~10 turns/chat._
 - [x] **FIXED (6/13/26) — tool-row "noop" state.** Row used to say "Restored a backup" (success check)
   even when nothing was undone (label computed from intent at `tool_start`; `tool_end` only had `ok`/`fail`,
   so a `status:"noop"` result rendered as success). Added a neutral `noop` outcome end-to-end: `executeTool`
@@ -78,25 +75,8 @@
   Shared `_valuesEqual()` helper (float tolerance + array deep-compare) added in `bridge.jsx`; per-command
   labels in `events.ts` `NOOP_SCRIPT_LABELS`. Principle: already-satisfied = noop, missing named target =
   error (deletes already do this). Verify noop renders muted across rows (unit tests + live spot-check).
-- [ ] **DEFERRED TO POSTMVP (separate chat) — make the multi-field setters diff-aware so their "all fields already set"**
-  noop is correct** (= the J2 work below; their `NOOP_SCRIPT_LABELS` entries are already in place, dormant
-  until this lands): `setLayerProperties`, `batchSetLayerProperties` (the two big layer setters),
-  `setCompositionProperties`, `setTextAnimatorRangeSelector`, `setLayerMask` (update branch), `updateMarker`.
-  Each must diff every supplied field against current (today text fields diff but non-text fields push to
-  `changedProperties` unconditionally / `updateMarker` pushes on supply not on change), then return noop when
-  nothing actually differs. A half-diff noop here would be wrong, so deferred from the noop pass.
-- [ ] **DEFERRED TO POSTMVP (separate chat) — fix handler judgment-call issues surfaced by the noop audit** (deferred
-  from the noop pass; not noop-related). J3: `batchSetLayerProperties` returns top-level `status:"success"`
-  even if every sub-op errored (should mirror `batch`'s `BATCH_FAILED`). J4: `createLightLayer` silently
-  ignores an unknown `lightType`. J5: `setTrackMatte` swallows a `setTrackMatte()` API failure and falls
-  back to a plain assignment that loses the matte-layer pointer. J6: `addShapeOperator` swallows bad-setting
-  failures (no `failedProperties`, unlike effects.jsx). J7: `deleteProjectItem` uses `INVALID_ARGS` for
-  "item not found" instead of a NOT_FOUND-family code. J8: `copyKeyframeEasing` success payload omits
-  resolved source/target layer+property names (UI can't describe it). J9: missing atomic-create rollback on
-  `duplicateLayer`/`splitLayer`/`precompose`/`decomposeLayer`/`explodeTextLayer`/`addTextAnimator`/
-  `addShapeOperator`/`importAssetToComp` (mid-create throw orphans partial state). J10: `addMarker` silently
-  overwrites an existing marker at the same time. Also `distributeLayers3D` noop deferred here (detection
-  messy -- toggles 3D/autoOrient too).
+- _→ moved to [`POSTMVP.md`](POSTMVP.md) (Test-truth & handler correctness): diff-aware multi-field setters (J2)._
+- _→ moved to [`POSTMVP.md`](POSTMVP.md) (Test-truth & handler correctness): handler judgment-call fixes J3–J10._
 
 ### Wave 2 — frontend chain (after ② merged; DO SEQUENTIALLY — all share `app/`)
 **⑤ WT-CHAT-UI** — the chat surface on `agentEvent`. Needs ② merged; sidebar needs ③ merged. ✅ DONE (branch `feat/wt-chat-ui`).
@@ -191,63 +171,23 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
 > Mirrored here so they're not forgotten; full detail lives in the phase files. These are deliberately **not** parallelized into the worktree waves above.
 
 > _Local transport hardening (dynamic port + WebSocket auth) moved into Phase 5 — see `WT-WS-AUTH` in `TODO-phase5-parallel.md` (§???-1/2/3/4)._
-- [ ] **POSTMVP - #3 — Brain → bridge direct in-process call**. The agent loops back to its own process over a WebSocket; replace with a direct call (brain only). Detail in the post-mvp section below.
-- [ ] **POSTMVP #4 — Exhaustive test-truth pass**. The glow-class gaps are closed (every AE-string-backed enum variant is now applied + read back), but ~40% of the *other* integration tests still only assert no-error/shape, not read-back — so a silent no-op could still pass. Convert the remaining weak create/set tests to read state back, and AE-verify the two non-matchName risks: `convertToShape` English-only menu strings (i18n) + `layers.jsx` light-falloff numeric indices. Full detail in the post-mvp section below.
+- _→ moved to [`POSTMVP.md`](POSTMVP.md) (Architecture cleanup): brain→bridge direct in-process call._
+- _→ moved to [`POSTMVP.md`](POSTMVP.md) (Test-truth & handler correctness): exhaustive test-truth pass._
 - [x] **FIXED (6/13/26) — handler atomicity (no orphans / no partial updates).** Self-heal retries were stacking duplicates because a failed create left an orphan. (1) All orphan-prone create/apply handlers (`createTextLayer`, solid/camera/light/null, shape, `applyEffect`/`applyEffectTemplate`, `setLayerMask` create) now roll back the partial object on failure. (2) `set*` handlers (`setLayerProperties`, `batchSetLayerProperties`, `setCompositionProperties`, `setLayerMask` update, `setTextAnimatorRangeSelector`) are validate-first: invalid enum/font throws a self-healing error (via shared `_requireEnum`) BEFORE any mutation, so nothing partially applies; `updateMarker` already atomic. Live-verified. Genuine mid-`setValue` AE rejections still backstopped by idempotent retry + `.aep` snapshot (not in-handler restore — riskier than the partial).
 - [x] **FIXED (6/13/26) — font display-name resolution (matchName-class bug).** `TextDocument.font` wants a PostScript name; the model supplied display names → throw → orphaned layer. New `fonts.jsx` `_resolveFont()` maps display→PostScript via live `app.fonts.allFonts` (which is an array-of-arrays — see ae-bridge CLAUDE.md), session-cached with fuzzy match ("Comic Sans"→"Comic Sans MS") + "did you mean" self-heal; degrades to passthrough if enumeration fails. New `listFonts` read command lets the model browse installed families. Live-verified.
 
 ---
 
-**6/9/26: eventually shift the stuff below to a separate todo for post mvp stuff (maybe call it phase 6?)
-
-# postmvp (NLE-style ripple / reorder editing — the one trim/reorder gap)
-Surfaced 6/18/26 while verifying the "trim/reorder footage" TODO. Cubic speaks After Effects' COMPOSITING model:
-every layer has an independent `startTime`, layers stack, and there is no auto-ripple. A "typical AI video editor"
-(CapCut / Premiere) speaks the NLE/timeline-TRACK model: clips butted end-to-end on a track, where trimming or
-deleting a clip RIPPLES everything after it left to close the gap, and "reorder" means changing PLAYBACK ORDER in a
-sequence (not z-order). Cubic has all the primitives (trim/split/merge/sequence/stretch) but no single operation that
-arranges clips back-to-back in a given order or ripple-deletes/ripple-trims to close gaps.
-Why deferred: imposes an NLE mental model onto AE; not yet observed as a real user pain; the agent can approximate it
-today by composing existing tools (compute downstream startTimes manually) — brittle + token-heavy but functional.
-Future options if a user hits it:
-- (a) prompt/agent-guidance only — teach the model "reorder in time = recompute startTime, NOT moveLayer (z-order)";
-  cheapest, no new handlers.
-- (b) net-new ripple primitives — e.g. `arrangeSequence(layerIndices, order, gap)` (lay clips end-to-end in order) +
-  `rippleDelete`/`rippleTrim` (close the gap by shifting later layers' startTimes). Treat a chosen set of layers as a
-  single track; recompute startTimes server-side in one undo group. Biggest lift, most "real video editor" feel.
-Decision when revisited: validate with a real test chat first ("trim these 3 clips and play them back-to-back in this
-order") to see whether composed existing tools already suffice before building (b).
-
-# postmvp
-Resume cost of huge chats: on reopen we load full history; the first turn
- auto-compacts
- (≥90%) or hits the existing context_full CTA (≥97%) — same safety net §C
- renders. **A friendlier pre-warning is a later refinement, not built here.**
-
-# post mvp (test-truth — finish what the glow/effects audit started)
-Context: an effect shipped broken (wrong AE matchName) while all tests passed, because (a) the broken
-variant was never invoked and (b) tests asserted only "no error", not real read-back. Fixed for the
-glow class: effects now have an AE-sourced matchName fixture + CI guard, and every AE-string-backed
-enum variant (expression presets, motion recipes, easings, text-animator properties, blend modes,
-light types, alignments, mask modes, track mattes, polygon/star) is applied AND read back. That pass
-found + fixed 4 real bugs (glow matchName, brightness-contrast property, easeIn/easeOut, star shape).
-Remaining (the "exhaustive" tier, deferred):
-- Convert the ~40% of OTHER integration tests that still only assert no-error/shape into read-back
-  assertions (create* → get* confirms existence; set* → get* confirms the value actually changed).
-- AE-verify the two non-matchName risks the audit flagged: `convertToShape` uses English-only menu
-  strings (`findMenuCommandId` — breaks on localized AE), and `layers.jsx` light-falloff is a raw
-  numeric-index map ({none:0,smooth:1,inverseSquare:2}) never read back.
-- Regenerate `server/ae-bridge/tests/fixtures/ae-matchnames.json` (run `scripts/introspect-matchnames.mjs`)
-  whenever the AE version changes; extend the matchname guard's reviewed baseline if text/shape grows.
+> **Post-MVP / deferred work now lives in [`POSTMVP.md`](POSTMVP.md).** (Consolidated 6/20/26 — out of this file's bottom sections, the inline `DEFERRED TO POSTMVP` items, and `TODO-phase4-later.md`.)
 
 # PRE-SHIP taste pass (HARD ship gate — Phase 5 §G-0, NOT optional/post-mvp)
 The taste/style of the AI's motion is the moat (see the Palmier competitive read — they went generative,
 left precise editable AE motion graphics open; that lane is only ours if the output is genuinely good).
 Sequencing: do NOT block Phase 5 on this, but it IS a hard gate before any paid ship.
-- [ ] FIRST (before committing Phase-5 effort): run the 7-trial diagnostic in `TODO-taste-eval.md` to classify
+- [x] FIRST (before committing Phase-5 effort): run the 7-trial diagnostic in `taste-eval.md` to classify
   every failure as a JUDGMENT gap (prompt-fixable) vs a CAPABILITY gap (recipe/tool rework). Cheap (~half a day,
   no code). Purpose: de-risk Phase 5 — confirm taste is a prompt-tune, not a core rebuild, before building billing infra around it.
-- [ ] THEN (pre-ship, gated at §G-0): the prompt-tuning pass — rewrite `<motion_design_principles>` in `server/ai/src/prompt/rules.ts`
+- [x] THEN (pre-ship, gated at §G-0): the prompt-tuning pass — rewrite `<motion_design_principles>` in `server/ai/src/prompt/rules.ts`
   to close the judgment gaps. Inputs: web-verify AE standard conventions for smooth/juicy/bouncy SaaS-video settings;
   inspo from good AE youtube tutorials (+ maybe well-edited gaming montages). Capability gaps deferred to post-mvp recipe work.
 
@@ -259,66 +199,3 @@ has keyframed animation (it just doesn't see keyframes unless it calls `getLayer
 6/12/26 while testing wt-chat-ui (amplified by Haiku; default Sonnet 4.6 reasons better). Fix options:
 include a keyframe/animation summary in the live-state context, and/or prompt the agent to check
 keyframes before declaring a layer static. Context/prompt work — NOT a chat-UI concern.
-
-# post mvp
-True token-level streaming + tool events
-  WHY: Smoothest 'typing' feel, most like Claude Code. WHY NOT: Must rebuild
-  stream() to pass tools + accumulate tool_use JSON deltas + reconcile with
-  the loop — meaningfully more code and edge cases. Polish you can add
-  post-MVP without changing the loop's shape.
-
-# post mvp (architecture cleanup — not user-facing)
-Brain talks to its own process over a loopback WebSocket. The Claude agent lives **inside** the
-backend but reaches the bridge by opening a WS back to localhost (`ai/src/bridge/client.ts` →
-`wsBridge.ts`) — serializing JSON + a network hop to call code in the same process, plus a failure
-mode where the brain can "disconnect" from itself. Leftover from the MCP-first design. Replace the
-loopback with a direct in-process call (same `sendCommand` interface, no socket) for the brain only;
-the AE panel + UI stay real WS clients. Lower priority — works fine, just inelegant + adds latency.
-
-# post mvp (hot swappable models)
-Do later. Design for it now by keeping all LLM calls behind a single wrapper (one file to change).
-
-How Cursor does it: direct provider SDKs (Anthropic SDK, OpenAI SDK, Google SDK) + their own
-adapter interface — NOT Vercel AI SDK. Reason: need direct access to provider-specific features
-(extended thinking, o1 reasoning, etc.) that abstraction layers lag on.
-
-  interface LLMProvider {
-    chat(messages, opts): Promise<Response>
-    stream(messages, opts): AsyncIterable<Chunk>
-  }
-  class AnthropicProvider implements LLMProvider { ... }
-  class OpenAIProvider implements LLMProvider { ... }
-
-For MVP: implement AnthropicProvider only. Add others when needed.
-
-# post mvp (rewind / "restore to before this request" — known limitations)
-MVP ships rewind as a whole-project, one-way revert. Decided after grilling: keep it simple now,
-warn honestly in the confirmation, fix the depth later. The confirmation modal (`ConfirmModal.tsx`)
-explicitly states the whole project reverts and anything after that point — including hand edits — is
-lost and can't be undone.
-
-Current behavior (already implemented, no MVP code beyond the confirmation copy):
-- Reverts the entire `.aep` to that turn's pre-turn snapshot (`restoreProject` in `project.jsx`).
-- One-way: forward backups are pruned + the chat is truncated to before that turn
-  (`truncateToBeforeTurn`, `persist.ts`). No redo.
-
-Accepted limitations (conscious MVP tradeoffs):
-- **Whole-project, not surgical.** Rewind reverts everything to that point, not just the AI's
-  changes. If the user edited a *different* comp/piece by hand after that turn, that work is wiped
-  too. The real fix is per-comp / surgical scoped restore — hard, because AE has no programmatic
-  per-object undo across the agent loop's async turns (only whole-`.aep` snapshots are reliable).
-- **Manual edits not preserved.** No pre-restore safety snapshot, so uncaptured hand edits since the
-  last turn are destroyed on rewind (disclosed only via the confirmation, not recoverable).
-- **Not undoable.** One-way by design; no "undo the rewind."
-
-Deferred improvements (post-MVP, roughly in priority order):
-- **Pre-restore safety snapshot** — copy current state to a recovery point before overwriting, so a
-  rewind never truly destroys manual work. (Backend half of an undoable rewind.)
-- **Undoable rewind** — bidirectional timeline (cursor + non-destructive backups + branch-discard on
-  the next message), surfaced either as a single "undo rewind" action or collapsible "ahead" turns.
-- **Per-comp / surgical scoped restore** — revert only the comp(s)/objects the AI touched, leaving
-  the user's unrelated manual work intact. The proper answer to the original bug; biggest lift.
-
-Cross-refs: `TODO-phase4.md` ("Restore to before this request" button + confirm-before-overwrite),
-`TODO-phase4-later.md` §E (undo-history viewer / browse-all-snapshots).
-

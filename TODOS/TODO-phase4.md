@@ -2,7 +2,7 @@
 
 > **Status (updated 2026-06-19):** Phase 4 is build-complete. This file is the detailed §-by-§ spec; live completion tracking happened in [`TODO.md`](./TODO.md) (the worktree plan) — treat that as authoritative, this as the granular record. **Two carve-outs remain `[ ]` below — read them before assuming "all done":** (1) **§F (dynamic port)** moved to Phase 5 (`§???-4` in `TODO-phase5.md`, folded into WS-auth); the fixed `17923` still ships in v1-local. (2) **§C in-UI compaction E2E** (pill / `context_full` card / collapsible summary) is built but not yet verified live in the Electron app — pre-Phase-5 gate.
 
-> **Scope:** this file is **strictly the v1 MVP build** — the leanest app that's *paid-public-ready*: won't break a paying stranger's project, won't look broken to a non-technical video editor. Deferred / post-MVP items live in **`TODO-phase4-later.md`** (each tagged with the §section it came from).
+> **Scope:** this file is **strictly the v1 MVP build** — the leanest app that's *paid-public-ready*: won't break a paying stranger's project, won't look broken to a non-technical video editor. Deferred / post-MVP items live in **`POSTMVP.md`** (the single post-MVP home; each tagged with its origin).
 > **The wall:** Phase 5 (hosted proxy holding the API key + Stripe billing + obfuscation + auto-update) is a **hard gate before any paying customer** — not in this file. This trim shortens the road *to* that wall; it doesn't remove it.
 
 > **Decisions & rationale live in [`NOTES-phase4.md`](./NOTES-phase4.md)** — this file is the checklist only. Items link there by anchor when the "why" matters.

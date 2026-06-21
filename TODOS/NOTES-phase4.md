@@ -6,7 +6,7 @@
 
 **Resolved decisions**
 - **Standalone Electron desktop app, not an in-AE panel.** CEP extension demoted to a thin, headless `evalScript` bridge (no UI). We're ~95% decoupled already — the agent loop/LLM/sessions/compaction run in Node and reach AE as a WS client of `127.0.0.1:17923`; the `{id,command,args}` ↔ `{id,ok,result}` protocol is the real, stable interface. Strategic: one UI, swap the bridge adapter per host later (Premiere = CEP near-free; DaVinci = Python/Lua WS; FCP = unlikely).
-- **Pure auto-run for MVP.** Tool calls execute immediately — no accept/reject, no plan step. Safe: every command is ⌘Z-able + pre-turn `.aep` backup; users are video editors, not coders. _Post-MVP:_ plan mode + accept-edits-one-at-a-time.
+- **Pure auto-run for MVP.** Tool calls execute immediately — no accept/reject, no plan step. Safe: every command is ⌘Z-able + pre-turn `.aep` backup; users are video editors, not coders. _Post-MVP: plan mode + accept-edits-one-at-a-time → see [`POSTMVP.md`](POSTMVP.md) (Agent-run controls)._
 - **v1 bar = lean but paid-public-ready.** Cut power-user / refinement extras; keep consumer table-stakes. The two systems that protect a paying stranger's work — **context-window management** and **pre-turn snapshots** — are both already done (Phase 2 backend), so zero project-breaking risk was trimmed.
 - **Sequencing rule: backend before UI.** Backend-first v1 items: **§C2** (JSONL store), **§E** (restore handler).
 
