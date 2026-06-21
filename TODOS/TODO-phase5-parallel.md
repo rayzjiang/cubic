@@ -17,6 +17,7 @@
 ## Wave 1 — paid-backend foundation (up to 3 parallel; separate services → near-zero file overlap)
 
 **1. WT-PROXY-CORE** — §A core (new `proxy/` Worker; testable with just the API key)
+- [ ] §A-0 keep the four test surfaces alive (MCP-only · direct-local `npm run dev` · full-stack-local via `wrangler dev`+`supabase start`+Stripe test · prod). §A-3 forks the client (proxy vs direct), keeps the `CUBIC_ENV=local` direct branch as default; full-stack-local = `CUBIC_ENV=prod` + `CUBIC_PROXY_URL=localhost:8787`. Dev every §A–§C component against its emulator before deploy.
 - [ ] §A-1 move crown jewels server-side → Worker (`prompt/rules.ts` + `tools/definitions.ts`; strip from client)
 - [ ] §A-2 Worker = Anthropic-shaped streaming passthrough (`ANTHROPIC_API_KEY` as Worker secret)
 - [ ] §A-3 repoint client (`llm/anthropic.ts` `new Anthropic` → proxy `baseURL`, no on-device key)
@@ -113,4 +114,5 @@
 - WT-WS-AUTH is local-transport only (`wsBridge.ts` + IPC + AE bridge) → parallel-safe with everything.
 - WT-ANALYTICS is instrumentation-only (adds event calls in the backend loop/dispatcher) → parallel-safe; soft-needs WT-AUTH for the user id, §H-4 fills in as §C/§D land.
 - WT-1 strips `rules.ts`/`definitions.ts` from the client; nothing else in Phase 5 edits those.
+- **Local-first (§A-0):** every paid-backend WT (1–4, BILLING, AUTH) is built+tested against local emulators (`wrangler dev` / `supabase start` / Stripe test) — real cloud/Supabase compute is spent only at the WT-PROXY-GATING §A-8 flip and the §G-3 clean-machine E2E. direct-local `npm run dev` stays untouched throughout.
 - Heavy parallelism is Wave 1 (3 separate services at once); Waves 2–4 narrow toward serial as integration + client/build work converge.
