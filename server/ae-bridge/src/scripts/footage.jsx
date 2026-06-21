@@ -111,7 +111,8 @@ function addFootageToComp(args) {
                 outPoint: layer.outPoint,
                 position: layer.property("Position") ? layer.property("Position").value : null
             },
-            composition: { name: comp.name }
+            composition: { name: comp.name },
+            configurableProperties: _configurableChildren(layer, [])
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -145,7 +146,8 @@ function importAssetToComp(args) {
             message: "Asset imported and added to comp.",
             item: { id: imported.id, name: imported.name, path: imported.file ? imported.file.fsName : null },
             layer: { index: layer.index, name: layer.name, inPoint: layer.inPoint, outPoint: layer.outPoint },
-            composition: { name: comp.name }
+            composition: { name: comp.name },
+            configurableProperties: _configurableChildren(layer, [])
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);

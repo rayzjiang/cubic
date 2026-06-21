@@ -59,6 +59,7 @@ function convertToShape(args) {
             message: "Layer converted to shape via '" + menuName + "'.",
             originalLayer: { index: layer.index, name: layer.name },
             shapeLayer: newLayer ? { index: newLayer.index, name: newLayer.name } : null,
+            configurableProperties: newLayer ? _configurableChildren(newLayer, []) : undefined,
             menuCommand: menuName,
             menuId: menuId
         }, null, 2);
@@ -122,7 +123,8 @@ function createShapeLayer(args) {
         if (duration > 0) { shapeLayer.outPoint = startTime + duration; }
         return JSON.stringify({
             status: "success", message: "Shape layer created successfully",
-            layer: { name: shapeLayer.name, index: shapeLayer.index, type: "shape", shapeType: shapeType, inPoint: shapeLayer.inPoint, outPoint: shapeLayer.outPoint, position: shapeLayer.property("Position").value }
+            layer: { name: shapeLayer.name, index: shapeLayer.index, type: "shape", shapeType: shapeType, inPoint: shapeLayer.inPoint, outPoint: shapeLayer.outPoint, position: shapeLayer.property("Position").value },
+            configurableProperties: _configurableChildren(shapeLayer, [])
         }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
@@ -183,10 +185,21 @@ function addShapeOperator(args) {
             try { opProps.push({ name: operator.property(oi).name, value: operator.property(oi).value }); } catch(e3) {}
         }
 
+        // Round-trippable display-name path to the operator, so its child paths resolve via the
+        // implicit-Contents fallback in _resolvePropertyByPath.
+        var opPathPrefix;
+        if (args.groupPath && args.groupPath.length > 0) {
+            opPathPrefix = args.groupPath.concat([operator.name]);
+        } else {
+            var firstGroup0 = layer.property("Contents").property(1);
+            opPathPrefix = ["Contents", firstGroup0.name, operator.name];
+        }
+
         return JSON.stringify({
             status: "success",
             message: "Shape operator '" + type + "' added to layer '" + layer.name + "'.",
-            operator: { type: type, name: operator.name, matchName: matchNames[type], properties: opProps }
+            operator: { type: type, name: operator.name, matchName: matchNames[type], properties: opProps },
+            configurableProperties: _configurableChildren(operator, opPathPrefix)
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -314,11 +327,21 @@ function animateShape(args) {
         _recipeSetKey(prop, startTime, startValue, ease);
         _recipeSetKey(prop, startTime + duration, endValue, ease);
 
+        // Round-trippable display-name path to the Trim operator, so Start/End/Offset resolve.
+        var trimPrefix;
+        if (args.groupPath && args.groupPath.length > 0) {
+            trimPrefix = args.groupPath.concat([trim.name]);
+        } else {
+            var fg0 = layer.property("Contents").property(1);
+            trimPrefix = ["Contents", fg0.name, trim.name];
+        }
+
         return JSON.stringify({
             status: "success",
             message: "Drew on '" + layer.name + "' — Trim " + animated + " " + startValue + " to " + endValue + " over " + duration + "s.",
             layer: { name: layer.name, index: layer.index },
             trim: { animated: animated, addedTrim: (addedTrim !== null), keyframes: 2 },
+            configurableProperties: _configurableChildren(trim, trimPrefix),
             previousValues: { value: prevValue, trimAdded: (addedTrim !== null) }
         }, null, 2);
     } catch (error) {

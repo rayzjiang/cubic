@@ -59,7 +59,9 @@ const _debugTally = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens
 export function getDebugCost(): typeof _debugTally { return { ..._debugTally }; }
 
 /**
- * Pretty-prints one model round-trip to the terminal when CUBIC_LLM_DEBUG is set.
+ * Pretty-prints one model round-trip to the terminal, gated by the CUBIC_LLM_DEBUG level:
+ * unset/0 = off, 1 = on (compact — tool_results shown as a [tool_result] placeholder),
+ * 2 = full (tool_result bodies printed too, clipped — for inspecting handler payloads).
  * Real calls spend API money (and compaction adds an extra summary call), so this makes
  * every input, output, and dollar visible. Mirrors the shared tests/lib/format.mjs output.
  */
@@ -70,7 +72,9 @@ function logCall(
   tools: ChatOptions['tools'],
   response: ChatResponse,
 ): void {
-  if (!process.env.CUBIC_LLM_DEBUG) return;
+  const level = Number(process.env.CUBIC_LLM_DEBUG) || 0;
+  if (level < 1) return;
+  const full = level >= 2;
   const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
   const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
   const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
@@ -78,7 +82,13 @@ function logCall(
   const render = (c: Message['content']): string =>
     typeof c === 'string'
       ? clip(c)
-      : c.map(b => (b.type === 'text' ? clip(b.text) : `[${b.type}${'name' in b ? ` ${b.name}` : ''}]`)).join(' ');
+      : c.map(b =>
+          b.type === 'text' ? clip(b.text)
+          // level 2 prints tool_result bodies (clipped) so you can inspect handler payloads
+          // (e.g. configurableProperties); level 1 keeps the compact placeholder.
+          : (full && b.type === 'tool_result') ? `[tool_result ${clip(typeof b.content === 'string' ? b.content : JSON.stringify(b.content), 1500)}]`
+          : `[${b.type}${'name' in b ? ` ${b.name}` : ''}]`
+        ).join(' ');
 
   const sysLen = typeof system === 'string' ? system.length : (system ?? []).reduce((n, b) => n + ('text' in b ? b.text.length : 0), 0);
   console.log(bold(`\n╭─ LLM call · ${model}`));

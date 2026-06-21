@@ -161,7 +161,8 @@ function createSolidLayer(args) {
         if (duration > 0) { solidLayer.outPoint = startTime + duration; }
         return JSON.stringify({
             status: "success", message: isAdjustment ? "Adjustment layer created successfully" : "Solid layer created successfully",
-            layer: { name: solidLayer.name, index: solidLayer.index, type: isAdjustment ? "adjustment" : "solid", inPoint: solidLayer.inPoint, outPoint: solidLayer.outPoint, position: solidLayer.property("Position").value, isAdjustment: solidLayer.adjustmentLayer }
+            layer: { name: solidLayer.name, index: solidLayer.index, type: isAdjustment ? "adjustment" : "solid", inPoint: solidLayer.inPoint, outPoint: solidLayer.outPoint, position: solidLayer.property("Position").value, isAdjustment: solidLayer.adjustmentLayer },
+            configurableProperties: _configurableChildren(solidLayer, [])
         }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
@@ -221,7 +222,7 @@ function createCamera(args) {
         try { result.aperture      = camOpts.property("Aperture").value;        } catch(e2) {}
         try { result.blurLevel     = camOpts.property("Blur Level").value;      } catch(e2) {}
 
-        return JSON.stringify({ status: "success", message: "Camera created successfully", layer: result }, null, 2);
+        return JSON.stringify({ status: "success", message: "Camera created successfully", layer: result, configurableProperties: _configurableChildren(cameraLayer, []) }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
         if (cameraLayer !== null) { try { cameraLayer.remove(); } catch (e2) {} }
@@ -293,7 +294,7 @@ function createLightLayer(args) {
         try { layerResult.shadowDiffusion = lightOpts.property("Shadow Diffusion").value; } catch(e2) {}
         if (warnings.length > 0) { layerResult.warnings = warnings; }
 
-        return JSON.stringify({ status: "success", message: "Light layer created successfully", layer: layerResult }, null, 2);
+        return JSON.stringify({ status: "success", message: "Light layer created successfully", layer: layerResult, configurableProperties: _configurableChildren(lightLayer, []) }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
         if (lightLayer !== null) { try { lightLayer.remove(); } catch (e2) {} }
@@ -320,7 +321,8 @@ function createNullLayer(args) {
         if (duration > 0) { nullLayer.outPoint = startTime + duration; }
         return JSON.stringify({
             status: "success", message: "Null layer created successfully",
-            layer: { name: nullLayer.name, index: nullLayer.index, type: "null", threeDLayer: nullLayer.threeDLayer, inPoint: nullLayer.inPoint, outPoint: nullLayer.outPoint, position: nullLayer.property("Position").value }
+            layer: { name: nullLayer.name, index: nullLayer.index, type: "null", threeDLayer: nullLayer.threeDLayer, inPoint: nullLayer.inPoint, outPoint: nullLayer.outPoint, position: nullLayer.property("Position").value },
+            configurableProperties: _configurableChildren(nullLayer, [])
         }, null, 2);
     } catch (error) {
         // Roll back the partially-created layer so a failed create leaves no orphan.
@@ -363,7 +365,8 @@ function duplicateLayer(args) {
             status: "success",
             message: "Layer duplicated successfully",
             original: { name: layer.name, index: layer.index },
-            duplicate: { name: newLayer.name, index: newLayer.index }
+            duplicate: { name: newLayer.name, index: newLayer.index },
+            configurableProperties: _configurableChildren(newLayer, [])
         }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
@@ -1393,6 +1396,7 @@ function retimeClip(args) {
             status: "success",
             message: "Froze the frame at " + freezeAt.toFixed(3) + "s.",
             layer: { index: layer.index, name: layer.name, freezeTime: freezeAt, sourceTime: srcTime },
+            configurableProperties: _configurableLeaf(trp, ["Time Remap"]),
             previousValues: previousValues
         }, null, 2);
     } catch (error) {
@@ -1438,6 +1442,7 @@ function setTimeRemapEnabled(args) {
                     autoKeys.push({ keyIndex: k, time: timeRemapProp.keyTime(k), value: timeRemapProp.keyValue(k) });
                 }
                 result.autoKeyframes = autoKeys;
+                result.configurableProperties = _configurableLeaf(timeRemapProp, ["Time Remap"]);
             }
         }
 
@@ -2484,7 +2489,8 @@ function createBackground(args) {
             status: "success",
             message: "Added a " + (gradient ? "gradient " : "") + "background" + (animate ? " with drift" : "") + ".",
             layer: { name: bgLayer.name, index: bgLayer.index, type: "solid" },
-            gradient: rampInfo
+            gradient: rampInfo,
+            configurableProperties: _configurableChildren(bgLayer, [])
         }, null, 2);
     } catch (error) {
         if (bgLayer !== null) { try { bgLayer.remove(); } catch (e2) {} }
@@ -2525,7 +2531,7 @@ function addNullToLayers(args) {
                 try { nul.moveBefore(L); } catch (e) {}
                 var prevParent = L.parent ? { name: L.parent.name, index: L.parent.index } : null;
                 L.parent = nul;
-                result.push({ nullName: nul.name, child: L.name, prevParent: prevParent });
+                result.push({ nullName: nul.name, child: L.name, prevParent: prevParent, configurableProperties: _configurableChildren(nul, []) });
             }
         } else {
             var left = null, right = null, top = null, bottom = null, minIdx = layers[0].index;
@@ -2548,7 +2554,7 @@ function addNullToLayers(args) {
                 layers[c].parent = nul2;
                 children.push({ name: layers[c].name, prevParent: prevP });
             }
-            result.push({ nullName: nul2.name, children: children });
+            result.push({ nullName: nul2.name, children: children, configurableProperties: _configurableChildren(nul2, []) });
         }
 
         return JSON.stringify({
