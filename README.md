@@ -94,6 +94,15 @@ cd ../ae-bridge && npm install && npm run build:serve && npm run install-plugin
 cd ../../app && npm install && npm run dev
 ```
 
+Shortcut:
+```bash
+# The "rebuild everything, don't think" version
+cd server/ai        && npm run build
+cd server/ae-bridge && npm run build            # build:server + build:serve + build:plugin
+cd server/ae-bridge && npm run install-plugin   # only if AE plugin changed (+restart AE)
+cd app              && npm run dev              # restart this to pick up fresh backend
+```
+
 The app launches a native window, spawns the backend, and connects to After Effects. Open a project in AE, and start chatting.
 
 ### Configuration

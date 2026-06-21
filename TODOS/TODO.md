@@ -145,7 +145,34 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
   - Note: the "chat's gotten long" `context_full` card during testing is NOT a bug — the fixed ~10.5k baseline (system prompt + catalog + live state) is untrimmable by compaction, so a tiny `CUBIC_CONTEXT_WINDOW` (e.g. 12k, where baseline is already 87%) leaves no room. Never happens at the real 200k window (baseline = 5%). Use the recipe's larger window.
   - [x] **Compaction now persisted, Claude-Code-style (done 2026-06-19):** changed from the old live-only-no-persistence design. A `_compaction` marker line (summary + `keptTurns`) is written to the JSONL at the boundary; `loadSession` reconstructs the compacted model context so reopening **resumes from the summary** (never re-summarizes), `loadDisplayMessages` keeps the full transcript so the divider + summary survive reload, and restoring past a boundary un-compacts naturally. Brain emits `keptTurns` on `compaction:done`; **divider placed at the compaction moment** (before the triggering turn — live reducer + `messagesToDisplayItems`; model still keeps recent turns verbatim, decoupled from the visual divider). `CUBIC_KEEP_RECENT_TURNS` env knob added for testing (default 3). Touch: `compaction.ts`/`events.ts`/`loop.ts`, `persist.ts`/`agentChat.ts`/`displayItems.ts`, `store.ts`/`protocol.ts`/`CompactionSummary.tsx`/`CompactionPill.tsx`. Unit-tested; in-app E2E still pending (above).
 
-- [ ] 
+- [x] **DONE (6/20/26) — PR #10 `vidEditorSkillAudit`: video-editing tool wave. - auditing for typical video editing workflow functionality** New one-call editing handlers so the model stops hand-rolling transforms/keyframes:
+  - **fitToFrame** — scale a layer to fit/fill/stretch the comp frame (anchor-aware; optional `offset` to nudge framing).
+  - **retimeClip** — `speed` (uniform time-stretch; auto frame-blending on slow-mo) / `freeze` (hold one frame) / `reverse`; no manual Time Remap.
+  - **adjustColor** — Lumetri-based grade: signed knob deltas (exposure/contrast/sat/temperature/tint/highlights/shadows) + curated looks (warm/cool/teal-orange/vintage/bw/high-contrast); falls back to primitive effects (Brightness-Contrast/Vibrance) + honest warnings when a knob can't apply.
+  - ↳ also added **applyTransition** (cross-dissolve/fade-to-black presets) here, then **removed it in #11** as too NLE-y / redundant with solid+fade recipes.
+  - **Security:** `executeTool` now refuses model calls to hidden/internal-only commands (`modelCallBlockedReason()`), including batch sub-commands (blocks reaching e.g. `saveFrameToPng`/`introspectMatchNames`).
+  - Prompt: expanded `<editing_craft>` (use these tools, honor explicit duration/scale/position/framing). New **no-API** live test `editing-handlers-live.mjs` (drives the 4 handlers against real AE, reads state back, cleans up).
+- [x] **DONE (6/20/26) — PR #11 `motionReqAudit`: motion-design + keyframe-pro toolkit (~12 new commands). - auditing for typical motion design workflow functionality**
+  - **animateText** — one-call kinetic-type reveals (7 presets: typewriter/wordByWord/lineByLine/fadeUpByWord/cascade/wave/scaleUp); builds animator + range selector + keyframed Offset in one call; auto motion-blur on positional/scale reveals; ease-out settle. Replaces hand-wiring `addTextAnimator`+`setTextAnimatorRangeSelector`+`setLayerKeyframe`.
+  - **animateShape** — write-on/draw-on via Trim Paths keyframing (no hand-keyframing).
+  - **cameraMove** — one-call `pushIn`/`orbit`/`parallax` (creates a camera if missing; eased; overwrite-or-append keys).
+  - **createBackground** — comp-sized bottom solid + optional Gradient Ramp + optional subtle drift.
+  - **extractShapes / mergeShapes** — explode a shape layer's groups onto separate layers (shape analog of `explodeTextLayer`) / merge shape layers into the first.
+  - **addNullToLayers** — parent-null control rig (`single` bbox-centered null or `perLayer`).
+  - **cropComp** — autocrop comp to content bbox (+ optional padding; remaps keyframed positions).
+  - **getLayerColors** — extract text/shape colors onto a "Colors" controller null (palette swatches).
+  - **Keyframe pro-tools:** `cloneKeyframes` (copy/mirror keys w/ easing), `fixKeyframeTiming` (snap keys to frame grid), `sequenceKeyframes` (stagger EXISTING keys across layers; `orderType` TOP_DOWN/BOTTOM_UP/RANDOM — distinct from `sequenceLayers` which moves start times).
+  - **Expressions:** 4 new loop presets (`loopOut/In("continue")`, `loopOut/In("offset")`); `copyKeyframeEasing` gains `copyValues`; `applyMotionRecipe` gains `orderType` stagger.
+  - Prompt: new `<kinetic_typography>` + expanded `<motion_design_principles>`/`<visual_design>`. New **no-API** live test `motion-handlers-live.mjs`.
+- [x] **DONE (6/20/26) — PR #12 `project-switch-detection`: Cubic mirrors AE's open project live.**
+  - Detects real in-AE project switches (File>Open / Save-As / recovery) by reading **uncached** project info; auto-follows the new project, fires a toast ("After Effects switched to <name>"), and starts a fresh chat for it. Each `.aep` = its own conversation bucket.
+  - **Guards:** defers a switch silently mid-turn; untitled-just-saved (''→path) adopts the path but keeps the current chat; **wrong-project guard** rejects a turn whose saved project isn't the one open in AE (before any model call/credit); a handler `{status:error}` is treated as "unknown" (won't wipe the sidebar); session cache invalidated on a definite switch.
+  - New **internal-only** handler `openProject({path, save})` drives AE to open a file with no save dialog (not in the model catalog). **TopBar** now shows the open AE project name globally (home + chat), cross-fading on switch. New `ProjectSwitchBar.tsx` built but currently **unmounted** (kept for reuse).
+- [x] **DONE (6/20/26) — PR #13 `configurable-properties-wave`: model gets ALL settable props, not just keyframeable.**
+  - `_keyframeableChildren()` → `_configurableChildren()`: every create/mutate command now returns `configurableProperties` in a lean token format `{n,p,k,v,nk}` (`k:true` = animatable → `setLayerKeyframe`; `k:false` = dropdown/checkbox/menu → `setLayerProperty`; `nk` = numKeys, only when keyframeable).
+  - **Payload trim:** skip AE plumbing (`SKIP_CONTAINERS`: Compositing Options/Audio/Marker), de-dupe by path, truncation sentinel `{truncated:true}` at 120 entries. Path-resolution fixes for shape operators/trims (round-trippable display-name paths).
+  - Wired into ~all create/mutate handlers (layers/effects/text/shapes/masks/time-remap); prompt updated to the new schema.
+  - **Infra:** `CUBIC_LLM_DEBUG` is now a level (0 off / 1 compact / 2 full tool_result bodies, clipped 1500 chars). Loading spinner phrases updated.
 ---
 # THEN AUDIT+REVIEW ALL CODE (to verify claude code coding my whole project Lol) + UNDERSTAND architecture/design clearly 100% bro BEFORE PHASE 5
 # MAYBE BUILD OUT TEASER DEMO VID BEFORE PHASE 5?? POST ON TWITTER??
