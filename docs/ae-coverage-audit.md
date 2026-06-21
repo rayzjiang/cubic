@@ -1,5 +1,5 @@
 # After Effects Single-Composition Verb-Coverage Audit
-
+## POSTMVP - at some point, ensure we reach full coverage to allow all users to control basically all of after effects
 Backlog of actions a human can perform on a **single composition** in After Effects, classified against Cubic's command set. Source of truth: `server/ae-bridge/src/commands.ts` (allowlist) + `server/ai/src/tools/command-params.ts` (params), cross-checked against the `.jsx` handlers.
 
 **Scope:** Timeline + Effect Controls + property panels — layers, transforms, effects, masks, text, shapes, keyframes, expressions, time remapping, markers. Out of scope (not gaps): render/export, project/footage management, multi-comp/NLE editorial, preferences/workspace.

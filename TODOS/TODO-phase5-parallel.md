@@ -42,6 +42,14 @@
 - [ ] §???-2 reject sockets whose `hello` frame lacks the token (all 3 client types)
 - [ ] §???-3 (optional) explicit `127.0.0.1` bind — already done; just confirm
 
+**(floats — slim, instrumentation-only; depends only on WT-AUTH for user id; collides with nothing)**
+**WT-ANALYTICS** — §H (PostHog event hooks in the backend agent loop + dispatcher)
+- [ ] §H-1 PostHog project + `posthog-node` in backend; identify by Supabase user id (soft-needs WT-AUTH)
+- [ ] §H-2 dispatcher `command_run { command, ok, retries }` event (the high-signal one — do first)
+- [ ] §H-3 activation funnel (`app_opened`/`ae_connected`/`first_prompt_sent`/`first_edit_succeeded`)
+- [ ] §H-4 conversion funnel (`trial_started`/`paywall_hit`/`subscribed`/`canceled`) — slots in as §C/§D land
+- [ ] §H-5 privacy line (no prompt/project content sent) → feeds §G-2 Privacy Policy
+
 ---
 
 ## Wave 2 — make the proxy gate + meter (integration; same `proxy/` codebase as WT-1 → follows it)
@@ -103,5 +111,6 @@
 - WT-1 and WT-4 share the `proxy/` Worker codebase → sequential, not parallel.
 - WT-2, WT-5, WT-6 all touch `app/` (auth UI / paywall / packaging) → different waves, so no collision.
 - WT-WS-AUTH is local-transport only (`wsBridge.ts` + IPC + AE bridge) → parallel-safe with everything.
+- WT-ANALYTICS is instrumentation-only (adds event calls in the backend loop/dispatcher) → parallel-safe; soft-needs WT-AUTH for the user id, §H-4 fills in as §C/§D land.
 - WT-1 strips `rules.ts`/`definitions.ts` from the client; nothing else in Phase 5 edits those.
 - Heavy parallelism is Wave 1 (3 separate services at once); Waves 2–4 narrow toward serial as integration + client/build work converge.

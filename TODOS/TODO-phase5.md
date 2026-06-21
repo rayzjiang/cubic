@@ -68,6 +68,14 @@
 - [ ] **§F-4** make sure that auto updates are seamless (users only interact w the electron ui, dont touch the ae panel or reload that panel at all ideally)
 - [ ] **§F-5** _(optional)_ **Staged rollout / beta channel** — `electron-builder` percentage rollout + `latest`/`beta` channels. Nice-to-have, not a launch blocker.
 
+## §H. Product analytics — PostHog (know what to iterate on)
+> **Scope: deliberately slim — MVP, not a BI warehouse.** This is the §3.4 "event hooks, vendor TBD" line finally promoted to a deliverable. Billing metering (§A-6) answers "how much did they spend"; this answers "what did they do and did it work." **WHY PostHog:** one SDK gives funnels + retention + dashboards out of the box, free tier, self-hostable (fits the §E obfuscation/privacy posture). **MVP rule:** wire the few high-signal events below and stop — add more only when a real question comes up.
+- [ ] **§H-1** **PostHog project + SDK** — wire `posthog-node` into the backend (events fire server-side from the agent loop, not the renderer → no key in the binary, survives §E obfuscation). Identify by Supabase user id (§B) so analytics joins to billing.
+- [ ] **§H-2** **Dispatcher event hook (highest signal, ~1 call)** — emit `command_run { command, ok, retries }` from the single command-dispatch chokepoint (the 92-verb path). Gives verb-usage ranking + per-verb failure rate + self-heal retry rate for free. This one event is most of the value.
+- [ ] **§H-3** **Activation funnel (4 events only)** — `app_opened`, `ae_connected`, `first_prompt_sent`, `first_edit_succeeded`. Drop-off here is the single most important launch metric: where new users die before the "aha."
+- [ ] **§H-4** **Conversion funnel** — `trial_started`, `paywall_hit`, `subscribed`, `canceled` (fire from the §C/§D flows). Watch trial→paid without a second tool.
+- [ ] **§H-5** **Privacy line** — prompt text + AE project contents are NEVER sent (events carry verb names + outcomes + counts only). Note this in the §G-2 Privacy Policy; opt-out toggle only if a user asks — not a launch blocker.
+
 ## §G. Launch gates (last checks before shipping to a paying stranger)
 - [ ] **§G-0** **Taste/quality bar met (HARD gate — no ship below bar)** — motion output passes the taste eval: avg ≥1.5 across the 7 trials, AND T4 (restraint) + T7 (composition coherence) both ≥1. Protocol + rubric → `TODO-taste-eval.md`. The diagnostic runs **before** committing Phase-5 effort (classifies judgment vs capability gaps); the full prompt-tuning pass closes the judgment gaps and must clear this bar before the first paid ship. This is the taste moat — it is NOT optional polish.
 - [ ] **§G-1** **Price + cap numbers locked** (§C unit-economics decision made, not TBD).
