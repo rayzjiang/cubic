@@ -124,6 +124,48 @@ interface RawOutcome {
   noop?: boolean;
 }
 
+/**
+ * RTK-style proxy trim of a tool result before it enters history. Create/mutate handlers return a
+ * `configurableProperties` array per layer/effect ({n:name, p:path, k:keyframeable, v:value, nk:numKeys})
+ * — often 100+ entries, 10K+ chars, and re-billed every loop iteration. We keep ONLY {n,p,k}: the model
+ * needs the path (`p`) so it never guesses how to address a property, plus the name and keyframeable flag
+ * to route setLayerKeyframe vs setLayerProperty. The current value (`v`) and keyframe count (`nk`) are
+ * dropped — the model reads those on demand (getLayerProperty/getLayerKeyframes) when it actually needs
+ * them. The `{truncated:true}` sentinel is preserved so the model still knows to introspect for more.
+ *
+ * Only `configurableProperties` arrays are touched (at any nesting depth — top-level, batch sub-results,
+ * applyEffect); every other field passes through verbatim, since other large results (getLayerKeyframes,
+ * listFonts) are large because their values ARE the signal the model asked for.
+ */
+const CONFIG_PROP_KEEP = new Set(['n', 'p', 'k', 'truncated']);
+
+function trimConfigEntry(entry: unknown): unknown {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const src = entry as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(src)) if (CONFIG_PROP_KEEP.has(key)) out[key] = src[key];
+  return out;
+}
+
+function deepTrim(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(deepTrim);
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      out[k] = k === 'configurableProperties' && Array.isArray(v) ? v.map(trimConfigEntry) : deepTrim(v);
+    }
+    return out;
+  }
+  return node;
+}
+
+export function trimConfigurableProperties(content: string): string {
+  let parsed: unknown;
+  try { parsed = JSON.parse(content); } catch { return content; } // not JSON (raw string result) — leave as-is
+  if (parsed === null || typeof parsed !== 'object') return content;
+  return JSON.stringify(deepTrim(parsed));
+}
+
 async function runOnce(command: string, args: Record<string, unknown>): Promise<RawOutcome> {
   try {
     const result = await bridgeClient.callRunScript(command, args);
@@ -209,7 +251,7 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
     }
 
     return {
-      block: { type: 'tool_result', tool_use_id: tool.id, content: outcome.content, is_error: !outcome.ok },
+      block: { type: 'tool_result', tool_use_id: tool.id, content: trimConfigurableProperties(outcome.content), is_error: !outcome.ok },
       ok: outcome.ok,
       errorCode: outcome.errorCode,
       retried,

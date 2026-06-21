@@ -1,6 +1,7 @@
 import { getLLM } from '../llm/index.js';
 import { AE_TOOLS } from '../tools/definitions.js';
 import { buildContext as defaultBuildContext } from '../context/buildContext.js';
+import { formatStateForPrompt } from '../context/format.js';
 import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSystemPrompt.js';
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
@@ -21,7 +22,7 @@ export interface AgentDeps {
   executeTool: (tool: ToolUse, sessionId: string) => Promise<ToolExecution>;
   snapshot: (sessionId: string, turnId: string) => Promise<SnapshotResult>;
   buildContext: () => Promise<LiveAEState>;
-  buildSystemPrompt: (state: LiveAEState) => SystemPromptInput;
+  buildSystemPrompt: () => SystemPromptInput;
   /** Model override (default: provider default). */
   model?: string;
   maxIterations?: number;
@@ -159,7 +160,10 @@ export async function runAgentTurn(
     }
 
     const state = await buildContext();
-    const systemPrompt = buildSystemPrompt(state);
+    const systemPrompt = buildSystemPrompt();
+    // Live AE state rides at the tail of the request (uncached), NOT in the cached system prompt,
+    // and is never committed to session.messages — so the conversation prefix stays cache-stable.
+    const liveState = formatStateForPrompt(state);
 
     let iter = 0;
     while (iter < maxIterations) {
@@ -170,7 +174,13 @@ export async function runAgentTurn(
         return;
       }
 
-      const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model, signal: abort.signal });
+      // Live state is fetched once at turn start and is identical across this turn's tool-loop
+      // iterations, so send it only on the FIRST call (iter 0). Re-sending it on iterations 1..N
+      // would just re-bill the same bytes (it sits at the uncached tail, so it can't be cached
+      // there either). The model captured state when it planned on call 1 and executes from the
+      // conversation + tool results; it can re-read (getSelectedLayers/getCurrentTime) in the rare
+      // case it needs fresh state mid-turn.
+      const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model, signal: abort.signal, liveState: iter === 0 ? liveState : undefined });
       session.lastContextTokens = contextTokensOf(response.usage);
 
       // The model itself reports the prompt was too large to process — pause honestly.

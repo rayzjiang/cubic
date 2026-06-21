@@ -59,14 +59,14 @@ export interface ToolDefinition {
 // ─── System prompt ────────────────────────────────────────────────────────────
 
 /**
- * A split system prompt: the stable `cached` prefix (role + rules + command
- * catalog) is marked as a prompt-cache breakpoint by anthropic.ts; the `volatile`
- * suffix (per-turn live AE state) is left uncached so timeline changes never bust
- * the catalog cache. A plain string is also accepted (no caching).
+ * The system prompt: the stable `cached` prefix (role + rules + command catalog)
+ * is marked as a prompt-cache breakpoint by anthropic.ts. Per-turn live AE state is
+ * NOT part of this — it rides at the tail of the message stream (see ChatOptions.liveState)
+ * so it never sits inside the cached prefix and bust the conversation cache. A plain
+ * string is also accepted (no caching).
  */
 export interface SystemPrompt {
   cached: string;
-  volatile?: string;
 }
 
 export type SystemPromptInput = string | SystemPrompt;
@@ -80,6 +80,10 @@ export interface ChatOptions {
   temperature?: number;
   /** When provided, the request includes these tools with tool_choice:auto. */
   tools?: ToolDefinition[];
+  /** Per-turn live AE state (the `<live_ae_state>` block). Appended UNCACHED at the tail of the
+   *  message stream so the conversation prefix before it stays byte-stable and prompt-cacheable
+   *  across turns. Set by the agent loop only; rebuilt every turn, never persisted to history. */
+  liveState?: string;
   /** Aborts the in-flight request (cancel/Stop). The SDK rejects with an abort error,
    *  which the agent loop treats as a clean cancellation (Claude Code-style interrupt). */
   signal?: AbortSignal;

@@ -9,9 +9,56 @@ const { callRunScript, invalidate } = vi.hoisted(() => ({
 vi.mock('../bridge/client.js', () => ({ bridgeClient: { callRunScript } }));
 vi.mock('../context/cache.js', () => ({ sessionCache: { invalidate } }));
 
-import { executeTool } from './executeTool.js';
+import { executeTool, trimConfigurableProperties } from './executeTool.js';
 
 const runScript = (script: string): ToolUse => ({ id: 'x', name: 'runScript', input: { script } });
+
+describe('trimConfigurableProperties (RTK-style result trim)', () => {
+  it('keeps n/p/k, drops v/nk, on top-level configurableProperties', () => {
+    const input = JSON.stringify({
+      status: 'success',
+      layer: { name: 'BG', index: 1 },
+      configurableProperties: [
+        { n: 'Anchor Point', p: ['Transform', 'Anchor Point'], k: true, v: [960, 540, 0], nk: 0 },
+        { n: 'Opacity', p: ['Transform', 'Opacity'], k: true, v: 100, nk: 2 },
+      ],
+    });
+    const out = JSON.parse(trimConfigurableProperties(input));
+    expect(out.configurableProperties).toEqual([
+      { n: 'Anchor Point', p: ['Transform', 'Anchor Point'], k: true },
+      { n: 'Opacity', p: ['Transform', 'Opacity'], k: true },
+    ]);
+    // Non-configurableProperties fields are untouched.
+    expect(out.layer).toEqual({ name: 'BG', index: 1 });
+  });
+
+  it('trims configurableProperties nested inside batch sub-results (any depth)', () => {
+    const input = JSON.stringify({
+      status: 'success',
+      results: [
+        { index: 0, command: 'deleteLayer', result: { status: 'success' } },
+        { index: 1, command: 'createLayer', result: { layer: { name: 'Rect' }, configurableProperties: [{ n: 'Scale', p: ['Transform', 'Scale'], k: true, v: [100, 100, 100], nk: 0 }] } },
+      ],
+    });
+    const out = JSON.parse(trimConfigurableProperties(input));
+    expect(out.results[1].result.configurableProperties).toEqual([{ n: 'Scale', p: ['Transform', 'Scale'], k: true }]);
+  });
+
+  it('preserves the {truncated:true} sentinel entry', () => {
+    const input = JSON.stringify({ configurableProperties: [{ n: 'Opacity', p: ['Transform', 'Opacity'], k: true, v: 100, nk: 0 }, { n: '(truncated)', truncated: true }] });
+    const out = JSON.parse(trimConfigurableProperties(input));
+    expect(out.configurableProperties[1]).toEqual({ n: '(truncated)', truncated: true });
+  });
+
+  it('leaves other large arrays (e.g. keyframes, fonts) untouched', () => {
+    const input = JSON.stringify({ keyframes: [{ t: 0, value: [100, 100, 100] }], fonts: ['Impact', 'Arial'] });
+    expect(JSON.parse(trimConfigurableProperties(input))).toEqual({ keyframes: [{ t: 0, value: [100, 100, 100] }], fonts: ['Impact', 'Arial'] });
+  });
+
+  it('returns non-JSON content unchanged', () => {
+    expect(trimConfigurableProperties('plain string result')).toBe('plain string result');
+  });
+});
 
 describe('executeTool', () => {
   beforeEach(() => {

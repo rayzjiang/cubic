@@ -1,6 +1,4 @@
-import type { LiveAEState } from '../context/buildContext.js';
 import type { SystemPrompt } from '../llm/types.js';
-import { formatStateForPrompt } from '../context/format.js';
 import { renderCommandCatalog } from './renderCatalog.js';
 import { STATIC_RULES } from './rules.js';
 
@@ -12,9 +10,10 @@ import { STATIC_RULES } from './rules.js';
 const CACHED_RULES = STATIC_RULES.replace('{{COMMAND_CATALOG}}', renderCommandCatalog());
 
 /**
- * Builds the split system prompt: stable `cached` rules+catalog (a cache
- * breakpoint) + per-turn `volatile` live AE state. See {@link SystemPrompt}.
+ * Builds the system prompt: the stable, cacheable `cached` rules+catalog block.
+ * Per-turn live AE state is NOT included here — it rides at the tail of the message
+ * stream (ChatOptions.liveState) so it never busts this cache. See {@link SystemPrompt}.
  */
-export function buildSystemPrompt(state: LiveAEState): SystemPrompt {
-  return { cached: CACHED_RULES, volatile: formatStateForPrompt(state) };
+export function buildSystemPrompt(): SystemPrompt {
+  return { cached: CACHED_RULES };
 }

@@ -111,22 +111,52 @@ function logCall(
 }
 
 /**
- * Converts our SystemPromptInput into the Anthropic `system` param. A split
- * prompt becomes two text blocks: the stable `cached` prefix carries a
- * `cache_control: ephemeral` breakpoint (so it — plus the tools declared before
- * it — is cached and ~90% cheaper to re-read on later turns), while the
- * `volatile` live-state block is left uncached so it never busts that cache.
+ * Converts our SystemPromptInput into the Anthropic `system` param. The `cached`
+ * prefix carries a `cache_control: ephemeral` breakpoint, so it — plus the tools
+ * declared before it — is cached and ~90% cheaper to re-read on later turns. Live
+ * AE state is NOT here anymore: it rides at the tail of the message stream (see
+ * appendLiveStateAndCacheBreakpoint) so it never sits inside the cached prefix.
  * A plain string passes through unchanged (no caching).
  */
 function toSystemParam(sp: SystemPromptInput): Anthropic.MessageCreateParams['system'] {
   if (typeof sp === 'string') return sp;
-  const blocks: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: sp.cached, cache_control: { type: 'ephemeral' } },
-  ];
-  if (sp.volatile && sp.volatile.length > 0) {
-    blocks.push({ type: 'text', text: sp.volatile });
+  return [{ type: 'text', text: sp.cached, cache_control: { type: 'ephemeral' } }];
+}
+
+/**
+ * Makes the conversation itself prompt-cacheable (the big lever): on every request we drop a rolling
+ * `cache_control` breakpoint on the LAST real content block, so the whole prefix — tools + system +
+ * entire conversation so far — is cached and re-read at ~0.1× on the next call instead of re-billed
+ * at full price. Within a multi-tool turn this turns "re-read the whole transcript every iteration"
+ * into write-once-read-many; across turns the prior conversation is a cache hit.
+ *
+ * The per-turn live AE state (which changes every turn) is appended AFTER that breakpoint as an
+ * uncached trailing text block, so it never sits inside the cached prefix and bust it. A trailing
+ * text block after tool_result blocks in the same user turn is valid.
+ *
+ * Mutates the last message of `apiMessages` in place. No-op when there are no messages.
+ * Exported for unit testing (free — asserts cache placement without a real API call).
+ */
+export function appendLiveStateAndCacheBreakpoint(
+  apiMessages: Anthropic.MessageParam[],
+  liveState?: string,
+): void {
+  if (apiMessages.length === 0) return;
+  const last = apiMessages[apiMessages.length - 1];
+  // Normalize content to a mutable block array (a plain-string message becomes one text block).
+  const blocks: Anthropic.ContentBlockParam[] =
+    typeof last.content === 'string'
+      ? [{ type: 'text', text: last.content }]
+      : [...last.content];
+  if (blocks.length === 0) return;
+  // Rolling breakpoint on the newest real block — caches everything up to and including it.
+  const lastBlock = blocks[blocks.length - 1];
+  blocks[blocks.length - 1] = { ...lastBlock, cache_control: { type: 'ephemeral' } } as Anthropic.ContentBlockParam;
+  // Uncached live-state tail (after the breakpoint).
+  if (liveState && liveState.length > 0) {
+    blocks.push({ type: 'text', text: liveState });
   }
-  return blocks;
+  last.content = blocks;
 }
 
 /**
@@ -169,12 +199,16 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async chat(messages: Message[], opts: ChatOptions): Promise<ChatResponse> {
+    const apiMessages: Anthropic.MessageParam[] = messages.map(m => ({ role: m.role, content: toAnthropicContent(m.content) }));
+    // Rolling conversation-cache breakpoint + uncached live-state tail (mutates the last message).
+    appendLiveStateAndCacheBreakpoint(apiMessages, opts.liveState);
+
     const params: Anthropic.MessageCreateParamsNonStreaming = {
       model: opts.model ?? defaultModel(),
       max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: opts.temperature ?? 1,
       system: toSystemParam(opts.systemPrompt),
-      messages: messages.map(m => ({ role: m.role, content: toAnthropicContent(m.content) })),
+      messages: apiMessages,
     };
 
     if (opts.tools?.length) {

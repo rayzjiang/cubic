@@ -88,6 +88,26 @@ describe('runAgentTurn', () => {
     expect(session.running).toBe(false);
   });
 
+  it('sends live state only on the FIRST chat() call of a turn (resend reduction)', async () => {
+    // Live state is fetched once per turn and is identical across tool-loop iterations, so it must
+    // ride only on call 1; iterations 1..N pass undefined (avoids re-billing the same uncached tail).
+    const liveStateSeen: Array<string | undefined> = [];
+    let i = 0;
+    const responses = [toolResponse([runScriptCall('t1', 'createLayer')]), textResponse('done')];
+    const provider: LLMProvider = {
+      chat: async (_messages, opts) => { liveStateSeen.push(opts.liveState); return responses[Math.min(i++, responses.length - 1)]; },
+      // eslint-disable-next-line require-yield
+      stream: async function* () { yield { type: 'done' as const }; },
+      contextWindow: () => 200_000,
+    };
+
+    await runAgentTurn(new Session(), 'add a layer', () => {}, baseDeps(provider));
+
+    expect(liveStateSeen).toHaveLength(2);          // two model calls: tool turn, then the done turn
+    expect(liveStateSeen[0]).toContain('<live_ae_state>'); // first call carries the state block
+    expect(liveStateSeen[1]).toBeUndefined();       // the tool-loop iteration does NOT re-send it
+  });
+
   it('stops at the iteration budget and emits an error', async () => {
     // Model never stops asking for tools.
     const { provider } = mockLLM([toolResponse([runScriptCall('t', 'getProjectInfo')])]);
