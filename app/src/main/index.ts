@@ -17,16 +17,21 @@ import { provisionBridge } from './installBridge.js'
  * reloads it and exits 1 — we then quit so the dev re-runs clean. Runs non-blocking so a fresh panel
  * (or AE closed) never delays launch. No-op when packaged (prod auto-updater handles real users).
  */
+let preflightChild: ReturnType<typeof spawn> | null = null
 function runDevPreflight(): void {
   if (app.isPackaged) return
   const here = dirname(fileURLToPath(import.meta.url)) // app/out/main
   const script = join(here, '..', '..', '..', 'server', 'ae-bridge', 'scripts', 'preflight-panel.mjs')
   if (!existsSync(script)) return
-  const child = spawn(process.execPath, [script], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  // The panel reconnects to the just-spawned backend a few seconds after launch, so give it a
+  // generous window to appear before deciding (vs the short default the tests use). Runs in the
+  // background — launch isn't delayed; it's killed on quit so it never lingers if AE is closed.
+  preflightChild = spawn(process.execPath, [script], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', CUBIC_PREFLIGHT_WAIT_MS: '30000' },
     stdio: ['ignore', 'inherit', 'inherit'],
   })
-  child.on('exit', (code) => {
+  preflightChild.on('exit', (code) => {
+    preflightChild = null
     if (code === 1) {
       console.error('[main] AE panel was running a stale bundle — rebuilt + reloaded it. Re-run `npm run dev`.')
       app.quit()
@@ -72,7 +77,10 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   // SIGTERM the child on quit so it frees the WS port (serve.ts's installShutdown).
-  app.on('before-quit', () => backend.stop())
+  app.on('before-quit', () => {
+    backend.stop()
+    preflightChild?.kill() // don't leave a dev preflight waiter polling after the app quits
+  })
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()

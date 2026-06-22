@@ -69,7 +69,11 @@ const freshId = computeBuildIdFromSource(root);
 //    nothing to verify → proceed without touching anything.
 let port = 17923;
 try { port = parseInt(fs.readFileSync(path.join(os.homedir(), '.cubic', 'port'), 'utf8').trim(), 10) || 17923; } catch { /* default */ }
-const panelId = await queryPanelBuildId(port, 3000);
+// How long to wait for a panel to (re)connect before giving up. Tests run with a panel already
+// connected, so the 3s default returns instantly; the app sets a longer window (CUBIC_PREFLIGHT_WAIT_MS)
+// because the panel reconnects to a freshly-spawned backend a few seconds after launch.
+const waitMs = parseInt(process.env.CUBIC_PREFLIGHT_WAIT_MS ?? '', 10) || 3000;
+const panelId = await queryPanelBuildId(port, waitMs);
 
 // 3. Fresh (or unverifiable) → print the verdict + exit 0, no rebuild/reload. Only when the panel
 //    is DEFINITELY stale do we rebuild + reinstall + reload it, then exit 1 so the dev re-runs clean.
