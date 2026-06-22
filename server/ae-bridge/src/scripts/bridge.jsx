@@ -286,6 +286,22 @@ function _resolvePropertyByPath(layer, propertyPath) {
     return current;
 }
 
+// Some property values are live AE objects (TextDocument, Shape, MarkerValue, …), not scalars.
+// Emitting one as `v` crashes the JSON polyfill: enumerating it touches getters that throw — a
+// point-text TextDocument's box getters raise "Text document not of Box document type", which
+// aborts the whole response. configurableProperties advertises settable PATHS, not live values, so
+// we keep only JSON-safe scalars / number-arrays here; current values come from getLayerProperty.
+function _isJsonSafeValue(v) {
+    if (v === null) { return true; }
+    var t = typeof v;
+    if (t === "number" || t === "string" || t === "boolean") { return true; }
+    if (v instanceof Array) {
+        for (var i = 0; i < v.length; i++) { if (!_isJsonSafeValue(v[i])) { return false; } }
+        return true;
+    }
+    return false;
+}
+
 // Walks the subtree under `rootProp` and returns every SETTABLE leaf, token-lean, as
 // { n:name, p:path, k:keyframeable, v:value[, nk:numKeys] }. A leaf is settable when it exposes
 // setValue (mirrors setLayerProperty's guard), so the agent can drive it with no guessing — animatable
@@ -342,7 +358,7 @@ function _configurableChildren(rootProp, rootPath) {
                 var keyframeable = false;
                 try { keyframeable = (prop.canVaryOverTime === true); } catch (e2) {}
                 var entry = { n: prop.name, p: fullPath, k: keyframeable };
-                try { entry.v = prop.value; } catch (e3) {}
+                try { var _pv = prop.value; if (_isJsonSafeValue(_pv)) { entry.v = _pv; } } catch (e3) {}
                 if (keyframeable) { try { entry.nk = prop.numKeys; } catch (e4) {} }
                 out.push(entry);
             }
@@ -361,7 +377,7 @@ function _configurableLeaf(prop, path) {
     var keyframeable = false;
     try { keyframeable = (prop.canVaryOverTime === true); } catch (e) {}
     var entry = { n: prop.name, p: path, k: keyframeable };
-    try { entry.v = prop.value; } catch (e2) {}
+    try { var _pv = prop.value; if (_isJsonSafeValue(_pv)) { entry.v = _pv; } } catch (e2) {}
     if (keyframeable) { try { entry.nk = prop.numKeys; } catch (e3) {} }
     return [entry];
 }
