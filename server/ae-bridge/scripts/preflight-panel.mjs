@@ -14,9 +14,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket from 'ws';
+import { computeBuildIdFromSource } from './build-id.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
+
+// Color helpers so the verdict line is easy to spot in a noisy dev log.
+const paint = (code, s) => `\x1b[${code}m${s}\x1b[0m`;
+const green = (s) => paint('1;32', s), yellow = (s) => paint('1;33', s), dim = (s) => paint('2', s);
 
 /** Run a node entrypoint to completion (not via npm, so it works under Electron's ELECTRON_RUN_AS_NODE). */
 function runNode(scriptPath) {
@@ -57,23 +62,29 @@ async function sendDevReload(port) {
   });
 }
 
-// 1. Rebuild + reinstall from source so dist (and the CEP folder) hold the latest bundle.
-await runNode(path.join(here, 'build-cep-extension.mjs'));
-await runNode(path.join(root, 'install-cep-extension.js'));
-
-const freshId = fs.readFileSync(path.join(root, 'cep-extension', 'dist', 'build-id'), 'utf8').trim();
+// 1. Compute the latest build id straight from source — NO build/install yet (cheap content hash).
+const freshId = computeBuildIdFromSource(root);
 
 // 2. Compare against the open panel. No backend/panel, or an old panel that can't report an id →
-//    nothing to verify, proceed.
+//    nothing to verify → proceed without touching anything.
 let port = 17923;
 try { port = parseInt(fs.readFileSync(path.join(os.homedir(), '.cubic', 'port'), 'utf8').trim(), 10) || 17923; } catch { /* default */ }
 const panelId = await queryPanelBuildId(port, 3000);
 
-if (panelId && panelId !== freshId) {
-  await sendDevReload(port);
-  console.error(`\n[preflight] AE panel was running a stale bundle (${panelId}, latest ${freshId}) — rebuilt + reloaded it.`);
-  console.error('[preflight] Re-run your command (npm run dev / the test) — it will start on the fresh bundle.\n');
-  process.exit(1);
+// 3. Fresh (or unverifiable) → print the verdict + exit 0, no rebuild/reload. Only when the panel
+//    is DEFINITELY stale do we rebuild + reinstall + reload it, then exit 1 so the dev re-runs clean.
+if (!panelId) {
+  console.error(dim('[preflight] No AE panel connected — skipping freshness check; continuing.'));
+  process.exit(0);
+}
+if (panelId === freshId) {
+  console.error(green(`[preflight] ✓ Cubic panel bundle is up to date (build ${freshId}) — continuing.`));
+  process.exit(0);
 }
 
-process.exit(0);
+console.error(yellow(`\n[preflight] ⚠ AE panel is running a STALE bundle (${panelId}, latest ${freshId}) — rebuilding + reloading…`));
+await runNode(path.join(here, 'build-cep-extension.mjs'));
+await runNode(path.join(root, 'install-cep-extension.js'));
+await sendDevReload(port);
+console.error(yellow('[preflight] ↻ Rebuilt + reloaded the panel. Re-run your command (npm run dev / the test) — it will start on the fresh bundle.\n'));
+process.exit(1);

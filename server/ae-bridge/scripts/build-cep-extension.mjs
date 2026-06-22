@@ -6,8 +6,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { buildHandlersBundle, hashBuildId } from './build-id.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -17,36 +17,17 @@ const distDir = path.join(extSrc, 'dist');
 const distSrcDir = path.join(distDir, 'src');
 const distCsxsDir = path.join(distDir, 'CSXS');
 
-// Domain files in load order (dependencies first, dispatch last)
-const domainFiles = [
-  'compositions.jsx',
-  'fonts.jsx',        // font resolution helpers (_resolveFont) + listFonts
-  'layers.jsx',
-  'text.jsx',         // text layers + animators (was in layers.jsx)
-  'shapes.jsx',       // shape layers + vector operators (was in layers.jsx)
-  'animation.jsx',
-  'masks.jsx',
-  'effects.jsx',
-  'footage.jsx',
-  'markers.jsx',
-  'project.jsx',
-  'bridge.jsx',       // JSON polyfill + dispatchCommand + batch
-];
-
-// ─── Step 1: Concatenate handlers ─────────────────────────────────────────────
+// ─── Step 1: Concatenate handlers (domain file list + concat live in build-id.mjs, shared with
+//             the preflight so its cheap staleness check can't drift from the real build) ─────────
 
 console.log('Building handlers bundle…');
-const parts = [];
-for (const file of domainFiles) {
-  const filePath = path.join(scriptsDir, file);
-  if (!fs.existsSync(filePath)) {
-    console.error(`ERROR: Missing handler file: ${filePath}`);
-    process.exit(1);
-  }
-  const content = fs.readFileSync(filePath, 'utf8');
-  parts.push(`// ---- ${file} ----\n${content}`);
+let handlersBundle;
+try {
+  handlersBundle = buildHandlersBundle(scriptsDir);
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(1);
 }
-const handlersBundle = parts.join('\n\n');
 
 fs.mkdirSync(distDir, { recursive: true });
 fs.writeFileSync(path.join(distDir, 'handlers.bundled.jsx'), handlersBundle, 'utf8');
@@ -60,12 +41,9 @@ fs.mkdirSync(distSrcDir, { recursive: true });
 const mainSrc = fs.readFileSync(path.join(extSrc, 'src', 'main.js'), 'utf8');
 const indexSrc = fs.readFileSync(path.join(extSrc, 'index.html'), 'utf8');
 
-// Content-hash build id: changes only when the panel/handler code actually changes. The dev
-// preflight (scripts/preflight-panel.mjs) compares this against the id the open panel reports in
-// its `hello` to tell whether the panel is running a stale bundle.
-const BUILD_ID = crypto.createHash('sha1')
-  .update(handlersBundle).update(mainSrc).update(indexSrc)
-  .digest('hex').slice(0, 12);
+// Content-hash build id (same fn the preflight uses): changes only when the panel/handler code
+// actually changes. The preflight compares it against the id the open panel reports in its `hello`.
+const BUILD_ID = hashBuildId(handlersBundle, mainSrc, indexSrc);
 
 const bundleJson = JSON.stringify(handlersBundle);
 // __CUBIC_BUILD_ID__: the panel reports it in `hello` so the dev preflight can detect a stale panel.
