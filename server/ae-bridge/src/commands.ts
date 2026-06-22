@@ -39,6 +39,7 @@ export const COMMANDS: readonly string[] = [
   "setLayerProperties",
   "batchSetLayerProperties",
   "getLayerProperty",
+  "getLayerProperties",
   "setLayerProperty",
   // Layers — hierarchy & transform
   "setLayerParent",

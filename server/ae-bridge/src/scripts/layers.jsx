@@ -1720,6 +1720,29 @@ function getLayerProperty(args) {
     }
 }
 
+// getLayerProperties — return a layer's settable-property CATALOG ({n,p,k}) on demand, so create/mutate
+// results no longer need to ship it on every call. scope: optional root propertyPath array (e.g.
+// ["Transform"] or ["Effects","Gaussian Blur"]) — walk only that subtree; omit for the whole layer
+// (Transform-first, capped). Same shape _configurableChildren returns elsewhere, so the agent reads it
+// identically. Bad scope throws PROPERTY_NOT_FOUND via _resolvePropertyByPath (no silent guessing).
+function getLayerProperties(args) {
+    try {
+        var resolved = _resolveCompAndLayer(args);
+        var layer = resolved.layer;
+
+        var rootProp = layer;
+        var rootPath = [];
+        if (args.scope && typeof args.scope.length !== "undefined" && args.scope.length > 0) {
+            rootProp = _resolvePropertyByPath(layer, args.scope);
+            rootPath = args.scope;
+        }
+
+        return JSON.stringify({ status: "success", configurableProperties: _configurableChildren(rootProp, rootPath) }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
+    }
+}
+
 // Compute a layer's axis-aligned comp-space bbox (ignores rotation). Shared by align/distribute.
 function _getCompBbox(comp, layer) {
     var rect = layer.sourceRectAtTime(comp.time, false);

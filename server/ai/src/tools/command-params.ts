@@ -146,6 +146,11 @@ export const COMMAND_PARAMS = {
     params: { propertyPath: 'array e.g. ["Transform","Position"]', timeInSeconds: 'float — read value at time' },
     required: ['propertyPath'],
   },
+  getLayerProperties: {
+    domain: 'Layers',
+    summary: "List a layer's settable property paths {n:name,p:path,k:keyframeable} — call before writing to get exact paths. Omit scope for the whole layer (Transform-first, capped); pass scope to walk one subtree.",
+    params: { scope: 'array — root propertyPath to walk e.g. ["Transform"] or ["Effects","Gaussian Blur"] (omit for whole layer)' },
+  },
   setLayerProperty: {
     domain: 'Layers',
     summary: 'Set one property by path (propertyPath + value).',

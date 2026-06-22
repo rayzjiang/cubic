@@ -315,7 +315,7 @@ function _configurableChildren(rootProp, rootPath) {
     var out = [];
     var seen = {};
     var MAX_DEPTH = 8;
-    var MAX_ENTRIES = 120;
+    var MAX_ENTRIES = 80;
     var truncated = false;
     function inList(name, list) {
         for (var c = 0; c < list.length; c++) { if (list[c] === name) { return true; } }
@@ -333,6 +333,15 @@ function _configurableChildren(rootProp, rootPath) {
     }
     function walk(group, path, depth) {
         if (depth > MAX_DEPTH || out.length >= MAX_ENTRIES) { return; }
+        // Transform-first at the layer root: AE's native order puts Text/Masks/Effects before Transform,
+        // so an unscoped pull that hits MAX_ENTRIES could shed the core transforms the agent needs most.
+        // Walk Transform first; the leaf `seen` de-dupe + the skip below keep it from emitting twice.
+        var transformFirst = (depth === 0);
+        if (transformFirst) {
+            var xf = null;
+            try { xf = group.property("Transform"); } catch (eXf) {}
+            if (xf) { walk(xf, path.concat([xf.name]), depth + 1); }
+        }
         var n = 0;
         try { n = group.numProperties; } catch (e) { n = 0; }
         for (var i = 1; i <= n; i++) {
@@ -340,6 +349,7 @@ function _configurableChildren(rootProp, rootPath) {
             var prop = null;
             try { prop = group.property(i); } catch (e) { continue; }
             if (!prop) { continue; }
+            if (transformFirst && prop.name === "Transform") { continue; } // already walked first
             if (isSkipped(prop)) { continue; }  // AE-plumbing subtree — don't recurse or emit
             var kids = undefined;
             try { kids = prop.numProperties; } catch (e) {}
@@ -392,7 +402,7 @@ var READ_ONLY_COMMANDS = {
     getLayerKeyframes: 1, getLayerExpressions: 1,
     getLayerMasks: 1, getLayerEffects: 1,
     getSelectedLayers: 1, getSelectionDetails: 1, listProjectItems: 1,
-    getLayerProperty: 1,
+    getLayerProperty: 1, getLayerProperties: 1,
     listMarkers: 1, getCurrentTime: 1, getProjectPath: 1,
     getCompositionInfo: 1, listFonts: 1
 };
@@ -464,6 +474,7 @@ function _dispatchSwitch(command, args) {
         case "mergeLayer":               return mergeLayer(args);
         case "setTrackMatte":            return setTrackMatte(args);
         case "getLayerProperty":         return getLayerProperty(args);
+        case "getLayerProperties":       return getLayerProperties(args);
         case "setLayerProperty":         return setLayerProperty(args);
         case "distributeLayers3D":       return distributeLayers3D(args);
         case "cameraMove":               return cameraMove(args);
