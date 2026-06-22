@@ -33,13 +33,14 @@ cubic/
 
 ## Commands
 ```bash
-npm run build:server   # Compile src/index.ts → build/index.js
+npm run build:backend  # Bundle src/serve.ts + src/index.ts → build/ (bakes __CUBIC_BACKEND_BUILD_ID__)
+npm run build:server   # build/index.js only (MCP entry)
+npm run build:serve    # build/serve.js only (the backend the app spawns)
 npm run build:plugin   # Bundle CEP extension → cep-extension/dist/
-npm run build          # Both of the above
+npm run build          # build:backend + build:plugin
 npm run install-plugin # Copy extension to Adobe CEP folder + enable PlayerDebugMode
 npm start              # Run the MCP server standalone (not needed — Claude Code already spawns it)
 npm run serve          # Run the backend standalone (bridge + agent loop, no MCP) — the path Electron main spawns in §B
-npm run build:serve    # Compile src/serve.ts → build/serve.js
 ```
 
 ## When to restart what
@@ -51,8 +52,12 @@ npm run build:serve    # Compile src/serve.ts → build/serve.js
 
 The panel re-evaluates only the dispatch *footer* per command — **the handler bundle (`HANDLERS_BUNDLE`) is baked into `main.js` at build time and loaded once when the panel opens**, so a rebuild+install does NOT reach an already-open panel until it reloads. MCP server requires CC restart.
 
-## Dev-only stale-panel preflight
-Because the bundle is baked in at panel-open, editing a `.jsx` has no effect on an already-open panel until it reloads. `scripts/preflight-panel.mjs` closes that gap for developers: it rebuilds the plugin from source, then queries the connected panel's build id (stamped as `__CUBIC_BUILD_ID__`, reported in the `hello` handshake) against the freshly-built `dist/build-id`. If they differ it pushes a reload to the panel and exits non-zero with a terminal message, so the dev re-runs on fresh code. It runs at the top of the panel-requiring `test*` scripts (via `&&`) and dev-only in the Electron app's boot (`app/src/main/index.ts` → `runDevPreflight`, after `backend.start()`; quits the app if stale). The build id is a content hash, so an unchanged rebuild is a no-op (no spurious reloads). This is purely developer tooling — production gets fresh code via the auto-updater (no Cubic UI, no per-command runtime guard). Wire shapes (`buildId` in `hello`, `workerInfo`/`reload`/`devReload` control messages) are in `PROTOCOL.md`.
+## Dev-only stale-code preflight (panel + backend)
+Two dev artifacts go stale silently: the **panel** bundle (baked into `main.js` at panel-open) and the **backend** (`build/serve.js` + the cubic-ai brain it loads from `server/ai/build/`) — neither is rebuilt by `npm run dev` or by tests. The unified `scripts/preflight.mjs` (single entrypoint; runs `preflight-backend.mjs` + `preflight-panel.mjs`) closes both gaps for developers and exits non-zero if either was stale, so the dev re-runs on fresh code:
+- **Panel:** computes the latest build id from source, queries the open panel's `__CUBIC_BUILD_ID__` (reported in `hello`); if stale, rebuilds the plugin + reloads the panel (`devReload`).
+- **Backend:** content-hashes both TS trees (`ae-bridge/src` + `ai/src`, `.ts` only, excluding `*.test.ts`) into `__CUBIC_BACKEND_BUILD_ID__`, baked into `build/serve.js`+`build/index.js` by `scripts/build-backend.mjs` and reported by the running backend (`backendInfo`); if stale, rebuilds `server/ai` then `serve.js` (dependency order: the brain first so serve.js's runtime import is current).
+
+Both ids are content hashes, so an unchanged rebuild is a no-op (no spurious reloads/rebuilds). Runs at the top of the panel/backend-requiring `test*` scripts (via `&&`, incl. `server/ai`'s live tests → `node ../ae-bridge/scripts/preflight.mjs`) and dev-only in the Electron app's boot (`app/src/main/index.ts` → `runDevPreflight`, after `backend.start()`; quits the app if stale). Purely developer tooling — production gets fresh code via the auto-updater (no Cubic UI, no per-command runtime guard). Wire shapes (`buildId` in `hello`, `workerInfo`/`backendInfo`/`reload`/`devReload`) are in `PROTOCOL.md`.
 
 ## Env (one shared file)
 `startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).

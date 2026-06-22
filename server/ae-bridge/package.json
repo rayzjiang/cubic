@@ -5,20 +5,21 @@
   "main": "build/index.js",
   "type": "module",
   "scripts": {
-    "build:server": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external",
-    "build:serve": "esbuild src/serve.ts --bundle --platform=node --format=esm --outfile=build/serve.js --packages=external",
+    "build:server": "node scripts/build-backend.mjs --server",
+    "build:serve": "node scripts/build-backend.mjs --serve",
+    "build:backend": "node scripts/build-backend.mjs",
     "build:plugin": "node scripts/build-cep-extension.mjs",
-    "build": "npm run build:server && npm run build:serve && npm run build:plugin",
+    "build": "npm run build:backend && npm run build:plugin",
     "install-plugin": "node install-cep-extension.js",
     "install-plugin:dry": "node install-cep-extension.js --dry-run",
     "start": "node build/index.js",
     "serve": "node build/serve.js",
     "postinstall": "npm run build",
     "test:unit": "vitest run",
-    "test": "node scripts/preflight-panel.mjs && node test-integration.mjs",
-    "test:write": "node scripts/preflight-panel.mjs && node test-integration.mjs --write",
-    "test:clean": "node scripts/preflight-panel.mjs && node test-integration.mjs --cleanup-only",
-    "test:write-clean": "node scripts/preflight-panel.mjs && node test-integration.mjs --write --cleanup"
+    "test": "node scripts/preflight.mjs && node test-integration.mjs",
+    "test:write": "node scripts/preflight.mjs && node test-integration.mjs --write",
+    "test:clean": "node scripts/preflight.mjs && node test-integration.mjs --cleanup-only",
+    "test:write-clean": "node scripts/preflight.mjs && node test-integration.mjs --write --cleanup"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",

@@ -4,6 +4,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { COMMANDS } from '../commands.js';
 
+// Baked into serve.js/index.js at build time by scripts/build-backend.mjs (esbuild --define). Read
+// ONCE at module load; reported on demand to the dev backend preflight (backendInfo) so it can detect
+// a backend running stale code. Never recomputed at runtime. Mirrors the panel's __CUBIC_BUILD_ID__
+// guard in cep-extension/src/main.js; null when un-baked (a stray tsc/old build) → preflight proceeds.
+declare const __CUBIC_BACKEND_BUILD_ID__: string;
+const BACKEND_BUILD_ID: string | null =
+  typeof __CUBIC_BACKEND_BUILD_ID__ !== 'undefined' ? __CUBIC_BACKEND_BUILD_ID__ : null;
+
 export class BridgeError extends Error {
   code: string;
   constructor(code: string, message: string) {
@@ -123,6 +131,10 @@ class AEBridge {
         } else if (msg.type === 'workerInfo') {
           // Dev preflight queries the connected panel's build id to compare against the latest build.
           ws.send(JSON.stringify({ type: 'workerInfo', buildId: this.workerBuildId }));
+        } else if (msg.type === 'backendInfo') {
+          // Dev preflight queries THIS process's OWN baked build id (distinct from workerInfo, which
+          // relays the PANEL's id) to detect a backend running stale code. Static baked constant.
+          ws.send(JSON.stringify({ type: 'backendInfo', buildId: BACKEND_BUILD_ID }));
         } else if (CHAT_INBOUND_TYPES.has(msg.type)) {
           // Agent-chat channel: panel → loop (the full ChatInbound union — userChat/
           // cancel/queue/editQueue/removeQueue). The handler streams agentEvent

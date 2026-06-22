@@ -11,20 +11,22 @@ import { BackendSupervisor } from './backend.js'
 import { provisionBridge } from './installBridge.js'
 
 /**
- * DEV-ONLY: ensure the open AE panel runs the latest handler bundle. The panel bakes its bundle in
- * at open, so editing a .jsx doesn't take effect until it reloads. After the backend is up (so the
- * panel can reconnect + be queried), the preflight rebuilds from source; if the panel is stale it
- * reloads it and exits 1 — we then quit so the dev re-runs clean. Runs non-blocking so a fresh panel
- * (or AE closed) never delays launch. No-op when packaged (prod auto-updater handles real users).
+ * DEV-ONLY: ensure the open AE panel AND the running Node backend match the source. The panel bakes
+ * its bundle in at open and the backend runs from a pre-built serve.js (+ the cubic-ai brain), so
+ * editing a .jsx or any backend .ts doesn't take effect until they're rebuilt/reloaded. After the
+ * backend is up (so it + the reconnecting panel can be queried), the unified preflight rebuilds from
+ * source; if either is stale it reloads/rebuilds and exits 1 — we then quit so the dev re-runs clean
+ * on fresh code. Runs non-blocking so a fresh setup (or AE closed) never delays launch. No-op when
+ * packaged (prod auto-updater handles real users).
  */
 let preflightChild: ReturnType<typeof spawn> | null = null
 function runDevPreflight(): void {
   if (app.isPackaged) return
   const here = dirname(fileURLToPath(import.meta.url)) // app/out/main
-  const script = join(here, '..', '..', '..', 'server', 'ae-bridge', 'scripts', 'preflight-panel.mjs')
+  const script = join(here, '..', '..', '..', 'server', 'ae-bridge', 'scripts', 'preflight.mjs')
   if (!existsSync(script)) return
-  // The panel reconnects to the just-spawned backend a few seconds after launch, so give it a
-  // generous window to appear before deciding (vs the short default the tests use). Runs in the
+  // The panel/backend reconnect to the just-spawned backend a few seconds after launch, so give them
+  // a generous window to appear before deciding (vs the short default the tests use). Runs in the
   // background — launch isn't delayed; it's killed on quit so it never lingers if AE is closed.
   preflightChild = spawn(process.execPath, [script], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', CUBIC_PREFLIGHT_WAIT_MS: '30000' },
@@ -33,7 +35,7 @@ function runDevPreflight(): void {
   preflightChild.on('exit', (code) => {
     preflightChild = null
     if (code === 1) {
-      console.error('[main] AE panel was running a stale bundle — rebuilt + reloaded it. Re-run `npm run dev`.')
+      console.error('[main] Cubic panel and/or backend was stale — rebuilt + reloaded. Re-run `npm run dev`.')
       app.quit()
     }
   })

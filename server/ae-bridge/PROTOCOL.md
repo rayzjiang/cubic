@@ -32,16 +32,19 @@ implement what's on this page** — nothing else in the codebase is part of the 
 
 In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
 1. `type === "hello"` → register/replace the single **worker** client (records its `buildId`).
-2. `type === "devReload"` / `type === "workerInfo"` → **dev-only** control messages (see below).
+2. `type === "devReload"` / `type === "workerInfo"` / `type === "backendInfo"` → **dev-only** control messages (see below).
 3. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`/`list`/`loadHistory`) → agent **chat channel**.
 4. has an `ok` field → a **command response** from the worker (correlated by `id`).
 5. has a `command` field → a **command request** from an external caller.
 
-**Dev-only stale-panel preflight** (`scripts/preflight-panel.mjs`, not a product feature): the panel reports
-`buildId` (`__CUBIC_BUILD_ID__`, a content hash baked into `main.js` at build) in its `hello`. An external
-caller sends `{type:"workerInfo"}` → backend replies `{type:"workerInfo", buildId}` (the connected panel's id,
-or null). `{type:"devReload"}` → backend sends the worker `{type:"reload"}` (the panel calls `location.reload()`
-to pick up a freshly-built bundle). Used only to detect + refresh a stale dev panel; production uses the auto-updater.
+**Dev-only stale-code preflight** (`scripts/preflight.mjs` → panel + backend checks, not a product feature):
+the panel reports `buildId` (`__CUBIC_BUILD_ID__`, a content hash baked into `main.js` at build) in its `hello`.
+An external caller sends `{type:"workerInfo"}` → backend replies `{type:"workerInfo", buildId}` (the connected
+panel's id, or null). `{type:"devReload"}` → backend sends the worker `{type:"reload"}` (the panel calls
+`location.reload()` to pick up a freshly-built bundle). `{type:"backendInfo"}` → backend replies
+`{type:"backendInfo", buildId}` with its OWN baked `__CUBIC_BACKEND_BUILD_ID__` (content hash of `ae-bridge/src` +
+`ai/src`, or null if un-baked) — distinct from `workerInfo`, which relays the panel's id. Used only to detect +
+refresh a stale dev panel/backend; production uses the auto-updater.
 
 ## Channel 1 — Command / response (drive AE)
 

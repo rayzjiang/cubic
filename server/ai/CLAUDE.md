@@ -86,6 +86,7 @@ The model drives AE through a small parameterized tool set, **not** one tool per
 - `npm run test:matchnames` — **static** guard (CI, no AE): asserts every hardcoded `"ADBE …"` matchName in the `.jsx` handlers is AE-verified (effects, via `server/ae-bridge/tests/fixtures/ae-matchnames.json`) or in the reviewed text/shape baseline. Catches a wrong matchName (the class that shipped the glow bug). Regenerate the fixture after an AE upgrade: `cd server/ae-bridge && node scripts/introspect-matchnames.mjs`.
 - `npm run test:live` / `npm run test:chat` — context + full LLM round-trip; need AE + MCP panel + `ANTHROPIC_API_KEY`.
 - `npm run test:agent` — **full agent loop** end-to-end (snapshot → context → chat → tools → loop); needs AE + panel + `ANTHROPIC_API_KEY`. ⚠️ mutates the project (creates a `__CUBIC_AGENT_TEST` comp — delete after).
+- The live/AE tests (`test:live`/`test:chat`/`test:agent`/`test:editing`/`test:motion`) run the ae-bridge dev preflight first (`node ../ae-bridge/scripts/preflight.mjs`) — it rebuilds `cubic-ai` + the backend/panel when stale, so a live test never runs against stale compiled code (see `server/ae-bridge/CLAUDE.md`).
 
 ## Engineering constraints
 Same as `server/ae-bridge/CLAUDE.md`: no sleeps/polling, match existing style, no per-variant tool explosion.
