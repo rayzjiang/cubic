@@ -379,6 +379,59 @@ function _configurableChildren(rootProp, rootPath) {
     return out;
 }
 
+// One-level drill-down for the getLayerProperties pull tool. Returns ONLY the IMMEDIATE children of
+// rootProp: a GROUP (has sub-properties) → { p, g:true } (navigable — pass p back as scope); a settable
+// LEAF → { p, k } (k=keyframeable). NO name (=p's last element), no value/numKeys (lean — values come from
+// getLayerProperty). Mirrors _configurableChildren path semantics: SKIP_CONTAINERS are omitted;
+// IMPLICIT_CONTAINERS are flattened (recurse THROUGH them so their children surface at this level with the
+// container segment NOT in p). Per-level cap; a final { truncated:true } sentinel if hit.
+function _configurableLevel(rootProp, rootPath) {
+    var out = [];
+    var seen = {};
+    var MAX_LEVEL = 60;
+    var truncated = false;
+    function inList(name, list) { for (var c = 0; c < list.length; c++) { if (list[c] === name) { return true; } } return false; }
+    function isImplicit(prop) { var mn = null; try { mn = prop.matchName; } catch (e) {} return mn ? inList(mn, IMPLICIT_CONTAINERS) : false; }
+    function isSkipped(prop) { var nm = null; try { nm = prop.name; } catch (e) {} return nm ? inList(nm, SKIP_CONTAINERS) : false; }
+    // Emit the immediate children of `group` at `path`. Implicit containers are recursed THROUGH (their
+    // children appear at this same level with flattened paths), matching how _configurableChildren builds p.
+    function emitLevel(group, path) {
+        var n = 0;
+        try { n = group.numProperties; } catch (e) { n = 0; }
+        for (var i = 1; i <= n; i++) {
+            if (out.length >= MAX_LEVEL) { truncated = true; return; }
+            var prop = null;
+            try { prop = group.property(i); } catch (e) { continue; }
+            if (!prop) { continue; }
+            if (isSkipped(prop)) { continue; }
+            if (isImplicit(prop)) { emitLevel(prop, path); continue; }  // flatten through — stay at this level
+            var kids = undefined;
+            try { kids = prop.numProperties; } catch (e) {}
+            if (kids !== undefined && kids > 0) {
+                var gp = path.concat([prop.name]);
+                var gk = gp.join(">");
+                if (seen[gk]) { continue; }
+                seen[gk] = true;
+                out.push({ p: gp, g: true });  // navigable group
+            } else {
+                var settable = false;
+                try { settable = !!prop.setValue; } catch (e) {}
+                if (!settable) { continue; }
+                var lp = path.concat([prop.name]);
+                var lk = lp.join(">");
+                if (seen[lk]) { continue; }
+                seen[lk] = true;
+                var keyframeable = false;
+                try { keyframeable = (prop.canVaryOverTime === true); } catch (e2) {}
+                out.push({ p: lp, k: keyframeable });  // settable leaf
+            }
+        }
+    }
+    try { emitLevel(rootProp, rootPath); } catch (e) {}
+    if (truncated) { out.push({ truncated: true }); }
+    return out;
+}
+
 // Single-leaf variant of _configurableChildren: for a command that creates/exposes ONE specific
 // property (e.g. Time Remap) where walking the whole layer would be noise. Returns the same lean
 // { n:name, p:path, k:keyframeable, v:value[, nk:numKeys] } entry shape, wrapped in an array (empty if no prop).

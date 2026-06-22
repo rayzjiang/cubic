@@ -38,6 +38,26 @@ describe('describeToolResult', () => {
     expect(describeToolResult(name, input, result)).toBe('Moved playhead to 2s');
   });
 
+  // Labels run on the PROXY-TRIMMED content (loop.ts), which now strips status/message/previous*.
+  // These assert the label is identical with vs without those fields — i.e. the diet never breaks a label.
+  describe('labels resolve on status-less / echo-less trimmed results', () => {
+    it('deleteLayer label unaffected by dropped status', () => {
+      const { name, input } = run('deleteLayer', { layerIndex: 3 });
+      expect(describeToolResult(name, input, { deleted: { name: 'BG Solid', index: 3 } }))
+        .toBe(describeToolResult(name, input, { status: 'success', deleted: { name: 'BG Solid', index: 3 } }));
+    });
+    it('setLayerProperty label unaffected by dropped status + previousValue', () => {
+      const { name, input } = run('setLayerProperty', { propertyPath: ['Transform', 'Opacity'] });
+      expect(describeToolResult(name, input, { property: { name: 'Opacity', value: 50 } }))
+        .toBe(describeToolResult(name, input, { status: 'success', property: { name: 'Opacity', value: 50 }, previousValue: 100 }));
+    });
+    it('setLayerProperties label survives the collapsed receipt (layer.name kept)', () => {
+      const { name, input } = run('setLayerProperties', { layerIndex: 1 });
+      const collapsed = { layer: { name: 'Hello', index: 1, changedProperties: ['fontSize'], fontSize: 300 } };
+      expect(describeToolResult(name, input, collapsed)).toContain('Hello');
+    });
+  });
+
   it('falls back to the input-based label when the result has no specific field', () => {
     const { name, input } = run('deleteLayer', { layerName: 'Logo' });
     // Empty/odd result → no resolved name → falls back to describeToolCall.

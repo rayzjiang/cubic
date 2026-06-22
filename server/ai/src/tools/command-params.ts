@@ -148,8 +148,8 @@ export const COMMAND_PARAMS = {
   },
   getLayerProperties: {
     domain: 'Layers',
-    summary: "List a layer's settable property paths {n:name,p:path,k:keyframeable} — call before writing to get exact paths. Omit scope for the whole layer (Transform-first, capped); pass scope to walk one subtree.",
-    params: { scope: 'array — root propertyPath to walk e.g. ["Transform"] or ["Effects","Gaussian Blur"] (omit for whole layer)' },
+    summary: "Drill-down catalog of a layer's settable paths — one level: groups as {p,g} (pass p as scope to drill in), settable leaves as {p,k}. Call before writing by path. Omit scope for top-level groups; pass scope to list one subtree's children.",
+    params: { scope: 'array — root propertyPath to list children of e.g. ["Transform"] or ["Effects","Gaussian Blur"] (omit for top-level groups)' },
   },
   setLayerProperty: {
     domain: 'Layers',

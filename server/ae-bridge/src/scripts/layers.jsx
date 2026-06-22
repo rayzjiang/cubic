@@ -1720,11 +1720,11 @@ function getLayerProperty(args) {
     }
 }
 
-// getLayerProperties — return a layer's settable-property CATALOG ({n,p,k}) on demand, so create/mutate
-// results no longer need to ship it on every call. scope: optional root propertyPath array (e.g.
-// ["Transform"] or ["Effects","Gaussian Blur"]) — walk only that subtree; omit for the whole layer
-// (Transform-first, capped). Same shape _configurableChildren returns elsewhere, so the agent reads it
-// identically. Bad scope throws PROPERTY_NOT_FOUND via _resolvePropertyByPath (no silent guessing).
+// getLayerProperties — drill-down catalog of a layer's settable property paths, pulled on demand so
+// create/mutate results never ship it. Returns ONE level: the immediate children of the scoped node —
+// groups as { p, g:true } (pass p as the next scope to drill in), settable leaves as { p, k }. scope:
+// optional root propertyPath array (e.g. ["Transform"] or ["Effects","Gaussian Blur"]); omit for the
+// layer's top-level groups. Bad scope throws PROPERTY_NOT_FOUND via _resolvePropertyByPath (no guessing).
 function getLayerProperties(args) {
     try {
         var resolved = _resolveCompAndLayer(args);
@@ -1737,7 +1737,7 @@ function getLayerProperties(args) {
             rootPath = args.scope;
         }
 
-        return JSON.stringify({ status: "success", configurableProperties: _configurableChildren(rootProp, rootPath) }, null, 2);
+        return JSON.stringify({ status: "success", configurableProperties: _configurableLevel(rootProp, rootPath) }, null, 2);
     } catch (e) {
         return JSON.stringify({ status: "error", errorCode: e.code || ERROR_CODES.INTERNAL_ERROR, message: e.toString(), line: e.line }, null, 2);
     }

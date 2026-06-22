@@ -14,59 +14,92 @@ import { executeTool, trimConfigurableProperties } from './executeTool.js';
 const runScript = (script: string): ToolUse => ({ id: 'x', name: 'runScript', input: { script } });
 
 describe('trimConfigurableProperties (RTK-style result diet)', () => {
-  it('DROPS configurableProperties by default (model pulls on demand)', () => {
+  it('DROPS configurableProperties + status by default (model pulls on demand)', () => {
     const input = JSON.stringify({
       status: 'success',
       layer: { name: 'BG', index: 1 },
-      configurableProperties: [
-        { n: 'Anchor Point', p: ['Transform', 'Anchor Point'], k: true, v: [960, 540, 0], nk: 0 },
-        { n: 'Opacity', p: ['Transform', 'Opacity'], k: true, v: 100, nk: 2 },
-      ],
+      configurableProperties: [{ p: ['Transform', 'Opacity'], k: true }],
     });
     const out = JSON.parse(trimConfigurableProperties(input, 'createLayer'));
-    expect(out.configurableProperties).toBeUndefined();
-    expect(out.layer).toEqual({ name: 'BG', index: 1 }); // identity receipt untouched
+    expect(out).toEqual({ layer: { name: 'BG', index: 1 } }); // catalog + status gone, identity kept
   });
 
-  it('KEEPS configurableProperties (incl v/nk) for the getLayerProperties pull tool', () => {
+  it('KEEPS the drill-down catalog ({p,k}/{p,g}/{truncated}) for getLayerProperties', () => {
     const catalog = [
-      { n: 'Anchor Point', p: ['Transform', 'Anchor Point'], k: true, v: [960, 540, 0], nk: 0 },
-      { n: 'Opacity', p: ['Transform', 'Opacity'], k: true, v: 100, nk: 2 },
+      { p: ['Transform', 'Opacity'], k: true },
+      { p: ['Effects'], g: true },
+      { truncated: true },
     ];
     const input = JSON.stringify({ status: 'success', configurableProperties: catalog });
     const out = JSON.parse(trimConfigurableProperties(input, 'getLayerProperties'));
     expect(out.configurableProperties).toEqual(catalog); // verbatim — it IS the requested signal
+    expect(out.status).toBeUndefined();
   });
 
-  it('drops configurableProperties nested inside a batch result (any depth)', () => {
+  describe('status elimination (is_error conveys success/error)', () => {
+    it('success → drops status AND boilerplate message, keeps payload', () => {
+      const input = JSON.stringify({ status: 'success', message: 'Text layer created successfully', layer: { name: 'Y', index: 1, type: 'text' } });
+      expect(JSON.parse(trimConfigurableProperties(input, 'createLayer'))).toEqual({ layer: { name: 'Y', index: 1, type: 'text' } });
+    });
+    it('error → drops the status word, keeps errorCode + message', () => {
+      const input = JSON.stringify({ status: 'error', errorCode: 'LAYER_NOT_FOUND', message: 'no layer 9' });
+      expect(JSON.parse(trimConfigurableProperties(input, 'setLayerProperty'))).toEqual({ errorCode: 'LAYER_NOT_FOUND', message: 'no layer 9' });
+    });
+    it('noop → drops status, adds noop:true, keeps message (is_error is false for a noop)', () => {
+      const input = JSON.stringify({ status: 'noop', message: 'already at earliest restore point' });
+      expect(JSON.parse(trimConfigurableProperties(input, 'restoreProject'))).toEqual({ noop: true, message: 'already at earliest restore point' });
+    });
+    it('warning → drops status, keeps the warning field + payload', () => {
+      const input = JSON.stringify({ status: 'warning', warning: 'effect added but a setting did not stick', layer: { name: 'X' } });
+      expect(JSON.parse(trimConfigurableProperties(input, 'applyEffect'))).toEqual({ warning: 'effect added but a setting did not stick', layer: { name: 'X' } });
+    });
+  });
+
+  it('drops historical-echo keys (previous*/prev*/old*) at any depth; modifiedLayers survives', () => {
     const input = JSON.stringify({
       status: 'success',
+      previousValues: { opacity: 50 }, previousPositions: [[0, 0]], prevPos: [1, 2], older: 3, oldThing: 4,
+      modifiedLayers: [{ index: 1, name: 'A' }],
+      nested: { previousParent: 'Null 1' },
+    });
+    const out = JSON.parse(trimConfigurableProperties(input, 'alignLayers'));
+    expect(out).toEqual({ modifiedLayers: [{ index: 1, name: 'A' }], nested: {} });
+  });
+
+  it('collapses the generic batch envelope (all-success): drops counts, inlines sub-payloads, preserves length', () => {
+    const input = JSON.stringify({
+      status: 'success', total: 2, executed: 2, succeeded: 2, failed: 0, noopCount: 0, stoppedEarly: false,
       results: [
-        { index: 0, command: 'deleteLayer', result: { status: 'success' } },
-        { index: 1, command: 'createLayer', result: { layer: { name: 'Rect' }, configurableProperties: [{ n: 'Scale', p: ['Transform', 'Scale'], k: true }] } },
+        { index: 0, command: 'createLayer', success: true, status: 'success', result: { status: 'success', message: 'created', layer: { name: 'A', index: 1 }, configurableProperties: [{ p: ['Transform', 'Opacity'], k: true }] } },
+        { index: 1, command: 'alignLayers', success: true, status: 'success', result: { status: 'success', modifiedLayers: [{ index: 1 }] } },
       ],
     });
     const out = JSON.parse(trimConfigurableProperties(input, 'batch'));
-    expect(out.results[1].result.configurableProperties).toBeUndefined();
-    expect(out.results[1].result.layer).toEqual({ name: 'Rect' });
+    expect(out.total).toBeUndefined();
+    expect(out.status).toBeUndefined();
+    expect(out.results).toHaveLength(2);
+    expect(out.results[0]).toEqual({ layer: { name: 'A', index: 1 } }); // inlined payload, catalog dropped
+    expect(out.results[1]).toEqual({ modifiedLayers: [{ index: 1 }] });
   });
 
-  it('drops previousValues at every depth, for any command', () => {
+  it('collapses the batch envelope (partial failure): keeps WHICH+WHY on the failed sub, drops envelope errorCode', () => {
     const input = JSON.stringify({
-      status: 'success',
-      previousValues: { opacity: 50 },
-      results: [{ status: 'success', previousValues: { scale: [100, 100, 100] } }],
+      status: 'error', total: 2, failed: 1, errorCode: 'BATCH_FAILED',
+      results: [
+        { index: 0, command: 'createLayer', success: true, status: 'success', result: { status: 'success', layer: { name: 'A', index: 1 } } },
+        { index: 1, command: 'deleteLayer', success: false, status: 'error', result: { status: 'error', errorCode: 'LAYER_NOT_FOUND', message: 'gone' } },
+      ],
     });
-    const out = JSON.parse(trimConfigurableProperties(input, 'someCommand'));
-    expect(out.previousValues).toBeUndefined();
-    expect(out.results[0].previousValues).toBeUndefined();
-    expect(out.results[0].status).toBe('success');
+    const out = JSON.parse(trimConfigurableProperties(input, 'batch'));
+    expect(out.errorCode).toBeUndefined(); // envelope BATCH_FAILED marker — is_error conveys it
+    expect(out.results).toHaveLength(2);
+    expect(out.results[0]).toEqual({ layer: { name: 'A', index: 1 } });
+    expect(out.results[1]).toEqual({ command: 'deleteLayer', errorCode: 'LAYER_NOT_FOUND', message: 'gone' });
   });
 
   it('collapses a setLayerProperties receipt to identity + changed props + final values', () => {
     const input = JSON.stringify({
-      status: 'success',
-      message: 'Layer properties updated successfully',
+      status: 'success', message: 'Layer properties updated successfully',
       layer: {
         name: 'Hello', index: 1, threeDLayer: false,
         position: [660, 629, 0], scale: [100, 100, 100], rotation: 0, opacity: 100,
@@ -76,9 +109,7 @@ describe('trimConfigurableProperties (RTK-style result diet)', () => {
       previousValues: { fontSize: 245, fillColor: [1, 1, 1] },
     });
     const out = JSON.parse(trimConfigurableProperties(input, 'setLayerProperties'));
-    expect(out.status).toBe('success');
-    expect(out.previousValues).toBeUndefined();
-    expect(out.layer).toEqual({ name: 'Hello', index: 1, changedProperties: ['fontSize', 'fillColor'], fontSize: 300, fillColor: [1, 0, 0] });
+    expect(out).toEqual({ layer: { name: 'Hello', index: 1, changedProperties: ['fontSize', 'fillColor'], fontSize: 300, fillColor: [1, 0, 0] } });
   });
 
   it('keeps changedProperties:[] as the noop signal', () => {
@@ -87,7 +118,7 @@ describe('trimConfigurableProperties (RTK-style result diet)', () => {
     expect(out.layer).toEqual({ name: 'X', index: 2, changedProperties: [] });
   });
 
-  it('collapses batchSetLayerProperties success results, passes error sub-results through, preserves length', () => {
+  it('collapses batchSetLayerProperties: success subs to identity+changed, error subs keep errorCode+message, length preserved', () => {
     const input = JSON.stringify({
       status: 'success',
       results: [
@@ -97,8 +128,14 @@ describe('trimConfigurableProperties (RTK-style result diet)', () => {
     });
     const out = JSON.parse(trimConfigurableProperties(input, 'batchSetLayerProperties'));
     expect(out.results).toHaveLength(2);
-    expect(out.results[0]).toEqual({ layerIndex: 1, name: 'A', status: 'success', changedProperties: ['scale'], scale: [100, 100, 100] });
-    expect(out.results[1]).toEqual({ layerIndex: 2, name: 'B', status: 'error', errorCode: 'LAYER_NOT_FOUND', message: 'gone' });
+    expect(out.results[0]).toEqual({ layerIndex: 1, name: 'A', changedProperties: ['scale'], scale: [100, 100, 100] });
+    expect(out.results[1]).toEqual({ layerIndex: 2, name: 'B', errorCode: 'LAYER_NOT_FOUND', message: 'gone' });
+  });
+
+  it('trims getLayerProperty: drops name/path/isTimeVarying, keeps value/numKeys/expression', () => {
+    const input = JSON.stringify({ status: 'success', property: { name: 'Opacity', path: ['Transform', 'Opacity'], value: 100, numKeys: 2, isTimeVarying: true, canSetExpression: true, hasExpression: false, expression: '' } });
+    const out = JSON.parse(trimConfigurableProperties(input, 'getLayerProperty'));
+    expect(out).toEqual({ property: { value: 100, numKeys: 2, canSetExpression: true, hasExpression: false, expression: '' } });
   });
 
   it('leaves read results (e.g. keyframes, fonts) untouched', () => {
@@ -110,10 +147,9 @@ describe('trimConfigurableProperties (RTK-style result diet)', () => {
     expect(trimConfigurableProperties('plain string result', 'createLayer')).toBe('plain string result');
   });
 
-  it('still drops catalog + previousValues with no command arg (back-compat default)', () => {
-    const input = JSON.stringify({ configurableProperties: [{ n: 'Opacity', p: ['Transform', 'Opacity'], k: true }], previousValues: { opacity: 0 }, layer: { name: 'Z' } });
-    const out = JSON.parse(trimConfigurableProperties(input));
-    expect(out).toEqual({ layer: { name: 'Z' } });
+  it('still drops catalog + previous* + status with no command arg (back-compat default)', () => {
+    const input = JSON.stringify({ configurableProperties: [{ p: ['Transform', 'Opacity'], k: true }], previousValues: { opacity: 0 }, status: 'success', layer: { name: 'Z' } });
+    expect(JSON.parse(trimConfigurableProperties(input))).toEqual({ layer: { name: 'Z' } });
   });
 });
 

@@ -125,32 +125,56 @@ interface RawOutcome {
 }
 
 /**
- * RTK-style proxy diet of a tool result before it enters history, under one rule:
- *  - CATALOG: create/mutate handlers attach a `configurableProperties` array (the menu of ~80 settable
- *    property paths, ~3K+ tokens) on EVERY result, re-billed every loop iteration. We DROP it entirely —
- *    the model pulls paths on demand via getLayerProperties (the ONE command whose catalog is kept, gated
- *    by `keepCatalog`). The bridge throws PROPERTY_NOT_FOUND on a bad path, so pulling can't regress to guessing.
- *  - RECEIPTS: setLayerProperties/batchSetLayerProperties echo the whole (mostly unchanged) layer plus
- *    `previousValues` — none of which any AI code reads. We collapse the echo to identity + changedProperties
- *    + the FINAL values of the changed props (so the model still sees clamp/coercion + the []=noop signal),
- *    and drop `previousValues` universally.
- *  - READS: every other field passes through verbatim — large reads (getLayerKeyframes, listFonts,
- *    getLayerProperties) are large because their values ARE the signal the model asked for.
+ * RTK-style proxy diet of a tool result before it enters history. One principle: drop anything the model
+ * can trivially derive (from another field, its own call, or the tool_result `is_error` flag); keep only
+ * genuine signal. Less noise = fewer tokens AND fewer hallucinations. The bridge handlers are untouched —
+ * we only reshape the model-facing content here.
+ *  - CATALOG: `configurableProperties` is dropped from create/mutate results (the model pulls paths on
+ *    demand via getLayerProperties, the ONE command whose catalog is kept via `keepCatalog`).
+ *  - STATUS: the `status` key is eliminated — `is_error` on the block already conveys success/error.
+ *    success → drop status + boilerplate message; error → drop status, keep errorCode+message; noop → drop
+ *    status, add `noop:true` (is_error is false for a noop), keep message; warning → drop status, keep warning.
+ *  - HISTORICAL ECHOES: any `previous*`/`prev*`/`old*` key (before-snapshots) — never read by code.
+ *  - BATCH/RECEIPTS: the batch envelope's derivable counts + per-sub bookkeeping are dropped and sub-results
+ *    inlined; setLayerProperties echoes collapse to identity + changed props' final values.
+ *  - READS: getLayerProperty drops its echoed/derivable fields; other reads pass through (their values ARE
+ *    the signal).
  */
 const FINAL_VALUE_KEYS = new Set([
   'position', 'scale', 'rotation', 'opacity', 'anchorPoint', 'inPoint', 'outPoint',
   'stretch', 'threeDLayer', 'text', 'fontFamily', 'fontSize', 'fillColor',
 ]);
 
+// Before-snapshot keys (previousValues/previousPositions/prevPos/older/…). Verified: no server/ai code
+// reads any; `modifiedLayers` (read by align/sequence labels) does NOT match this, so it survives.
+const HISTORICAL_ECHO = /^(previous|prev|old)/;
+
+// Batch ENVELOPE bookkeeping the model never needs — counts derivable from `results`; is_error + each
+// surviving sub-result's errorCode carry partial-failure info. (NOT `errorCode` — that's real signal on
+// error results; the envelope-level BATCH_FAILED marker is dropped in collapseBatchEnvelope instead.)
+const BATCH_ENVELOPE_DROP = new Set(['total', 'executed', 'succeeded', 'failed', 'noopCount', 'stoppedEarly']);
+
+/** Eliminate the `status` key in place (is_error conveys success/error; noop needs an explicit flag). */
+function applyStatusSweep(out: Record<string, unknown>): void {
+  const st = out.status;
+  if (st === undefined) return;
+  delete out.status;
+  if (st === 'success') { if (out.message !== undefined) delete out.message; } // boilerplate "… successfully"
+  else if (st === 'noop') { out.noop = true; }                                 // keep message (the why)
+  // 'error' keeps errorCode + message; 'warning' keeps the warning field + payload; unknown → just drop label
+}
+
 function deepTrim(node: unknown, keepCatalog: boolean): unknown {
   if (Array.isArray(node)) return node.map((n) => deepTrim(n, keepCatalog));
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-      if (k === 'previousValues') continue;                          // never read by code — drop at any depth
+      if (HISTORICAL_ECHO.test(k)) continue;                         // before-snapshots — never read
       if (k === 'configurableProperties' && !keepCatalog) continue;  // pulled on demand via getLayerProperties
+      if (BATCH_ENVELOPE_DROP.has(k)) continue;                      // derivable batch counts
       out[k] = deepTrim(v, keepCatalog);
     }
+    applyStatusSweep(out);
     return out;
   }
   return node;
@@ -160,9 +184,8 @@ function deepTrim(node: unknown, keepCatalog: boolean): unknown {
 function collapseLayerReceipt(layer: Record<string, unknown>): Record<string, unknown> {
   const changed = Array.isArray(layer.changedProperties) ? (layer.changedProperties as string[]) : [];
   const out: Record<string, unknown> = {};
-  // Identity + per-op status: the single-layer echo nests under `layer` with `index` (status is
-  // top-level); batch sub-results are flat and carry their own `layerIndex` + `status`.
-  for (const k of ['name', 'index', 'layerIndex', 'status']) if (k in layer) out[k] = layer[k];
+  // Identity only — status is already gone (deepTrim ran first). Single echo nests `index`; batch subs `layerIndex`.
+  for (const k of ['name', 'index', 'layerIndex']) if (k in layer) out[k] = layer[k];
   out.changedProperties = changed;
   for (const k of changed) if (FINAL_VALUE_KEYS.has(k) && k in layer) out[k] = layer[k];
   return out;
@@ -175,13 +198,43 @@ function collapseWriteReceipt(node: unknown, command: string): unknown {
     return { ...r, layer: collapseLayerReceipt(r.layer as Record<string, unknown>) };
   }
   if (command === 'batchSetLayerProperties' && Array.isArray(r.results)) {
+    // status was stripped by deepTrim, so an error sub is identified by a surviving `errorCode`.
     return {
       ...r,
       results: (r.results as Array<Record<string, unknown>>).map((res) =>
-        res && res.status === 'error' ? res : collapseLayerReceipt(res)),
+        res && 'errorCode' in res ? res : collapseLayerReceipt(res)),
     };
   }
   return node;
+}
+
+/** Collapse the generic `batch` TOOL envelope: inline each sub-result's payload, keep only failure info. */
+function collapseBatchEnvelope(node: unknown): unknown {
+  const r = node as Record<string, unknown>;
+  if (!r || typeof r !== 'object' || !Array.isArray(r.results)) return node;
+  const results = (r.results as Array<Record<string, unknown>>).map((sub) => {
+    if (!sub || typeof sub !== 'object') return sub;
+    const inner = (sub.result && typeof sub.result === 'object') ? (sub.result as Record<string, unknown>) : sub;
+    if ('errorCode' in inner) {
+      // partial-failure: keep WHICH (command) + WHY (errorCode/message); drop index/success bookkeeping.
+      return { command: sub.command, errorCode: inner.errorCode, message: inner.message };
+    }
+    return inner; // success: inline the handler payload (drop index/command/success + the `result` nesting)
+  });
+  const out: Record<string, unknown> = { ...r, results };
+  delete out.errorCode; // envelope-level BATCH_FAILED marker — is_error conveys it
+  return out;
+}
+
+/** getLayerProperty read: drop echoed/derivable fields (name=path[-1], echoed path, isTimeVarying). */
+function trimReadProperty(node: unknown): unknown {
+  const r = node as Record<string, unknown>;
+  if (!r || typeof r !== 'object' || !r.property || typeof r.property !== 'object') return node;
+  const p = { ...(r.property as Record<string, unknown>) };
+  delete p.name;          // === path[-1] (model passed the path)
+  delete p.path;          // echoed input
+  delete p.isTimeVarying; // = numKeys>0 || hasExpression (derivable)
+  return { ...r, property: p };
 }
 
 export function trimConfigurableProperties(content: string, command?: string): string {
@@ -191,6 +244,10 @@ export function trimConfigurableProperties(content: string, command?: string): s
   let trimmed = deepTrim(parsed, command === 'getLayerProperties');
   if (command === 'setLayerProperties' || command === 'batchSetLayerProperties') {
     trimmed = collapseWriteReceipt(trimmed, command);
+  } else if (command === 'batch') {
+    trimmed = collapseBatchEnvelope(trimmed);
+  } else if (command === 'getLayerProperty') {
+    trimmed = trimReadProperty(trimmed);
   }
   return JSON.stringify(trimmed);
 }
