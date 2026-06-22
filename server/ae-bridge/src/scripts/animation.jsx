@@ -6,17 +6,20 @@
 // Each entry: { defaults: {...}, template: "..." }
 // Template uses ${paramName} placeholders substituted at apply-time.
 var EXPRESSION_PRESETS = (function() {
-    // Decaying-sine overshoot (motionscripts.com / BOUNCr "Overshoot+"). Velocity-driven:
-    // settles past the target with a symmetric over/under oscillation. amp is the heavy-lifting
-    // knob; freq 2 + decay 4 are the BOUNCr-documented good defaults. Use for pendulum/spring
-    // overshoot and springy settles — NOT a ball hitting a floor (that's INERTIAL_BOUNCE).
+    // Decaying-sine overshoot (motionscripts.com / BOUNCr "Overshoot+"). Value-delta-driven:
+    // amplitude comes from how far the property moved into the settle key (key(n).value-key(n-1).value),
+    // NOT the keyframe's temporal velocity — so it survives any later easing edit (easing the settle key
+    // to a stop can't zero the bounce). Settles past the target with a symmetric over/under oscillation;
+    // amp is the heavy-lifting knob (~0.1 = overshoot ~10% of the distance traveled), freq 2 + decay 4 are
+    // the BOUNCr-documented good defaults. Use for pendulum/spring overshoot and springy settles — NOT a
+    // ball hitting a floor (that's INERTIAL_BOUNCE).
     var _overshootTpl = [
         "var amp=${amp};var freq=${freq};var decay=${decay};",
         "var n=0;",
         "if(numKeys>0){n=nearestKey(time).index;if(nearestKey(time).time>time)n--;}",
-        "var t=(n===0)?0:time-key(n).time;",
-        "if(n>0){var v=velocityAtTime(key(n).time-thisComp.frameDuration/10);",
-        "value+v*amp*Math.sin(freq*2*Math.PI*t)/Math.exp(decay*t);}else{value;}"
+        "if(n>1){var t=time-key(n).time;",
+        "var d=key(n).value-key(n-1).value;",
+        "value+d*amp*Math.sin(freq*2*Math.PI*t)/Math.exp(decay*t);}else{value;}"
     ].join("\n");
     // Realistic bounce (Dan Ebberts / BOUNCr "Bounce Back"). Velocity-driven ballistic bounce
     // that never crosses the target — like a ball bouncing on a floor — losing energy each
@@ -260,10 +263,29 @@ function setLayerKeyframe(args) {
 
         property.setValueAtTime(timeInSeconds, finalVal);
 
+        // Auto-ease the key we just set (easyEase by default) so manual moves are never linear-ugly —
+        // linear is opt-in via easeType:"linear". An explicit curve (easeType/influence) lands in the
+        // same call. Mirrors the "easing is the default" rule so the model can't forget a separate step.
+        var kfEaseType = args.easeType || "easyEase";
+        if (kfEaseType !== "linear") {
+            var easedKey = 0;
+            for (var fk = 1; fk <= property.numKeys; fk++) {
+                if (Math.abs(property.keyTime(fk) - timeInSeconds) < 0.0001) { easedKey = fk; break; }
+            }
+            if (easedKey > 0) {
+                _applyKeyEase(property, easedKey, {
+                    easeType: args.easeType,
+                    inInfluence: args.inInfluence, outInfluence: args.outInfluence,
+                    inSpeed: args.inSpeed, outSpeed: args.outSpeed
+                });
+            }
+        }
+
         return JSON.stringify({
             status: "success",
             message: "Keyframe set for '" + property.name + "' on layer '" + layer.name + "' at " + timeInSeconds + "s.",
             property: { name: property.name, path: args.propertyPath || null, propertyName: args.propertyName || null },
+            easeType: kfEaseType,
             previousKey: previousKey
         }, null, 2);
     } catch (e) {
@@ -318,6 +340,57 @@ function setLayerExpression(args) {
     }
 }
 
+// Shared per-key easing application (used by setKeyframeEasing AND setLayerKeyframe's auto-ease).
+// opts: { easeType, inInfluence, outInfluence, inSpeed, outSpeed }. Returns true if the key was eased.
+function _applyKeyEase(property, ki, opts) {
+    if (ki < 1 || ki > property.numKeys) return false;
+
+    var easeType = opts.easeType || "easyEase";
+    // EASY_EASE doesn't exist as a constant — Easy Ease is BEZIER with speed=0, influence=33.33
+    var typeMap = {
+        "easyEase": [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER],
+        "easeIn":   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.LINEAR],
+        "easeOut":  [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.BEZIER],
+        "linear":   [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR],
+        "hold":     [KeyframeInterpolationType.HOLD,   KeyframeInterpolationType.HOLD],
+        "bezier":   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER]
+    };
+    var types = typeMap[easeType] || typeMap["easyEase"];
+
+    var curIn  = property.keyInTemporalEase(ki);
+    var curOut = property.keyOutTemporalEase(ki);
+    var dim = curIn.length; // 1=scalar, 2=2D, 3=3D
+
+    var hasExplicit = opts.inInfluence !== undefined || opts.outInfluence !== undefined ||
+                      opts.inSpeed !== undefined || opts.outSpeed !== undefined;
+    var applyDefaultEase = (easeType === "easyEase" || easeType === "easeIn" || easeType === "easeOut") && !hasExplicit;
+
+    if (applyDefaultEase) {
+        var defArr = [];
+        for (var d = 0; d < dim; d++) { defArr.push(new KeyframeEase(0, 33.33)); }
+        var easeInArr  = (easeType === "easeOut") ? curIn  : defArr;
+        var easeOutArr = (easeType === "easeIn")  ? curOut : defArr;
+        property.setTemporalEaseAtKey(ki, easeInArr, easeOutArr);
+    } else if (hasExplicit) {
+        var newInArr = [], newOutArr = [];
+        for (var d = 0; d < dim; d++) {
+            var inSpd  = (opts.inSpeed      !== undefined) ? opts.inSpeed      : curIn[d].speed;
+            var inInf  = (opts.inInfluence  !== undefined) ? opts.inInfluence  : curIn[d].influence;
+            var outSpd = (opts.outSpeed     !== undefined) ? opts.outSpeed     : curOut[d].speed;
+            var outInf = (opts.outInfluence !== undefined) ? opts.outInfluence : curOut[d].influence;
+            newInArr.push(new KeyframeEase(inSpd, inInf));
+            newOutArr.push(new KeyframeEase(outSpd, outInf));
+        }
+        property.setTemporalEaseAtKey(ki, newInArr, newOutArr);
+    }
+
+    // Set interpolation types LAST: setTemporalEaseAtKey (above) forces BEZIER on both tangents it
+    // touches, so an intended LINEAR side (easeIn/easeOut) must be applied AFTER the ease, or it
+    // silently reverts to bezier (i.e. easeIn/easeOut behaved like easyEase).
+    property.setInterpolationTypeAtKey(ki, types[0], types[1]);
+    return true;
+}
+
 // U: setKeyframeEasing
 function setKeyframeEasing(args) {
     try {
@@ -364,54 +437,15 @@ function setKeyframeEasing(args) {
         }
 
         var easeType = args.easeType || "easyEase";
-        // EASY_EASE doesn't exist as a constant — Easy Ease is BEZIER with speed=0, influence=33.33
-        var typeMap = {
-            "easyEase": [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER],
-            "easeIn":   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.LINEAR],
-            "easeOut":  [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.BEZIER],
-            "linear":   [KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR],
-            "hold":     [KeyframeInterpolationType.HOLD,   KeyframeInterpolationType.HOLD],
-            "bezier":   [KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER]
+        var easeOpts = {
+            easeType: args.easeType,
+            inInfluence: args.inInfluence, outInfluence: args.outInfluence,
+            inSpeed: args.inSpeed, outSpeed: args.outSpeed
         };
-        var types = typeMap[easeType] || typeMap["easyEase"];
 
         var changed = [];
         for (var i = 0; i < indices.length; i++) {
-            var ki = indices[i];
-            if (ki < 1 || ki > property.numKeys) continue;
-
-            var curIn  = property.keyInTemporalEase(ki);
-            var curOut = property.keyOutTemporalEase(ki);
-            var dim = curIn.length; // 1=scalar, 2=2D, 3=3D
-
-            var applyDefaultEase = (easeType === "easyEase" || easeType === "easeIn" || easeType === "easeOut") &&
-                                   args.inInfluence === undefined && args.outInfluence === undefined &&
-                                   args.inSpeed === undefined && args.outSpeed === undefined;
-            if (applyDefaultEase) {
-                var defArr = [];
-                for (var d = 0; d < dim; d++) { defArr.push(new KeyframeEase(0, 33.33)); }
-                var easeInArr  = (easeType === "easeOut") ? curIn  : defArr;
-                var easeOutArr = (easeType === "easeIn")  ? curOut : defArr;
-                property.setTemporalEaseAtKey(ki, easeInArr, easeOutArr);
-            } else if (args.inInfluence !== undefined || args.outInfluence !== undefined ||
-                       args.inSpeed !== undefined || args.outSpeed !== undefined) {
-                var newInArr = [], newOutArr = [];
-                for (var d = 0; d < dim; d++) {
-                    var inSpd  = (args.inSpeed      !== undefined) ? args.inSpeed      : curIn[d].speed;
-                    var inInf  = (args.inInfluence  !== undefined) ? args.inInfluence  : curIn[d].influence;
-                    var outSpd = (args.outSpeed     !== undefined) ? args.outSpeed     : curOut[d].speed;
-                    var outInf = (args.outInfluence !== undefined) ? args.outInfluence : curOut[d].influence;
-                    newInArr.push(new KeyframeEase(inSpd, inInf));
-                    newOutArr.push(new KeyframeEase(outSpd, outInf));
-                }
-                property.setTemporalEaseAtKey(ki, newInArr, newOutArr);
-            }
-
-            // Set interpolation types LAST: setTemporalEaseAtKey (above) forces BEZIER on both
-            // tangents it touches, so an intended LINEAR side (easeIn/easeOut) must be applied AFTER
-            // the ease, or it silently reverts to bezier (i.e. easeIn/easeOut behaved like easyEase).
-            property.setInterpolationTypeAtKey(ki, types[0], types[1]);
-            changed.push(ki);
+            if (_applyKeyEase(property, indices[i], easeOpts)) changed.push(indices[i]);
         }
 
         return JSON.stringify({

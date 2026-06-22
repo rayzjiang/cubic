@@ -102,7 +102,7 @@ export const COMMAND_PARAMS = {
       // solid / adjustment
       color: '[r,g,b] 0-1', size: '[w,h] px', isAdjustment: 'bool (solid->adjustment)',
       // text
-      text: 'string', fontSize: 'float pt', fontFamily: 'string — installed font; common display names auto-resolve, see listFonts', alignment: 'left|center|right', fillColor: '[r,g,b] 0-1',
+      text: 'string', fontSize: 'float pt', fontFamily: 'string — installed font; common display names auto-resolve, see listFonts', alignment: 'left|center|right', fillColor: '[r,g,b] 0-1 — text fill OR shape fill (default red); pass it to honor a named color in one call',
       // shape
       shapeType: 'rectangle|ellipse|polygon|star', strokeColor: '[r,g,b] 0-1', strokeWidth: 'float px', roundness: 'float px', points: 'int (polygon/star)',
       // null
@@ -238,8 +238,8 @@ export const COMMAND_PARAMS = {
   getLayerKeyframes: { domain: 'Keyframes', summary: 'Read keyframes for a property (propertyPath/propertyName).', params: { propertyPath: 'array', propertyName: 'string' } },
   setLayerKeyframe: {
     domain: 'Keyframes',
-    summary: 'Set a keyframe on a property (propertyPath/propertyName).',
-    params: { propertyPath: 'array', propertyName: 'string', value: 'number|array (matches property)', timeInSeconds: 'float' },
+    summary: 'Set a keyframe on a property (propertyPath/propertyName). The key is auto-eased (easyEase) so moves are never linear-ugly; shape the curve with easeType/influence in the SAME call, or pass easeType:"linear" only when the user explicitly wants linear.',
+    params: { propertyPath: 'array', propertyName: 'string', value: 'number|array (matches property)', timeInSeconds: 'float', easeType: 'easyEase|easeIn|easeOut|linear|hold|bezier (default easyEase; linear opts out of auto-ease)', inInfluence: 'float 0-100', outInfluence: 'float 0-100', inSpeed: 'float', outSpeed: 'float' },
     required: ['value', 'timeInSeconds'],
   },
   setKeyframeEasing: {
