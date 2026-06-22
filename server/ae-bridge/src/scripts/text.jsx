@@ -21,6 +21,7 @@ function createTextLayer(args) {
         // Resolve to a real PostScript name BEFORE creating the layer, so a bad font name
         // fails here (textLayer still null → no orphan) rather than after addText.
         var fontFamily = _resolveFont(args.fontFamily || "Arial");
+        var alignment = args.alignment || "center";
 
         if (!position) { position = [comp.width / 2, comp.height / 2]; }
         textLayer = comp.layers.addText(text);
@@ -29,6 +30,9 @@ function createTextLayer(args) {
         textDocument.fontSize = fontSize;
         textDocument.fillColor = color;
         textDocument.font = fontFamily;
+        if (alignment === "left") { textDocument.justification = ParagraphJustification.LEFT_JUSTIFY; }
+        else if (alignment === "center") { textDocument.justification = ParagraphJustification.CENTER_JUSTIFY; }
+        else if (alignment === "right") { textDocument.justification = ParagraphJustification.RIGHT_JUSTIFY; }
         textProp.setValue(textDocument);
         textLayer.property("Position").setValue(position);
         textLayer.startTime = startTime;

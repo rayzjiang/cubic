@@ -69,12 +69,16 @@
       backoffMs = 1000;
       clearError();
       setStatus("Connected", "connected");
-      ws.send(JSON.stringify({ type: "hello" }));
+      // Report the baked-in bundle id so the dev preflight can detect a stale panel.
+      ws.send(JSON.stringify({ type: "hello", buildId: (typeof __CUBIC_BUILD_ID__ !== "undefined" ? __CUBIC_BUILD_ID__ : null) }));
     };
 
     ws.onmessage = function (evt) {
       var msg;
       try { msg = JSON.parse(evt.data); } catch (e) { return; }
+      // Dev preflight asks a stale panel to reload — re-fetches index.html → main.js?b=<newid>
+      // with the fresh baked-in bundle (the only way to swap HANDLERS_BUNDLE without a manual reopen).
+      if (msg.type === "reload") { location.reload(); return; }
       if (msg.id === undefined || msg.command === undefined) return;
       executeCommand(msg.id, msg.command, msg.args || {});
     };

@@ -55,6 +55,10 @@ class AEBridge {
   private chatCloseHandler: ((ws: WebSocket) => void) | null = null;
   public lastResult: string = '';
 
+  /** Bundle id the connected panel reported in `hello` — read by the dev preflight (workerInfo) to
+   *  detect a panel running a stale baked-in bundle. Null when no panel / an older panel build. */
+  private workerBuildId: string | null = null;
+
   /**
    * Bind the single canonical port (17923) — no fallback scan. One backend + one CEP
    * worker connection at a time is the invariant; a port conflict means another Cubic
@@ -109,9 +113,16 @@ class AEBridge {
             this.workerClient.close(4000, 'superseded by new worker');
           }
           this.workerClient = ws;
+          this.workerBuildId = typeof msg.buildId === 'string' ? msg.buildId : null;
           for (const w of this.connectWaiters) w();
           this.connectWaiters = [];
           this.emit('connect');
+        } else if (msg.type === 'devReload') {
+          // Dev preflight (scripts/preflight-panel.mjs) asks a stale panel to reload onto fresh code.
+          this.reloadWorker();
+        } else if (msg.type === 'workerInfo') {
+          // Dev preflight queries the connected panel's build id to compare against the latest build.
+          ws.send(JSON.stringify({ type: 'workerInfo', buildId: this.workerBuildId }));
         } else if (CHAT_INBOUND_TYPES.has(msg.type)) {
           // Agent-chat channel: panel → loop (the full ChatInbound union — userChat/
           // cancel/queue/editQueue/removeQueue). The handler streams agentEvent
@@ -141,6 +152,7 @@ class AEBridge {
         this.chatCloseHandler?.(ws);
         if (this.workerClient === ws) {
           this.workerClient = null;
+          this.workerBuildId = null;
           this.emit('disconnect');
           for (const [, pending] of this.pending) {
             clearTimeout(pending.timer);
@@ -207,6 +219,14 @@ class AEBridge {
 
   isConnected(): boolean {
     return this.workerClient !== null && this.workerClient.readyState === WebSocket.OPEN;
+  }
+
+  /** Ask the connected panel to reload (re-fetch main.js with the fresh baked-in bundle). Dev only —
+   *  triggered by the preflight via the `devReload` control message. */
+  reloadWorker(): void {
+    if (this.workerClient?.readyState === WebSocket.OPEN) {
+      this.workerClient.send(JSON.stringify({ type: 'reload' }));
+    }
   }
 
   /**

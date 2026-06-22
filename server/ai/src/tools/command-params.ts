@@ -102,7 +102,7 @@ export const COMMAND_PARAMS = {
       // solid / adjustment
       color: '[r,g,b] 0-1', size: '[w,h] px', isAdjustment: 'bool (solid->adjustment)',
       // text
-      text: 'string', fontSize: 'float pt', fontFamily: 'string — installed font; common display names auto-resolve, see listFonts', fillColor: '[r,g,b] 0-1',
+      text: 'string', fontSize: 'float pt', fontFamily: 'string — installed font; common display names auto-resolve, see listFonts', alignment: 'left|center|right', fillColor: '[r,g,b] 0-1',
       // shape
       shapeType: 'rectangle|ellipse|polygon|star', strokeColor: '[r,g,b] 0-1', strokeWidth: 'float px', roundness: 'float px', points: 'int (polygon/star)',
       // null

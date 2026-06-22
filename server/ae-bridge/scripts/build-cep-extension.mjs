@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,9 +58,18 @@ console.log('Building main.js…');
 fs.mkdirSync(distSrcDir, { recursive: true });
 
 const mainSrc = fs.readFileSync(path.join(extSrc, 'src', 'main.js'), 'utf8');
+const indexSrc = fs.readFileSync(path.join(extSrc, 'index.html'), 'utf8');
+
+// Content-hash build id: changes only when the panel/handler code actually changes. The dev
+// preflight (scripts/preflight-panel.mjs) compares this against the id the open panel reports in
+// its `hello` to tell whether the panel is running a stale bundle.
+const BUILD_ID = crypto.createHash('sha1')
+  .update(handlersBundle).update(mainSrc).update(indexSrc)
+  .digest('hex').slice(0, 12);
 
 const bundleJson = JSON.stringify(handlersBundle);
-const inlinedConst = `var HANDLERS_BUNDLE = ${bundleJson};\n`;
+// __CUBIC_BUILD_ID__: the panel reports it in `hello` so the dev preflight can detect a stale panel.
+const inlinedConst = `var HANDLERS_BUNDLE = ${bundleJson};\nvar __CUBIC_BUILD_ID__ = ${JSON.stringify(BUILD_ID)};\n`;
 
 // Strip the linter pragma and prepend the inlined constant
 let mainOut = mainSrc.replace(/\/\*\s*global HANDLERS_BUNDLE.*?\*\/\n?/, '');
@@ -67,6 +77,7 @@ mainOut = inlinedConst + mainOut;
 
 fs.writeFileSync(path.join(distSrcDir, 'main.js'), mainOut, 'utf8');
 console.log(`  dist/src/main.js — ${Math.round(mainOut.length / 1024)}KB`);
+console.log(`  build id — ${BUILD_ID}`);
 
 // Copy CSInterface.js alongside main.js
 fs.copyFileSync(
@@ -85,17 +96,23 @@ fs.copyFileSync(
   path.join(distCsxsDir, 'manifest.xml')
 );
 
-fs.copyFileSync(
-  path.join(extSrc, 'index.html'),
-  path.join(distDir, 'index.html')
+// Stamp the build id onto the main.js <script> query so a panel reload re-fetches a fresh main.js
+// (cache-bust) rather than a cached copy.
+const indexOut = indexSrc.replace(
+  /(<script\s+src=")(src\/main\.js)(?:\?b=[^"]*)?(")/,
+  `$1$2?b=${BUILD_ID}$3`
 );
+fs.writeFileSync(path.join(distDir, 'index.html'), indexOut, 'utf8');
 
 fs.copyFileSync(
   path.join(extSrc, '.debug'),
   path.join(distDir, '.debug')
 );
 
-console.log('  CSXS/manifest.xml, index.html, .debug');
+// Sidecar build id — the dev preflight reads this as the "latest built" id to compare against the panel.
+fs.writeFileSync(path.join(distDir, 'build-id'), BUILD_ID, 'utf8');
+
+console.log('  CSXS/manifest.xml, index.html, .debug, build-id');
 
 console.log('\nCEP extension built → cep-extension/dist/');
 console.log('Run "npm run install-plugin" to copy to Adobe CEP folder and enable PlayerDebugMode.');

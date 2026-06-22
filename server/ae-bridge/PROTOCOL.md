@@ -19,7 +19,7 @@ implement what's on this page** — nothing else in the codebase is part of the 
 - **Three kinds of client** connect to this one port:
   | Client | Role | Identifies itself by |
   |---|---|---|
-  | CEP worker (the AE panel) | **Role B** — runs `evalScript`, the only client that executes commands in AE | sends `{type:"hello"}` on connect |
+  | CEP worker (the AE panel) | **Role B** — runs `evalScript`, the only client that executes commands in AE | sends `{type:"hello", buildId}` on connect |
   | `server/ai` loopback (`bridgeClient`) | the agent loop fetching live state / running tool calls | sends `{id,command,args}` |
   | Electron renderer (Phase 4) | the chat UI | sends chat-channel messages (`userChat`…) |
 
@@ -31,10 +31,17 @@ implement what's on this page** — nothing else in the codebase is part of the 
 ## Routing (how the backend tells messages apart)
 
 In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
-1. `type === "hello"` → register/replace the single **worker** client.
-2. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`/`list`/`loadHistory`) → agent **chat channel**.
-3. has an `ok` field → a **command response** from the worker (correlated by `id`).
-4. has a `command` field → a **command request** from an external caller.
+1. `type === "hello"` → register/replace the single **worker** client (records its `buildId`).
+2. `type === "devReload"` / `type === "workerInfo"` → **dev-only** control messages (see below).
+3. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`/`list`/`loadHistory`) → agent **chat channel**.
+4. has an `ok` field → a **command response** from the worker (correlated by `id`).
+5. has a `command` field → a **command request** from an external caller.
+
+**Dev-only stale-panel preflight** (`scripts/preflight-panel.mjs`, not a product feature): the panel reports
+`buildId` (`__CUBIC_BUILD_ID__`, a content hash baked into `main.js` at build) in its `hello`. An external
+caller sends `{type:"workerInfo"}` → backend replies `{type:"workerInfo", buildId}` (the connected panel's id,
+or null). `{type:"devReload"}` → backend sends the worker `{type:"reload"}` (the panel calls `location.reload()`
+to pick up a freshly-built bundle). Used only to detect + refresh a stale dev panel; production uses the auto-updater.
 
 ## Channel 1 — Command / response (drive AE)
 

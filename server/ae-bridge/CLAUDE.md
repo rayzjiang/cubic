@@ -49,7 +49,10 @@ npm run build:serve    # Compile src/serve.ts → build/serve.js
 | `src/index.ts` or `wsBridge.ts` | `npm run build:server` | Restart Claude Code |
 | Both | `npm run build` + `npm run install-plugin` | Both of the above |
 
-CEP panel reloads handlers on each command — no AE restart needed for `.jsx` changes. MCP server requires CC restart.
+The panel re-evaluates only the dispatch *footer* per command — **the handler bundle (`HANDLERS_BUNDLE`) is baked into `main.js` at build time and loaded once when the panel opens**, so a rebuild+install does NOT reach an already-open panel until it reloads. MCP server requires CC restart.
+
+## Dev-only stale-panel preflight
+Because the bundle is baked in at panel-open, editing a `.jsx` has no effect on an already-open panel until it reloads. `scripts/preflight-panel.mjs` closes that gap for developers: it rebuilds the plugin from source, then queries the connected panel's build id (stamped as `__CUBIC_BUILD_ID__`, reported in the `hello` handshake) against the freshly-built `dist/build-id`. If they differ it pushes a reload to the panel and exits non-zero with a terminal message, so the dev re-runs on fresh code. It runs at the top of the panel-requiring `test*` scripts (via `&&`) and dev-only in the Electron app's boot (`app/src/main/index.ts` → `runDevPreflight`, after `backend.start()`; quits the app if stale). The build id is a content hash, so an unchanged rebuild is a no-op (no spurious reloads). This is purely developer tooling — production gets fresh code via the auto-updater (no Cubic UI, no per-command runtime guard). Wire shapes (`buildId` in `hello`, `workerInfo`/`reload`/`devReload` control messages) are in `PROTOCOL.md`.
 
 ## Env (one shared file)
 `startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).

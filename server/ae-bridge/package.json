@@ -15,10 +15,10 @@
     "serve": "node build/serve.js",
     "postinstall": "npm run build",
     "test:unit": "vitest run",
-    "test": "node test-integration.mjs",
-    "test:write": "node test-integration.mjs --write",
-    "test:clean": "node test-integration.mjs --cleanup-only",
-    "test:write-clean": "node test-integration.mjs --write --cleanup"
+    "test": "node scripts/preflight-panel.mjs && node test-integration.mjs",
+    "test:write": "node scripts/preflight-panel.mjs && node test-integration.mjs --write",
+    "test:clean": "node scripts/preflight-panel.mjs && node test-integration.mjs --cleanup-only",
+    "test:write-clean": "node scripts/preflight-panel.mjs && node test-integration.mjs --write --cleanup"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
