@@ -66,10 +66,10 @@ connect to it over the same WebSocket port. Nobody talks to anyone directly —
 everything is routed through the backend.
 
 ```
-┌────────────────────┐                      ┌──────────────────────────────┐
-│  1. The UI         │   (1) IPC: "port?"   │  The Launcher                │
-│  React chat app    │◄────────────────────►│  (Electron main process)     │
-│  what you SEE      │                       │  opens window, starts backend  │
+┌────────────────────┐                       ┌───────────────────────────────┐
+│  1. The UI         │   (1) IPC: "port?"    │  The Launcher                │
+│  React chat app    │◄────────────────────► │  (Electron main process)     │
+│  what you SEE      │                       │  opens window, starts backend │
 └─────────┬──────────┘                       └───────────────┬──────────────┘
           │                                                  │ spawns
           │  (2) WebSocket  ws://127.0.0.1:17923             ▼
