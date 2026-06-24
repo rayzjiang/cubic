@@ -67,14 +67,14 @@ everything is routed through the backend.
 
 ```
 ┌────────────────────┐                       ┌───────────────────────────────┐
-│  1. The UI         │   (1) IPC: "port?"    │  The Launcher                │
-│  React chat app    │◄────────────────────► │  (Electron main process)     │
+│  1. The UI         │   (1) IPC: "port?"    │  The Launcher                 │
+│  React chat app    │◄────────────────────► │  (Electron main process)      │
 │  what you SEE      │                       │  opens window, starts backend │
-└─────────┬──────────┘                       └───────────────┬──────────────┘
+└─────────┬──────────┘                       └───────────────┬───────────────┘
           │                                                  │ spawns
           │  (2) WebSocket  ws://127.0.0.1:17923             ▼
           └──────────────────────────────────► ┌──────────────────────────────┐
-                                               │  2. The Backend             │
+                                               │  2. The Backend              │
           ┌──────────────────────────────────► │  • WebSocket bridge (router) │
           │  (2) same WebSocket port           │  • Claude brain (agent loop) │
           │                                    └──────────────────────────────┘
