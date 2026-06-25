@@ -1,6 +1,12 @@
-import type { SystemPrompt } from '../llm/types.js';
 import { renderCommandCatalog } from './renderCatalog.js';
 import { STATIC_RULES } from './rules.js';
+
+/** The cacheable system-prompt prefix. Structurally identical to cubic-ai's
+ *  `SystemPrompt` (single `cached` field), declared locally so this secret module
+ *  carries no dependency back into the client package. */
+export interface SystemPrompt {
+  cached: string;
+}
 
 /**
  * The static prefix: rules with the {{COMMAND_CATALOG}} placeholder replaced by

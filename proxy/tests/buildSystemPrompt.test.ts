@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt } from './buildSystemPrompt.js';
+import { buildSystemPrompt } from '../src/secrets/buildSystemPrompt.js';
 
 describe('buildSystemPrompt', () => {
   it('returns a cacheable `cached` prefix (no volatile state block)', () => {

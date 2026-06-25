@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { renderCommandCatalog } from './renderCatalog.js';
-import { COMMAND_PARAMS, type CommandSpec } from '../tools/command-params.js';
+import { renderCommandCatalog } from '../src/secrets/renderCatalog.js';
+import { COMMAND_PARAMS, type CommandSpec } from '../src/secrets/command-params.js';
 
 describe('renderCommandCatalog', () => {
   const catalog = renderCommandCatalog();
