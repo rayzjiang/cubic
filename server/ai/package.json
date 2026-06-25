@@ -8,7 +8,7 @@
   "scripts": {
     "build": "node scripts/build-ai.mjs && npm run build:types",
     "build:types": "tsc --emitDeclarationOnly --declaration --outDir build/types",
-    "build:watch": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=build/index.js --packages=external --watch",
+    "build:watch": "node scripts/build-ai.mjs --watch",
     "start": "node build/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,7 +19,7 @@
     "test:motion": "npm run build && node ../ae-bridge/scripts/preflight.mjs && node tests/motion-handlers-live.mjs",
     "test:tools": "node tests/tools-live.mjs",
     "test:compaction": "npm run build && node tests/compaction-live.mjs",
-    "test:drift": "npm run build && node tests/drift-guard.mjs",
+    "test:drift": "node ../../proxy/scripts/gen-command-names.mjs --check",
     "test:matchnames": "node tests/matchname-guard.mjs"
   },
   "dependencies": {

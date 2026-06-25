@@ -8,12 +8,12 @@ export { getSelectionDetails, getProjectInfo } from "./bridge/tools.js";
 
 export { getLLM, AnthropicProvider, estimateCost, getDebugCost, defaultModel } from "./llm/index.js";
 export type { LLMProvider, Message, ChatOptions, ChatResponse, StreamChunk, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock, ToolUse, ToolDefinition } from "./llm/index.js";
-export { buildSystemPrompt } from "./prompt/buildSystemPrompt.js";
-export { renderCommandCatalog } from "./prompt/renderCatalog.js";
-export { STATIC_RULES } from "./prompt/rules.js";
-export { AE_TOOLS, COMMAND_NAMES } from "./tools/definitions.js";
-export { COMMAND_PARAMS } from "./tools/command-params.js";
-export type { CommandName, CommandSpec } from "./tools/command-params.js";
+// The system prompt + tool catalog (STATIC_RULES, COMMAND_PARAMS, AE_TOOLS, buildSystemPrompt,
+// renderCommandCatalog) are the crown jewels — they now live server-side in the proxy/ Worker
+// (proxy/src/secrets) and are NOT re-exported here, so they can't ship in the desktop binary.
+// Only the non-secret command NAMES (codegen'd mirror) remain, for the dispatch guard.
+export { COMMAND_NAMES, INTERNAL_COMMANDS } from "./tools/command-names.generated.js";
+export type { CommandName } from "./tools/command-names.generated.js";
 
 // Agent loop / self-healing loop (Phase 2 item 4)
 export { runAgentTurn, Session, nextQueueId, executeTool, snapshotProject, describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MARKER } from "./agent/index.js";
