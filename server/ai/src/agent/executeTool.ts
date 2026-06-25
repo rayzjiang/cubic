@@ -1,8 +1,13 @@
 import { bridgeClient } from '../bridge/client.js';
 import { sessionCache } from '../context/cache.js';
 import { describeToolCall } from './events.js';
-import { COMMAND_PARAMS, type CommandSpec } from '../tools/command-params.js';
+import { COMMAND_NAMES, INTERNAL_COMMANDS } from '../tools/command-names.generated.js';
 import type { ToolUse, ToolResultBlock } from '../llm/types.js';
+
+/** Names-only allow-list for the dispatch guard, codegen'd from the secret registry
+ *  (proxy/src/secrets/command-params.ts). Names aren't secret, so this ships in the
+ *  binary; the catalog summaries/schemas stay server-side in the Worker. */
+const COMMAND_NAME_SET: ReadonlySet<string> = new Set(COMMAND_NAMES);
 
 /**
  * Commands that only READ AE state — running one does not require a sessionCache
@@ -29,9 +34,8 @@ const RETRYABLE = new Set(['RENDER_FAILED']);
  * it guesses the raw name — the bridge allowlist still contains such commands for internal/test callers.
  */
 function modelCallBlockedReason(command: string): string | null {
-  const spec = (COMMAND_PARAMS as Record<string, CommandSpec>)[command];
-  if (!spec) return `Unknown command "${command}". Call only commands listed in the command catalog.`;
-  if (spec.internal) return `"${command}" is not a callable command. Call only commands listed in the command catalog.`;
+  if (!COMMAND_NAME_SET.has(command)) return `Unknown command "${command}". Call only commands listed in the command catalog.`;
+  if (INTERNAL_COMMANDS.has(command)) return `"${command}" is not a callable command. Call only commands listed in the command catalog.`;
   return null;
 }
 

@@ -1,4 +1,4 @@
-import { COMMAND_PARAMS, type CommandSpec } from '../tools/command-params.js';
+import { COMMAND_PARAMS, type CommandSpec } from './command-params.js';
 
 /**
  * Renders the always-present `<command_catalog>` body from the COMMAND_PARAMS

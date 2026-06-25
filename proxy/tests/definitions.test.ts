@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { AE_TOOLS, COMMAND_NAMES } from './definitions.js';
+import { AE_TOOLS, COMMAND_NAMES } from '../src/secrets/definitions.js';
 
 describe('AE_TOOLS', () => {
   it('exports exactly 3 tools (no getHelp — params are always in the catalog)', () => {

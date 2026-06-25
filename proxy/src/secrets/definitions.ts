@@ -1,6 +1,16 @@
 import { z } from 'zod';
-import type { ToolDefinition } from '../llm/types.js';
+import type { ZodTypeAny } from 'zod';
 import { COMMAND_NAMES, type CommandName } from './command-params.js';
+
+/** Provider-neutral tool definition. Structurally identical to cubic-ai's
+ *  `ToolDefinition` (name + description + zod `schema`), declared locally so this
+ *  secret module carries no dependency back into the client package — structural
+ *  typing keeps `AE_TOOLS` assignable to `ChatOptions.tools` in direct-local mode. */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  schema: ZodTypeAny;
+}
 
 /**
  * Command names + per-command parameter docs both come from the single registry

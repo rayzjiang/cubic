@@ -3,15 +3,18 @@
  *
  * - The `allowedScripts` whitelist in `src/index.ts` is derived from this array.
  * - The `listCommands` bridge intercept in `src/bridge/wsBridge.ts` returns this array.
- * - `server/ai` keeps a curated mirror (`src/tools/definitions.ts`) validated by a
- *   drift-guard test that calls `listCommands` and asserts it matches.
+ * - The secret command registry now lives in the proxy/ Worker package
+ *   (`proxy/src/secrets/command-params.ts`); its `proxy/tests/drift-guard.test.ts`
+ *   asserts this array matches the registry keys. `server/ai` ships a codegen'd
+ *   names-only mirror (`src/tools/command-names.generated.ts`) for its dispatch guard.
  *
  * When you add a new ExtendScript handler:
  *   1. Add its name here.
  *   2. Add a `case` in `_dispatchSwitch()` in `src/scripts/bridge.jsx`.
  *   3. If read-only, add to `READ_ONLY_COMMANDS` in `bridge.jsx`.
- *   4. Update `server/ai/src/tools/definitions.ts` COMMAND_NAMES to match.
- *   (The drift-guard test will fail CI until step 4 is done.)
+ *   4. Add it to `proxy/src/secrets/command-params.ts` (the registry) + regenerate the
+ *      mirror (`node proxy/scripts/gen-command-names.mjs`).
+ *   (The proxy drift-guard test will fail CI until steps 1 + 4 agree.)
  */
 export const COMMANDS: readonly string[] = [
   // Compositions / project info

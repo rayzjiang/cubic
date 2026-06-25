@@ -1,0 +1,14 @@
+{
+  // Cubic LLM proxy — Anthropic-shaped passthrough that injects the secret prompt/tools.
+  // ANTHROPIC_API_KEY is a Worker SECRET, never committed: `wrangler secret put ANTHROPIC_API_KEY`.
+  "name": "cubic-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    "ANTHROPIC_VERSION": "2023-06-01"
+    // MOCK_UPSTREAM: set in dev (`wrangler dev --var MOCK_UPSTREAM:1`) to exercise the
+    // full client→Worker path with a canned response — zero Anthropic spend.
+  }
+}
