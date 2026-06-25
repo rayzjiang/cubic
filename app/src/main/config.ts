@@ -15,6 +15,11 @@ export interface BackendConfig {
   cubicEnv: CubicEnv
   /** Extra env vars forwarded into the spawned backend child. */
   childEnv: Record<string, string>
+  /** Supabase project — read by the main-process AuthManager (§B). Empty when unconfigured (auth
+   *  then degrades to signed-out, never throws; allowed in local dev). The anon key is PUBLIC by
+   *  design (safe to ship), so it is baked into the prod build; dev reads both from the shell env. */
+  supabaseUrl: string
+  supabaseAnonKey: string
 }
 
 // Mirrors server/ae-bridge/src/startBackend.ts so main and the child agree by construction.
@@ -45,5 +50,11 @@ export function loadConfig(): BackendConfig {
   // 'local': forward nothing extra — the agent loop calls Anthropic directly with the
   // ANTHROPIC_API_KEY inherited from this process's environment.
 
-  return { port, cubicEnv, childEnv }
+  // Supabase (§B auth). Dev reads from the shell env (or server/.env, inherited by this process);
+  // prod bakes the real values in at build time (the anon key is public). Both default to '' so an
+  // unconfigured dev machine still launches — the AuthManager treats '' as "auth unavailable".
+  const supabaseUrl = process.env.SUPABASE_URL ?? ''
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? ''
+
+  return { port, cubicEnv, childEnv, supabaseUrl, supabaseAnonKey }
 }
