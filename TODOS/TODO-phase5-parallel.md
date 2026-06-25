@@ -16,17 +16,18 @@
 
 ## Wave 1 — paid-backend foundation (up to 3 parallel; separate services → near-zero file overlap)
 
-**1. WT-PROXY-CORE** — §A core (new `proxy/` Worker; testable with just the API key)
-- [ ] §A-0 keep the four test surfaces alive (MCP-only · direct-local `npm run dev` · full-stack-local via `wrangler dev`+`supabase start`+Stripe test · prod). §A-3 forks the client (proxy vs direct), keeps the `CUBIC_ENV=local` direct branch as default; full-stack-local = `CUBIC_ENV=prod` + `CUBIC_PROXY_URL=localhost:8787`. Dev every §A–§C component against its emulator before deploy.
-- [ ] §A-1 move crown jewels server-side → Worker (`prompt/rules.ts` + `tools/definitions.ts`; strip from client)
-- [ ] §A-2 Worker = Anthropic-shaped streaming passthrough (`ANTHROPIC_API_KEY` as Worker secret)
-- [ ] §A-3 repoint client (`llm/anthropic.ts` `new Anthropic` → proxy `baseURL`, no on-device key)
-- [ ] §A-9 keep `cache_control` breakpoint on the static prefix (prompt-cache win)
+**1. WT-PROXY-CORE** ✅ **DONE — merged to main** — §A core (new `proxy/` Worker; testable with just the API key)
+- [x] §A-0 keep the four test surfaces alive (MCP-only · direct-local `npm run dev` · full-stack-local via `wrangler dev`+`supabase start`+Stripe test · prod). §A-3 forks the client (proxy vs direct), keeps the `CUBIC_ENV=local` direct branch as default; full-stack-local = `CUBIC_ENV=prod` + `CUBIC_PROXY_URL=localhost:8787`. Dev every §A–§C component against its emulator before deploy.
+- [x] §A-1 move crown jewels server-side → Worker (`prompt/rules.ts` + `tools/definitions.ts`; strip from client)
+- [x] §A-2 Worker = Anthropic-shaped streaming passthrough (`ANTHROPIC_API_KEY` as Worker secret)
+- [x] §A-3 repoint client (`llm/anthropic.ts` `new Anthropic` → proxy `baseURL`, no on-device key)
+- [x] §A-9 keep `cache_control` breakpoint on the static prefix (prompt-cache win)
 
-**2. WT-AUTH** — §B (Supabase project + `app/` auth UI; stand up the Supabase project here first)
-- [ ] §B-1 Google + Apple OAuth via system browser → `cubic://` deep link
-- [ ] §B-3 secure on-device session — Electron `safeStorage` + auto-refresh
-- [ ] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch (+ account-menu *shell/initial ui*: name/avatar/Log out; plan+Upgrade fill in at §D-5)
+**2. WT-AUTH** ✅ **DONE — verified end-to-end (PR ready)** — §B (Supabase project + `app/` auth UI; stand up the Supabase project here first)
+- [x] §B-1 Google + Apple OAuth via system browser → `cubic://` deep link _(Google live + verified; Apple = config-only follow-up, §B-2 account acquired)_
+- [x] §B-3 secure on-device session — Electron `safeStorage` + auto-refresh
+- [x] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch (+ account-menu *shell/initial ui*: name/avatar/Log out; plan+Upgrade fill in at §D-5)
+- _Real Supabase cloud project stood up + Google OAuth configured; local emulator deferred to WT-BILLING. §B-5 (branded OAuth success page) → Wave 3 WT-PAYWALL-UX._
 
 **3. WT-BILLING** — §C (Stripe + Supabase `subscriptions`; soft-depends on WT-AUTH's Supabase project)
 - [ ] §C-1 `subscriptions` table (entitlement source of truth; webhook-written only)
@@ -68,6 +69,7 @@
 ## Wave 3 — consumer-facing flow (`app/` renderer)
 
 **5. WT-PAYWALL-UX** — §D (needs WT-AUTH + WT-BILLING + WT-PROXY-GATING)
+- [ ] §B-5 branded OAuth "you're signed in — close this tab" page (hosted HTTPS page fires the `cubic://` deep link + tells the user to close the tab; replaces the current hanging browser tab). Repoint `auth.ts` `redirectTo` + Supabase allow-list. Slotted here: consumer UX/copy + the Cloudflare Worker (Wave 2) can host it. Not a blocker.
 - [ ] §D-1 first-run sequence: sign in → connect AE → try it → **paywall last**
 - [ ] §D-2 paywall + limit states ("trial ended" / "out of allowance") → Checkout
 - [ ] §D-3 "Manage subscription" → Customer Portal
