@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { useMotion } from '../motion'
 import { ConversationRow } from './ConversationRow'
+import { AccountWidget } from './AccountWidget'
 
 /**
  * The landing screen (main pane on launch): a "Welcome back" greeting + the project's conversations
@@ -25,7 +26,11 @@ export function HomeView() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-neutral-900">
+    <div className="relative flex h-full flex-col bg-neutral-900">
+      {/* Persistent account widget, bottom-left (Home has no sidebar of its own). */}
+      <div className="absolute bottom-2 left-2 z-10">
+        <AccountWidget />
+      </div>
       <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-6 pb-8 pt-8">
         <h1 className="text-[28px] font-semibold tracking-tight text-white/90">Welcome back</h1>
         <p className="mt-1 text-sm text-white/45">Pick up a conversation or start something new.</p>

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { BackendStatus } from '@shared/ipc'
+import type { AuthState, BackendStatus, CubicEnvName } from '@shared/ipc'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
@@ -79,6 +79,11 @@ interface ChatState {
   // Backend-link status, pushed by main over IPC (distinct from `connection`, the renderer's own WS):
   // covers backend crash/reconnect/port-in-use/install — states the WS can't carry when it's down.
   backendStatus: BackendStatus
+  // §B auth state (status + user), pushed by main over IPC. Distinct from billing/entitlement — there
+  // is no plan here (that lands with WT-BILLING). The renderer is presentational; main owns the session.
+  auth: AuthState
+  // Which deployment we run as — gates sign-in (prod blocks until signed in; local never blocks).
+  cubicEnv: CubicEnvName
   view: 'home' | 'chat'
   projectPath: string
   // sidebar/home list
@@ -126,6 +131,8 @@ interface ChatState {
   // actions
   setConnection: (c: Connection) => void
   setBackendStatus: (s: BackendStatus) => void
+  setAuth: (s: AuthState) => void
+  setCubicEnv: (e: CubicEnvName) => void
   toggleSidebar: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
@@ -172,6 +179,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
   aeConnected: false,
   backendStatus: { phase: 'starting', install: 'ok' },
+  auth: { status: 'loading', user: null },
+  cubicEnv: 'local',
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
   projectPath: '',
@@ -189,6 +198,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConnection: (c) => set({ connection: c }),
   setBackendStatus: (s) => set({ backendStatus: s }),
+  setAuth: (s) => set({ auth: s }),
+  setCubicEnv: (e) => set({ cubicEnv: e }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   handleServerMessage: (msg) => {
