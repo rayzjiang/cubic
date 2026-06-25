@@ -70,6 +70,7 @@
 
 **5. WT-PAYWALL-UX** — §D (needs WT-AUTH + WT-BILLING + WT-PROXY-GATING)
 - [ ] §B-5 branded OAuth "you're signed in — close this tab" page (hosted HTTPS page fires the `cubic://` deep link + tells the user to close the tab; replaces the current hanging browser tab). Repoint `auth.ts` `redirectTo` + Supabase allow-list. Slotted here: consumer UX/copy + the Cloudflare Worker (Wave 2) can host it. Not a blocker.
+- [ ] enrich the signed-out `AuthScreen` (pre-launch) — first + only surface a logged-out user sees (prod gates home/chat behind sign-in); make it engaging (carousel of use cases / sample before→after outputs) vs today's minimal "Welcome to Cubic / Sign in with Google." Distinct from signed-in `HomeView`.
 - [ ] §D-1 first-run sequence: sign in → connect AE → try it → **paywall last**
 - [ ] §D-2 paywall + limit states ("trial ended" / "out of allowance") → Checkout
 - [ ] §D-3 "Manage subscription" → Customer Portal
