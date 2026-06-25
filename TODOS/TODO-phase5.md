@@ -51,6 +51,9 @@
 - [ ] **§D-3** **"Manage subscription"** entry point → opens Stripe Customer Portal.
 - [ ] **§D-4** **Non-technical copy throughout** — consumer-app tone (iMessage/ChatGPT feel), never dev/terminal language.
 - [ ] **§D-5** **Finish the Account/profile menu (ChatGPT-style)** — persistent sidebar widget aggregating identity + billing in one dropdown: name + avatar + Log out (from §B-4 shell), plan tag ("Free"/"Pro") + **Upgrade** CTA (→ §D-2 Checkout), Manage subscription (→ §D-3 Portal). Only surface Settings/Profile rows once they actually do something (else they read as broken to a non-technical user).
+    - **Account-widget polish (carried from WT-AUTH — known issues in the shipped §B-4 shell):**
+        - **Window-resize responsiveness** — the signed-in avatar/widget glitches when the window grows/shrinks. Make it reflow cleanly; **copy how the ChatGPT / Claude desktop apps handle account-widget resize.**
+        - **Sidebar-collapse Y-alignment** — on the chat page, collapsing the sidebar shifts the avatar's vertical position; it should stay **pinned at the same Y level** across collapsed/expanded.
 
 ## §E. Packaging, signing & hardening
 > The proxy already hides the crown jewels, so client-side protection only guards the leftovers (tool names, loop, ExtendScript). Goal: raise the bar cheaply ("deters 95%") + make install seamless. **Skip binary compilation** — marginal gain now that secrets are server-side.

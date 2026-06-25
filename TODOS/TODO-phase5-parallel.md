@@ -75,6 +75,7 @@
 - [ ] §D-3 "Manage subscription" → Customer Portal
 - [ ] §D-4 non-technical copy throughout (consumer tone, no dev/terminal language)
 - [ ] §D-5 finish the account/profile menu (ChatGPT-style) — name/avatar/Log out (§B-4 shell) + plan tag + Upgrade (§D-2) + Manage subscription (§D-3) in one dropdown
+- [ ] account-widget polish (carried from WT-AUTH): (1) window-resize responsiveness — avatar/signed-in widget glitches on window grow/shrink → reflow cleanly, mirror ChatGPT/Claude desktop apps; (2) chat-page sidebar-collapse — avatar Y position shifts, must stay pinned at the same Y level
 
 ---
 
