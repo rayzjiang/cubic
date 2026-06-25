@@ -74,7 +74,9 @@ export type SystemPromptInput = string | SystemPrompt;
 // ─── Chat API types ──────────────────────────────────────────────────────────
 
 export interface ChatOptions {
-  systemPrompt: SystemPromptInput;
+  /** Omitted in proxy mode (CUBIC_ENV=prod): the Worker injects the system prompt
+   *  server-side. In direct-local mode the loop passes the locally-built prompt. */
+  systemPrompt?: SystemPromptInput;
   model?: string;
   maxTokens?: number;
   temperature?: number;

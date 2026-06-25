@@ -189,9 +189,19 @@ export class AnthropicProvider implements LLMProvider {
   private client: Anthropic;
 
   constructor() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const proxyMode = process.env.CUBIC_ENV === 'prod';
+    // Direct-local needs a real key; proxy mode has none on-device (the Worker holds it).
+    // The SDK still requires a non-empty apiKey string, so pass a placeholder in proxy mode —
+    // baseURL (ANTHROPIC_BASE_URL, set by app config from CUBIC_PROXY_URL) routes to the Worker,
+    // which overwrites x-api-key with the real key before forwarding to Anthropic.
+    const apiKey = process.env.ANTHROPIC_API_KEY ?? (proxyMode ? 'cubic-proxy-placeholder' : undefined);
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
-    this.client = new Anthropic({ apiKey });
+    // Auth seam (Wave 2 / WT-PROXY-GATING): the Worker will verify a Supabase token. Send a
+    // placeholder Authorization header now so the wire shape is fixed; the Worker reads but
+    // does not enforce it yet. Direct mode sends no such header.
+    const opts: ConstructorParameters<typeof Anthropic>[0] = { apiKey };
+    if (proxyMode) opts.defaultHeaders = { authorization: `Bearer ${process.env.CUBIC_AUTH_TOKEN ?? ''}` };
+    this.client = new Anthropic(opts);
   }
 
   contextWindow(model?: string): number {
@@ -207,9 +217,10 @@ export class AnthropicProvider implements LLMProvider {
       model: opts.model ?? defaultModel(),
       max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: opts.temperature ?? 1,
-      system: toSystemParam(opts.systemPrompt),
       messages: apiMessages,
     };
+    // Proxy mode omits the system prompt — the Worker injects it server-side. Direct mode sends it.
+    if (opts.systemPrompt !== undefined) params.system = toSystemParam(opts.systemPrompt);
 
     if (opts.tools?.length) {
       params.tools = opts.tools.map(t => ({
@@ -253,13 +264,14 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async *stream(messages: Message[], opts: ChatOptions): AsyncIterable<StreamChunk> {
-    const stream = await this.client.messages.stream({
+    const params: Anthropic.MessageStreamParams = {
       model: opts.model ?? defaultModel(),
       max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: opts.temperature ?? 1,
-      system: toSystemParam(opts.systemPrompt),
       messages: messages.map(m => ({ role: m.role, content: toAnthropicContent(m.content) })),
-    });
+    };
+    if (opts.systemPrompt !== undefined) params.system = toSystemParam(opts.systemPrompt);
+    const stream = await this.client.messages.stream(params);
 
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {

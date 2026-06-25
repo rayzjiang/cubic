@@ -1,0 +1,24 @@
+{
+  "name": "cubic-proxy",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker LLM proxy — holds the Anthropic key + injects the secret system prompt/tool catalog (Phase 5 §A)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "gen:command-names": "node scripts/gen-command-names.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240000.0",
+    "typescript": "^5.2.2",
+    "vitest": "^4.1.7",
+    "wrangler": "^3.80.0"
+  }
+}

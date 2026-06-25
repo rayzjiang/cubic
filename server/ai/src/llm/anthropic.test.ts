@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import { appendLiveStateAndCacheBreakpoint } from './anthropic.js';
+import { appendLiveStateAndCacheBreakpoint, AnthropicProvider } from './anthropic.js';
 
 // These are free, offline checks of the prompt-cache request SHAPE (no API call):
 // the rolling breakpoint must land on the last REAL block, and live state must be an
@@ -63,5 +63,29 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     const msgs: Anthropic.MessageParam[] = [];
     expect(() => appendLiveStateAndCacheBreakpoint(msgs, 'x')).not.toThrow();
     expect(msgs).toHaveLength(0);
+  });
+});
+
+// WT-PROXY-CORE — the constructor fork. Proxy mode (CUBIC_ENV=prod) holds NO key on
+// device (the Worker does), so construction must NOT throw on a missing key. Direct-local
+// still requires a real key. (Offline — no API call; the SDK is only constructed.)
+describe('AnthropicProvider constructor fork', () => {
+  const PRIOR_ENV = process.env.CUBIC_ENV;
+  const PRIOR_KEY = process.env.ANTHROPIC_API_KEY;
+  afterEach(() => {
+    if (PRIOR_ENV === undefined) delete process.env.CUBIC_ENV; else process.env.CUBIC_ENV = PRIOR_ENV;
+    if (PRIOR_KEY === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = PRIOR_KEY;
+  });
+
+  it('proxy mode (prod) with no on-device key: does NOT throw (Worker holds the key)', () => {
+    process.env.CUBIC_ENV = 'prod';
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => new AnthropicProvider()).not.toThrow();
+  });
+
+  it('direct-local mode with no key: throws (it calls Anthropic directly)', () => {
+    process.env.CUBIC_ENV = 'local';
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => new AnthropicProvider()).toThrow('ANTHROPIC_API_KEY not set');
   });
 });
