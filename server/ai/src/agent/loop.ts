@@ -165,6 +165,12 @@ export async function runAgentTurn(
     // Proxy mode (CUBIC_ENV=prod): the Worker injects the system prompt + tools server-side,
     // so we send a BARE request (no system, no tools). Direct-local builds + sends them here.
     const proxyMode = process.env.CUBIC_ENV === 'prod';
+    // Direct mode needs the real secrets. If they resolved to the prod stub (empty tools), this is a
+    // prod-stripped build wrongly run with CUBIC_ENV!=prod — fail loud rather than send a ruleless,
+    // tool-less request that makes the agent silently brain-dead.
+    if (!proxyMode && AE_TOOLS.length === 0) {
+      throw new Error('Secret tools are stubbed in direct mode — this looks like a prod-stripped build run with CUBIC_ENV!=prod.');
+    }
     const systemPrompt = proxyMode ? undefined : buildSystemPrompt();
     // Live AE state rides at the tail of the request (uncached), NOT in the cached system prompt,
     // and is never committed to session.messages — so the conversation prefix stays cache-stable.
