@@ -9,7 +9,7 @@
 ---
 
 ## Front-load NOW (procurement/decisions — long lead, block later waves; not worktrees)
-- [ ] §B-2 — buy Apple Developer account ($99/yr); blocks WT-AUTH (Apple OAuth) + WT-PACKAGING (sign/notarize)
+- [x] §B-2 — buy Apple Developer account ($99/yr); blocks WT-AUTH (Apple OAuth) + WT-PACKAGING (sign/notarize)
 - [ ] §C-8 — lock price + allowance/trial-cap numbers; WT-BILLING config + WT-PROXY-GATING metering need real numbers
 
 ---
@@ -61,7 +61,7 @@
 - [ ] §A-6 usage metering — write usage + deduct allowance + reject over cap (needs WT-BILLING + locked numbers)
 - [ ] §C-6 cap/trial enforcement at the proxy → emits the "out of allowance / trial ended" signal
 - [ ] §A-7 per-user rate-limit + abuse guard
-- [ ] §A-8 flip the Phase-4 §B env-switch → prod proxy URL
+- [ ] §A-8 flip the Phase-4 §B env-switch → prod proxy URL (deploy fr, cloudflare)
 
 ---
 
