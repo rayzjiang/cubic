@@ -1,8 +1,10 @@
 import { getLLM } from '../llm/index.js';
-import { AE_TOOLS } from '../tools/definitions.js';
+// Crown jewels: in direct-local dev esbuild aliases `@secrets` to the real proxy
+// secrets; the prod build aliases it to an empty stub (so the prompt/tool catalog
+// never ships) — and proxy mode never calls them anyway (the Worker injects them).
+import { AE_TOOLS, buildSystemPrompt as defaultBuildSystemPrompt } from '@secrets';
 import { buildContext as defaultBuildContext } from '../context/buildContext.js';
 import { formatStateForPrompt } from '../context/format.js';
-import { buildSystemPrompt as defaultBuildSystemPrompt } from '../prompt/buildSystemPrompt.js';
 import { executeTool as defaultExecuteTool, type ToolExecution } from './executeTool.js';
 import { snapshotProject as defaultSnapshot, type SnapshotResult } from './snapshot.js';
 import { describeToolCall, describeToolNoop, describeToolResult, INTERRUPTED_MARKER, type EmitFn } from './events.js';
@@ -160,7 +162,10 @@ export async function runAgentTurn(
     }
 
     const state = await buildContext();
-    const systemPrompt = buildSystemPrompt();
+    // Proxy mode (CUBIC_ENV=prod): the Worker injects the system prompt + tools server-side,
+    // so we send a BARE request (no system, no tools). Direct-local builds + sends them here.
+    const proxyMode = process.env.CUBIC_ENV === 'prod';
+    const systemPrompt = proxyMode ? undefined : buildSystemPrompt();
     // Live AE state rides at the tail of the request (uncached), NOT in the cached system prompt,
     // and is never committed to session.messages — so the conversation prefix stays cache-stable.
     const liveState = formatStateForPrompt(state);
@@ -180,7 +185,7 @@ export async function runAgentTurn(
       // there either). The model captured state when it planned on call 1 and executes from the
       // conversation + tool results; it can re-read (getSelectedLayers/getCurrentTime) in the rare
       // case it needs fresh state mid-turn.
-      const response = await llm.chat(session.messages, { systemPrompt, tools: AE_TOOLS, model, signal: abort.signal, liveState: iter === 0 ? liveState : undefined });
+      const response = await llm.chat(session.messages, { systemPrompt, tools: proxyMode ? undefined : AE_TOOLS, model, signal: abort.signal, liveState: iter === 0 ? liveState : undefined });
       session.lastContextTokens = contextTokensOf(response.usage);
 
       // The model itself reports the prompt was too large to process — pause honestly.

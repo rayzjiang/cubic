@@ -11,12 +11,31 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
-await esbuild.build({
+// `@secrets` — the crown-jewels chokepoint. Direct-local dev bundles the REAL prompt + tool
+// catalog from the proxy/ Worker package; the prod packaging build (CUBIC_BUILD=prod) aliases it
+// to an empty stub so the secrets physically cannot enter the shipped binary (§A-1 / §E). The
+// runtime CUBIC_ENV fork (loop.ts) is what actually selects bare-vs-full at request time; this
+// strip is defense-in-depth that guarantees the bytes aren't present in prod.
+const prod = process.env.CUBIC_BUILD === 'prod';
+const secretsPath = prod
+  ? path.join(root, 'src', 'secrets', 'stub.ts')
+  : path.resolve(root, '..', '..', 'proxy', 'src', 'secrets', 'index.ts');
+
+const options = {
   entryPoints: [path.join(root, 'src', 'index.ts')],
   bundle: true,
   platform: 'node',
   format: 'esm',
   outfile: path.join(root, 'build', 'index.js'),
   packages: 'external',
-});
-console.log('cubic-ai → build/index.js');
+  alias: { '@secrets': secretsPath },
+};
+
+if (process.argv.includes('--watch')) {
+  const ctx = await esbuild.context(options);
+  await ctx.watch();
+  console.log(`cubic-ai → build/index.js (watching; @secrets → ${prod ? 'stub' : 'proxy secrets'})`);
+} else {
+  await esbuild.build(options);
+  console.log(`cubic-ai → build/index.js (@secrets → ${prod ? 'stub' : 'proxy secrets'})`);
+}

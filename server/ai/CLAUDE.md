@@ -35,12 +35,9 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - `context/buildContext.ts` — assembles `LiveAEState` per turn.
 - `context/cache.ts` — `SessionCache` / `sessionCache`: caches `getProjectInfo` + `getCompositionsList`; `invalidate()`.
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
-- `prompt/rules.ts` — `STATIC_RULES` system-prompt text (user-edited) with a `{{COMMAND_CATALOG}}` placeholder; no logic.
-- `tools/command-params.ts` — **single source of truth** for every command + its params (`COMMAND_PARAMS`); `COMMAND_NAMES`/`CommandName` are derived from its keys.
-- `tools/definitions.ts` — builds the zod schemas for the model's tool surface (`runScript`/`batch`/`createComposition`) off `COMMAND_NAMES`; `runScript` excludes `batch` so it's reachable only via the dedicated `batch` tool.
-- `prompt/renderCatalog.ts` — `renderCommandCatalog()` generates the compact `<command_catalog>` text from the registry (deterministic → cache-stable).
-- `prompt/buildSystemPrompt.ts` — returns `{ cached, volatile }`: rules+catalog (stable, cached) + live state (per-turn).
-- `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types).
+- **Crown jewels moved server-side (Phase 5 §A).** The system prompt + tool catalog — `rules.ts` (`STATIC_RULES`), `command-params.ts` (`COMMAND_PARAMS` registry), `definitions.ts` (`AE_TOOLS` zod schemas), `renderCatalog.ts`, `buildSystemPrompt.ts` — now live in `proxy/src/secrets` (the Worker injects them so they never ship in the binary). The loop imports them via the `@secrets` alias: esbuild resolves it to the real proxy secrets for direct-local dev and to `src/secrets/stub.ts` for the prod build (see `scripts/build-ai.mjs`); the runtime `CUBIC_ENV` fork in `loop.ts` is what selects bare-vs-full.
+- `tools/command-names.generated.ts` — **codegen'd** names-only mirror of the registry (`node proxy/scripts/gen-command-names.mjs`); ships in the binary to back the `executeTool.ts` dispatch guard (names aren't secret). Drift-checked by `proxy/tests/drift-guard.test.ts`.
+- `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types). `anthropic.ts` forks on `CUBIC_ENV`: direct mode sends system+tools+real key; proxy mode omits them (Worker injects) + uses a placeholder key + a placeholder `Authorization` header (Wave-2 auth seam).
 - `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`snapshotProject()` — calls the bridge `backupProject` command), `events.ts` (`AgentEvent` union streamed to the panel).
 - `index.ts` — public barrel export.
 
