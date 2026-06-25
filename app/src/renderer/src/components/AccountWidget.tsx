@@ -122,10 +122,19 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
   )
 }
 
-/** Round avatar — provider photo when present, else initials from the name (or email). */
+/** Round avatar — provider photo when present, else initials from the name (or email). Falls back to
+ *  initials if the image fails to load (broken/expired avatar URL, CSP, offline). */
 function Avatar({ user }: { user: { name?: string; email: string; avatarUrl?: string } }) {
-  if (user.avatarUrl) {
-    return <img src={user.avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+  const [broken, setBroken] = useState(false)
+  if (user.avatarUrl && !broken) {
+    return (
+      <img
+        src={user.avatarUrl}
+        alt=""
+        onError={() => setBroken(true)}
+        className="h-7 w-7 shrink-0 rounded-full object-cover"
+      />
+    )
   }
   const source = user.name || user.email || '?'
   const initials = source
