@@ -8,6 +8,7 @@ import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
 import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
+import { AuthScreen } from './components/AuthScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
@@ -22,6 +23,8 @@ export function App() {
   const listLoaded = useChatStore((s) => s.listLoaded)
   const view = useChatStore((s) => s.view)
   const backendPhase = useChatStore((s) => s.backendStatus.phase)
+  const authStatus = useChatStore((s) => s.auth.status)
+  const cubicEnv = useChatStore((s) => s.cubicEnv)
   const { crossfade } = useMotion()
 
   useEffect(() => {
@@ -31,7 +34,15 @@ export function App() {
     // Backend-link status from main (over IPC, not the WS): snapshot first (covers a late mount/reload),
     // then subscribe to live pushes (the only way the dot learns "reconnecting" while the WS is down).
     void window.cubic.getBackendStatus().then(store.setBackendStatus).catch(() => {})
-    return window.cubic.onBackendStatus(store.setBackendStatus)
+    // §B auth + which env we run as (gates sign-in): snapshot first, then subscribe to live auth pushes.
+    void window.cubic.getCubicEnv().then(store.setCubicEnv).catch(() => {})
+    void window.cubic.getAuthState().then(store.setAuth).catch(() => {})
+    const offBackend = window.cubic.onBackendStatus(store.setBackendStatus)
+    const offAuth = window.cubic.onAuthChanged(store.setAuth)
+    return () => {
+      offBackend()
+      offAuth()
+    }
   }, [])
 
   useEffect(() => {
@@ -58,6 +69,11 @@ export function App() {
   if (backendPhase === 'port-in-use' || backendPhase === 'stopped') {
     // Non-functional backend the user must resolve — full takeover (no top bar).
     body = <BackendBlockedScreen phase={backendPhase} />
+  } else if (cubicEnv === 'prod' && authStatus !== 'signedIn' && authStatus !== 'loading') {
+    // §B prod-only gate: a stranger must sign in before reaching the app (and before spending the key).
+    // Skipped while `loading` (so an already-signed-in user doesn't flash the sign-in screen on launch)
+    // and entirely in local dev (cubicEnv==='local'), which stays usable signed-out.
+    body = <AuthScreen />
   } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
   } else {

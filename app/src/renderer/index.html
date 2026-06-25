@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- CSP: allow the renderer to open a WS to the local backend; nothing else external. -->
+    <!-- CSP: allow the renderer to open a WS to the local backend + load Google account avatars
+         (lh3-lh6.googleusercontent.com); nothing else external. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src 'self' ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+      content="default-src 'self'; connect-src 'self' ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cubic</title>

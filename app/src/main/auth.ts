@@ -1,0 +1,277 @@
+// §B — Supabase auth, owned entirely by the main process. The renderer is sandboxed and only ever
+// sees a serializable `AuthState` + an access token over IPC; all Supabase/PKCE/token work lives here
+// because the two things it needs — the `cubic://` deep link and the OS keychain (safeStorage) — are
+// both main-process-only. Mirrors BackendSupervisor's EventEmitter shape: every state change emits
+// `change`, which ipc.ts broadcasts to the renderer.
+//
+// Flow (PKCE, system browser): signIn() → signInWithOAuth (we open the URL ourselves) → the browser
+// returns to `cubic://auth/callback?code=…` → handleCallback() exchanges the code for a session →
+// persist (safeStorage) + schedule a refresh. We drive token refresh ourselves (autoRefreshToken is
+// off — supabase-js's timer doesn't tick reliably in a headless main).
+
+import { EventEmitter } from 'node:events'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { app, safeStorage, shell } from 'electron'
+import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
+import type { BackendConfig } from './config.js'
+import type { AuthProvider, AuthState, AuthStatus, AuthUser } from '../shared/ipc.js'
+
+// The deep link the OAuth flow returns to. Must match the redirect allow-list in the Supabase
+// dashboard (and the scheme registered via setAsDefaultProtocolClient in index.ts).
+export const AUTH_REDIRECT = 'cubic://auth/callback'
+// Refresh this far before expiry (and treat a token within this window as "needs refresh on demand").
+const REFRESH_SKEW_MS = 60_000
+
+/** Derive the renderer-facing user from a Supabase session (name/avatar come from the OAuth provider's
+ *  `user_metadata`, which varies by provider — fall back across the common keys). */
+function toUser(session: Session): AuthUser {
+  const u = session.user
+  const m = (u.user_metadata ?? {}) as Record<string, unknown>
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
+  return {
+    id: u.id,
+    email: u.email ?? str(m.email) ?? '',
+    name: str(m.full_name) ?? str(m.name),
+    avatarUrl: str(m.avatar_url) ?? str(m.picture),
+  }
+}
+
+/** Turn a raw OAuth error into something a non-technical user can read. */
+function friendlyAuthError(raw: string): string {
+  if (/access_denied|denied|cancel/i.test(raw)) return 'Sign-in was cancelled.'
+  return "Couldn't sign in. Please try again."
+}
+
+/** Simple in-memory storage for supabase-js. With persistSession off + a headless main there is no
+ *  localStorage, and — critically — the PKCE *code verifier* created during signInWithOAuth must
+ *  survive until the cubic:// callback fires so exchangeCodeForSession can read it back. The main
+ *  process stays alive across the browser round-trip, so an in-memory Map is sufficient. */
+function memoryStorage(): { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } {
+  const store = new Map<string, string>()
+  return {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => void store.set(k, v),
+    removeItem: (k) => void store.delete(k),
+  }
+}
+
+export class AuthManager extends EventEmitter {
+  private readonly client: SupabaseClient | null
+  private session: Session | null = null
+  private status: AuthStatus = 'loading'
+  private errorMsg: string | undefined
+  private refreshTimer: NodeJS.Timeout | null = null
+
+  constructor(config: BackendConfig) {
+    super()
+    // No Supabase configured (e.g. a local-dev machine without SUPABASE_URL) → auth is simply
+    // unavailable: the app stays usable signed-out, signIn() reports a friendly error, no throw.
+    this.client = config.supabaseUrl && config.supabaseAnonKey
+      ? createClient(config.supabaseUrl, config.supabaseAnonKey, {
+          auth: {
+            flowType: 'pkce',
+            persistSession: false, // we own persistence (safeStorage), not localStorage
+            autoRefreshToken: false, // we drive refresh ourselves (see scheduleRefresh)
+            detectSessionInUrl: false, // there is no browser URL in the main process
+            storage: memoryStorage(),
+          },
+        })
+      : null
+  }
+
+  /** Current auth state — the snapshot returned over IPC and the payload of every `change` event. */
+  get state(): AuthState {
+    return {
+      status: this.status,
+      user: this.session ? toUser(this.session) : null,
+      ...(this.errorMsg ? { error: this.errorMsg } : {}),
+    }
+  }
+
+  /** Restore a persisted session on launch (refresh it if stale), then report the resolved state. Until
+   *  this runs the status is 'loading', so the renderer holds the gate instead of flashing sign-in. */
+  async init(): Promise<void> {
+    if (!this.client) return this.setStatus('signedOut')
+    const restored = this.loadPersisted()
+    if (!restored) return this.setStatus('signedOut')
+    this.session = restored
+    const expSoon = !restored.expires_at || restored.expires_at * 1000 - Date.now() < REFRESH_SKEW_MS
+    if (expSoon) {
+      await this.refresh() // refreshes (or signs out on failure) and emits
+    } else {
+      this.status = 'signedIn'
+      this.errorMsg = undefined
+      this.scheduleRefresh()
+      this.emitChange()
+    }
+  }
+
+  /** Begin the OAuth flow: get the provider authorize URL and open it in the system browser. The flow
+   *  completes asynchronously when the browser returns to cubic://auth/callback (→ handleCallback). */
+  async signIn(provider: AuthProvider): Promise<void> {
+    if (!this.client) return this.setError('Sign-in isn’t configured on this build.')
+    this.status = 'signingIn'
+    this.errorMsg = undefined
+    this.emitChange()
+    try {
+      const { data, error } = await this.client.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: AUTH_REDIRECT, skipBrowserRedirect: true },
+      })
+      if (error || !data?.url) return this.setError(friendlyAuthError(error?.message ?? 'no url'))
+      await shell.openExternal(data.url)
+    } catch (e) {
+      this.setError(friendlyAuthError(e instanceof Error ? e.message : String(e)))
+    }
+  }
+
+  /** Handle the cubic://auth/callback deep link: exchange the PKCE code for a session. Tolerant of a
+   *  user-denied consent (error params) and of non-auth cubic:// links (ignored). */
+  async handleCallback(url: string): Promise<void> {
+    if (!this.client) return
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return
+    }
+    if (parsed.host !== 'auth') return // not an auth callback
+    const errDesc = parsed.searchParams.get('error_description') ?? parsed.searchParams.get('error')
+    if (errDesc) return this.setError(friendlyAuthError(errDesc))
+    const code = parsed.searchParams.get('code')
+    if (!code) return
+    try {
+      const { data, error } = await this.client.auth.exchangeCodeForSession(code)
+      if (error || !data.session) return this.setError(friendlyAuthError(error?.message ?? 'no session'))
+      this.applySession(data.session)
+    } catch (e) {
+      this.setError(friendlyAuthError(e instanceof Error ? e.message : String(e)))
+    }
+  }
+
+  /** The current (fresh) access token, refreshing on demand if it's within the skew window. Null when
+   *  signed out. The Wave-2 proxy will read this per request; not yet attached to the WS chat frame. */
+  async getAccessToken(): Promise<string | null> {
+    if (!this.session) return null
+    const expSoon = this.session.expires_at ? this.session.expires_at * 1000 - Date.now() < REFRESH_SKEW_MS : false
+    if (expSoon) await this.refresh()
+    return this.session?.access_token ?? null
+  }
+
+  /** Sign out: best-effort local revoke, then clear the persisted session. */
+  async signOut(): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.auth.signOut({ scope: 'local' })
+      } catch {
+        /* local sign-out is best-effort; we clear our own state regardless */
+      }
+    }
+    this.clearSession('signedOut')
+  }
+
+  /** Cancel the refresh timer (call on app quit so no interval keeps the process busy). */
+  dispose(): void {
+    this.clearRefresh()
+  }
+
+  // ── internals ──
+
+  private applySession(session: Session): void {
+    this.session = session
+    this.status = 'signedIn'
+    this.errorMsg = undefined
+    this.persist(session)
+    this.scheduleRefresh()
+    this.emitChange()
+  }
+
+  private async refresh(): Promise<void> {
+    if (!this.client || !this.session?.refresh_token) return this.clearSession('signedOut')
+    try {
+      const { data, error } = await this.client.auth.refreshSession({ refresh_token: this.session.refresh_token })
+      if (error || !data.session) return this.clearSession('signedOut') // revoked/expired → drop it
+      this.applySession(data.session)
+    } catch {
+      this.clearSession('signedOut')
+    }
+  }
+
+  private scheduleRefresh(): void {
+    this.clearRefresh()
+    if (!this.session?.expires_at) return
+    const msUntil = this.session.expires_at * 1000 - Date.now() - REFRESH_SKEW_MS
+    // A late timer (laptop sleep) is covered by the on-demand refresh in getAccessToken().
+    this.refreshTimer = setTimeout(() => void this.refresh(), Math.max(0, msUntil))
+  }
+
+  private clearRefresh(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = null
+    }
+  }
+
+  private clearSession(status: AuthStatus): void {
+    this.clearRefresh()
+    this.session = null
+    this.status = status
+    this.errorMsg = undefined
+    this.deletePersisted()
+    this.emitChange()
+  }
+
+  private setStatus(status: AuthStatus): void {
+    this.status = status
+    this.errorMsg = undefined
+    this.emitChange()
+  }
+
+  private setError(msg: string): void {
+    this.status = 'error'
+    this.errorMsg = msg
+    this.emitChange()
+  }
+
+  private emitChange(): void {
+    this.emit('change', this.state)
+  }
+
+  // ── persistence (safeStorage / OS keychain) ──
+  // Gated on isEncryptionAvailable(): if the keychain is unavailable we keep the session in memory only
+  // (re-login per launch) rather than ever writing a plaintext token to disk.
+
+  private get sessionPath(): string {
+    return join(app.getPath('userData'), 'auth.bin')
+  }
+
+  private persist(session: Session): void {
+    if (!safeStorage.isEncryptionAvailable()) return
+    try {
+      writeFileSync(this.sessionPath, safeStorage.encryptString(JSON.stringify(session)))
+    } catch (e) {
+      console.error('[auth] failed to persist session:', e instanceof Error ? e.message : e)
+    }
+  }
+
+  private loadPersisted(): Session | null {
+    if (!safeStorage.isEncryptionAvailable()) return null
+    try {
+      if (!existsSync(this.sessionPath)) return null
+      return JSON.parse(safeStorage.decryptString(readFileSync(this.sessionPath))) as Session
+    } catch {
+      // Decrypt/parse failure (e.g. keychain rotated) → discard and start signed-out.
+      this.deletePersisted()
+      return null
+    }
+  }
+
+  private deletePersisted(): void {
+    try {
+      if (existsSync(this.sessionPath)) unlinkSync(this.sessionPath)
+    } catch {
+      /* best-effort */
+    }
+  }
+}
