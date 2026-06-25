@@ -3,6 +3,7 @@ import { useChatStore } from '../store'
 import { CHROME_BG } from '../ui'
 import { EASE_OUT, useMotion } from '../motion'
 import { ConversationRow } from './ConversationRow'
+import { AccountWidget } from './AccountWidget'
 
 /**
  * Collapsible conversation sidebar, shown alongside the active chat. Scoped to the current project
@@ -56,6 +57,13 @@ export function Sidebar() {
         </button>
       </div>
 
+      {/* Collapsed account avatar — pinned to the bottom of the icon rail, cross-fades with the rail. */}
+      <div
+        className={`absolute inset-x-0 bottom-0 flex justify-center transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+      >
+        <AccountWidget collapsed />
+      </div>
+
       {/* Expanded content — fixed width so it never reflows during the width animation; fades out when collapsed. */}
       <div
         className={`flex min-h-0 w-64 flex-1 flex-col transition-opacity duration-150 ${collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
@@ -105,6 +113,10 @@ export function Sidebar() {
             </li>
           ))}
         </ul>
+        {/* Account widget pinned below the conversation list (the list is flex-1, pushing this to the bottom). */}
+        <div className="border-t border-white/5">
+          <AccountWidget />
+        </div>
       </div>
     </motion.aside>
   )
