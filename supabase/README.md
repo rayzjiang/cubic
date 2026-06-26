@@ -10,7 +10,7 @@ supabase/
 ├── config.toml                 # local emulator config (this worktree owns supabase/)
 ├── seed.sql                    # one namespaced billing test user (test-only)
 ├── .env.example                # Stripe + Supabase secrets template -> copy to .env
-├── migrations/                 # plans -> subscriptions -> usage -> RPC -> idempotency -> RLS
+├── migrations/                 # plans -> subscriptions(+apply_subscription) -> usage -> get_entitlement -> RLS -> grants
 └── functions/
     ├── _shared/                # auth (JWT->user), admin client, stripe, config, cors
     ├── create-checkout/        # plan -> Stripe Checkout URL
@@ -51,13 +51,21 @@ Or step through it manually — see the script; the key steps are:
 1. `supabase start && supabase db reset` — applies migrations + seed (plans + test user).
 2. Create test products/prices in Stripe, then update the two `price_id`s in
    `migrations/20260624000001_billing_plans.sql` (or `update public.plans …`) and re-reset.
-3. `cp supabase/.env.example supabase/.env` and fill the local keys printed by
-   `supabase start` (URL, anon, service_role) + your `sk_test_…`.
+3. `cp supabase/.env.example supabase/.env` and fill ONLY the Stripe keys
+   (`sk_test_…`, plus the `whsec_…` from step 5). Do NOT set `SUPABASE_URL`/keys for
+   local — `supabase functions serve` auto-injects them (see `.env.example`).
 4. `supabase functions serve --env-file supabase/.env` (terminal A).
 5. `stripe listen --forward-to localhost:54321/functions/v1/stripe-webhook` (terminal B);
    paste the printed `whsec_…` into `.env`, restart step 4.
 6. Mint a JWT for the seeded user (password grant) and drive Checkout / triggers.
 7. Assert rows + `get_entitlement` (see the script's assertions).
+
+## Stripe dashboard config (not code)
+
+- **Customer Portal** must be enabled + configured with Pro + Max as switchable
+  products (Settings → Billing → Customer portal), or `create-portal` fails.
+- **Dunning emails** + the failed-renewal retry schedule (pairs with the `past_due`
+  grace) → tracked in `TODOS/POSTMVP.md`. No code.
 
 ## What this does NOT include (downstream waves)
 

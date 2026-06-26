@@ -23,10 +23,20 @@ Deno.serve(async (req) => {
     if (planErr) return json({ error: `plans lookup failed: ${planErr.message}` }, 500);
     if (!planRow) return json({ error: 'plan unavailable' }, 400);
 
-    // Reuse the user's existing Stripe customer if they've subscribed before
-    // (the never-deleted subscriptions row keeps stripe_customer_id across cancel).
-    const { data: existing } = await admin
-      .from('subscriptions').select('stripe_customer_id').eq('user_id', caller.userId).maybeSingle();
+    // Look up any existing subscription row. Block a SECOND checkout if they're
+    // genuinely subscribed (active/trialing/past_due) — they should manage/repair via
+    // the Portal, not create a duplicate Stripe subscription. Canceled / incomplete /
+    // none may (re)subscribe (and reuse their stable stripe_customer_id below).
+    // A failed lookup must 500 — never risk minting a duplicate customer.
+    const { data: existing, error: existingErr } = await admin
+      .from('subscriptions')
+      .select('stripe_customer_id, status')
+      .eq('user_id', caller.userId)
+      .maybeSingle();
+    if (existingErr) return json({ error: 'subscription lookup failed' }, 500);
+    if (existing && ['active', 'trialing', 'past_due'].includes(existing.status)) {
+      return json({ error: 'already_subscribed' }, 409);
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -49,6 +59,7 @@ Deno.serve(async (req) => {
     return json({ url: session.url }, 200);
   } catch (e) {
     if (e instanceof Response) return e;
-    return json({ error: String(e) }, 500);
+    console.error('create-checkout error', e);
+    return json({ error: 'checkout failed' }, 500);
   }
 });

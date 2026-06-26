@@ -14,8 +14,20 @@ grant select on public.usage to authenticated, service_role;
 grant insert, update, delete on public.subscriptions to service_role;
 grant insert, update, delete on public.usage to service_role;
 grant insert, update, delete on public.plans to service_role;
-grant insert, update, delete on public.processed_webhook_events to service_role;
-grant select on public.processed_webhook_events to service_role;
 
--- The entitlement gate is callable by the user (own row) and the proxy.
-grant execute on function public.get_entitlement(uuid) to anon, authenticated, service_role;
+-- Functions default to EXECUTE for PUBLIC, so REVOKE first, then grant explicitly —
+-- otherwise "dropping anon" is meaningless (PUBLIC already covers anon).
+-- get_entitlement: a user reads their OWN row; the proxy (service_role) reads any.
+-- anon is intentionally NOT granted (a signed-out user has no entitlement) -> closes the IDOR.
+revoke all on function public.get_entitlement(uuid) from public;
+grant execute on function public.get_entitlement(uuid) to authenticated, service_role;
+
+-- apply_subscription: the paid-state writer -> service_role ONLY.
+revoke all on function public.apply_subscription(
+  uuid, text, text, public.subscription_status, text, text,
+  timestamptz, timestamptz, boolean, timestamptz
+) from public;
+grant execute on function public.apply_subscription(
+  uuid, text, text, public.subscription_status, text, text,
+  timestamptz, timestamptz, boolean, timestamptz
+) to service_role;

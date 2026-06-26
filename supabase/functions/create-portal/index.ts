@@ -13,8 +13,9 @@ Deno.serve(async (req) => {
 
   try {
     const caller = await requireUser(req);
-    const { data: sub } = await admin
+    const { data: sub, error: subErr } = await admin
       .from('subscriptions').select('stripe_customer_id').eq('user_id', caller.userId).maybeSingle();
+    if (subErr) return json({ error: 'subscription lookup failed' }, 500);
     if (!sub?.stripe_customer_id) return json({ error: 'no subscription' }, 404);
 
     const session = await stripe.billingPortal.sessions.create({
@@ -25,6 +26,7 @@ Deno.serve(async (req) => {
     return json({ url: session.url }, 200);
   } catch (e) {
     if (e instanceof Response) return e;
-    return json({ error: String(e) }, 500);
+    console.error('create-portal error', e);
+    return json({ error: 'portal failed' }, 500);
   }
 });

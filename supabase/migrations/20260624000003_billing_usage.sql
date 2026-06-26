@@ -15,7 +15,9 @@ create table public.usage (
 comment on table public.usage is
   'Atomic cost-cents counter per (user_id, period_start). Proxy upserts: '
   'on conflict do update spent_cents = usage.spent_cents + excluded.spent_cents. '
-  'A per-charge append-only ledger is a FUTURE add (when real money flows).';
+  'Old per-cycle rows are RETAINED intentionally as monthly spend history (analytics) '
+  '-- no cleanup job; get_entitlement sums only the current window. A per-charge '
+  'append-only ledger is a FUTURE add (when real money flows).';
 
 -- The Wave-2 proxy's atomic meter increment runs as service role, e.g.:
 --   insert into public.usage (user_id, period_start, spent_cents, updated_at)

@@ -31,12 +31,14 @@ declare
   v_allow numeric;
   v_spent numeric;
 begin
-  -- A caller may only read their OWN entitlement. (auth.uid() is null for the
-  -- service role, which is allowed to pass an explicit p_user_id — that's the proxy.)
   if p_user_id is null then
     raise exception 'get_entitlement: user id required';
   end if;
-  if auth.uid() is not null and auth.uid() <> p_user_id then
+  -- Only service_role (the Wave-2 proxy) may read ANOTHER user's entitlement. Every
+  -- real user JWT carries a sub, so auth.uid() is non-null and they are confined to
+  -- their own row; anon (null uid, role 'anon') is rejected. This closes the IDOR
+  -- where a null auth.uid() was wrongly treated as trusted.
+  if auth.role() <> 'service_role' and (auth.uid() is null or auth.uid() <> p_user_id) then
     raise exception 'get_entitlement: forbidden';
   end if;
 
@@ -61,12 +63,15 @@ begin
   where p.price_id = v_sub.price_id;
   v_allow := coalesce(v_allow, 0);
 
-  -- Spend only counts within the CURRENT period (a prior period has its own row).
-  select u.spent_cents into v_spent
+  -- Spend = SUM of all usage within the CURRENT Stripe billing window. Summing the
+  -- window (not an exact period_start match) is robust to a proxy timestamp slip and
+  -- is ledger-ready (one counter row today, or many ledger rows later); prior cycles
+  -- fall outside [start, end) so they never count.
+  select coalesce(sum(u.spent_cents), 0) into v_spent
   from public.usage u
   where u.user_id = p_user_id
-    and u.period_start = v_sub.current_period_start;
-  v_spent := coalesce(v_spent, 0);
+    and u.period_start >= v_sub.current_period_start
+    and u.period_start <  v_sub.current_period_end;
 
   return query
     select (v_spent < v_allow),          -- hard cap: over allowance => not entitled
