@@ -89,16 +89,27 @@ export default {
 
     if (env.MOCK_UPSTREAM) return json(mockResponse(upstreamBody), 200);
 
-    const upstream = await fetch(upstreamUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(upstreamBody),
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(upstreamBody),
+      });
+    } catch {
+      // Network/TLS failure reaching Anthropic — return an Anthropic-shaped envelope so the
+      // client SDK surfaces a clean error instead of a bare 500.
+      return json({ type: 'error', error: { type: 'api_error', message: 'upstream request to Anthropic failed' } }, 502);
+    }
 
     // Transparent body pipe — handles streaming and non-streaming identically (§A-2).
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: new Headers(upstream.headers),
-    });
+    // Strip body-framing headers: the Workers runtime may have already decompressed the body,
+    // so a copied `content-encoding`/`content-length` would make the client double-decode or
+    // mis-read the stream. The platform re-adds correct framing for the bytes we actually emit.
+    const respHeaders = new Headers(upstream.headers);
+    respHeaders.delete('content-encoding');
+    respHeaders.delete('content-length');
+    respHeaders.delete('transfer-encoding');
+    return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
   },
 };
