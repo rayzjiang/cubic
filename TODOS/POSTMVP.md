@@ -200,6 +200,12 @@ Deferred improvements (roughly in priority order):
   **async / non-blocking** (serve the LLM response first, record out-of-band) and **batch**
   if load demands; entitlement reads are already cached ~30–60s (§A-5). The current counter
   schema supports this unchanged — no schema work, noted so it isn't lost.
+- [ ] **Refund / dispute auto-revoke webhooks** — the webhook currently handles only
+  `customer.subscription.*`; it IGNORES `charge.refunded`, `charge.dispute.created`, and
+  `customer.subscription.paused`, so a refunded/disputed user keeps access until period end.
+  MVP handles refunds manually in the Stripe dashboard (cancel-anytime is the live control,
+  Radar covers disputes); automate access-revoke on these events once volume warrants. The
+  webhook switch + `apply_subscription` already make adding a case trivial. _(see §G-4)_
 
 ---
 

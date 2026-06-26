@@ -96,6 +96,10 @@
     - [ ] **Cancel / `past_due` via real Stripe webhooks** — verified only at DB/RPC level (rows written by hand); confirm a real Stripe cancel + a real failed-renewal flip `subscriptions.status` and revoke access (incl. the ~24h dunning grace).
     - [ ] **Prod deploy** — cloud Supabase (migrations + Edge Functions + service-role secret), real webhook endpoint (not `stripe listen`), and the `cubic://` deep link landing in the actual app (local tests used the emulator + a stray Electron handler).
 - [ ] **§G-4** **Refund + support process** — a real inbox/channel + a refund SOP (ties to §C's money-back comfort).
+    - **Cancel is already built** (Customer Portal → `customer.subscription.deleted` webhook → `status='canceled'` → blocked). MVP money-control = cancel-anytime; verified at DB level, click-through in §G-3.
+    - **Refund policy + handling (decide before charging):** for MVP, issue refunds **manually in the Stripe dashboard** (low volume; industry norm for subscription SaaS — Cursor/CC don't auto-refund). Write the policy (e.g. "cancel anytime; refunds case-by-case") and the SOP step of whether a manual refund **also cancels** the sub (a refund alone does NOT stop billing or revoke access).
+    - **Refund/dispute webhook automation (post-MVP, → `POSTMVP.md`):** we currently **ignore** `charge.refunded` / `charge.dispute.created` / `customer.subscription.paused`, so a refunded/disputed user keeps access until period end. Acceptable for MVP (manual handling); automate access-revoke on these events when volume warrants.
+    - **Stripe Radar** on (dispute/fraud defense) + **Stripe Tax** + automatic receipts/invoices are dashboard toggles — confirm enabled before launch.
 
 ---
 
