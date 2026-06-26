@@ -186,6 +186,23 @@ Deferred improvements (roughly in priority order):
 
 ---
 
+## Billing / payments ops (Stripe)
+
+- [ ] **Enable Stripe dunning emails** — Dashboard → Settings → Billing → failed-payment
+  + retry emails, with the retry schedule matching the ~24h fail-fast `past_due` grace.
+  Zero code; pairs with the proxy entitlement gate so a customer is told their renewal
+  failed instead of silently losing access. _(surfaced during WT-BILLING fix pass)_
+- [ ] **Account-deletion must cancel Stripe first** — the `subscriptions` row is only an
+  entitlement cache (`ON DELETE CASCADE` clears it when a user is deleted); the real
+  customer/payment record lives in Stripe. A "delete my account" flow must cancel the
+  Stripe subscription BEFORE deleting the user, else it keeps billing a deleted user.
+- [ ] **Usage-meter write at scale** — the Wave-2 proxy should write the usage counter
+  **async / non-blocking** (serve the LLM response first, record out-of-band) and **batch**
+  if load demands; entitlement reads are already cached ~30–60s (§A-5). The current counter
+  schema supports this unchanged — no schema work, noted so it isn't lost.
+
+---
+
 ## Motion quality / video
 
 - [ ] **\*\*\* NEEDS GRILLING \*\*\* — AI video generation built into the workflow.** Generate AI video from inside Cubic (UI stays Cubic-side) and have Cubic drop the result straight onto the AE timeline — add as a footage layer / drag-drop into the active comp at the playhead, no manual import round-trip (`importAssetToComp` already does the import half). Grill before building: which gen model/provider; asset storage + naming; how the user prompts/triggers it in the UI; placement + in/out defaults; cost/latency + whether it's a separate credit pool from the LLM allowance; pairs with "let the AI view generated video" below for a generate→inspect→refine loop. Net-new feature, not just a tool.

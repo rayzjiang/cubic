@@ -1,6 +1,6 @@
 # Cubic — Database Schema (Data Model Design)
 
-> **Date:** 2026-06-24
+> **Date:** 2026-06-26 (refreshed after the WT-BILLING fix pass)
 > **Status:** Implementing **Wave 1 of Phase 5** (paid-backend infra). This documents the billing/auth data model that WT-BILLING creates and WT-PROXY-GATING (Wave 2) reads.
 >
 > **Source of truth:** the SQL migrations under `supabase/migrations/` are authoritative for the actual DDL (column types, constraints, indexes). This file is the human-readable design/diagram view — if it ever disagrees with the migrations, the migrations win.
@@ -15,7 +15,7 @@ Supabase (Postgres + Auth). Stripe is the source of truth for *money*; Postgres 
 
 ## Overview
 
-Four tables total: **3 we create** (`plans`, `subscriptions`, `usage`) + **1 we get free** (`auth.users`, built into Supabase Auth).
+Four tables total: **3 we create** (`plans`, `subscriptions`, `usage`) + **1 we get free** (`auth.users`, built into Supabase Auth). _(The migration **files** also define two functions — `apply_subscription()` the guarded webhook writer, and `get_entitlement()` the single read the proxy calls — plus RLS/grants; those are not tables.)_
 
 Design principle: **one writer per table.** No two pieces of code write the same table, and no fact is stored twice.
 
@@ -78,7 +78,7 @@ Two rows at launch (Pro, Max). Seeded by migration; never written at runtime.
 |---|---|---|
 | `price_id` | text (PK) | The Stripe Price ID (e.g. `price_123...`). Primary key. |
 | `plan` | text | Human label: `'pro'` \| `'max'`. |
-| `allowance_cents` | integer | Monthly usage allowance in cents (the spend cap for the cycle). |
+| `allowance_cents` | numeric(14,4) | Monthly usage allowance in cost-cents (the cycle's spend cap; sub-cent precision so tiny calls don't floor to 0). |
 | `active` | boolean | Whether this price is currently offered (lets us retire/replace a price without deleting history). |
 
 > Numbers are placeholders until locked at launch gate **§G-1**. Changing them = a one-line seed migration, no app code change.
@@ -87,20 +87,26 @@ Two rows at launch (Pro, Max). Seeded by migration; never written at runtime.
 
 ### `subscriptions` — entitlement source of truth
 
-The single answer to "is this user allowed to use the app right now?" **Written only by Stripe webhooks** — never by app code — so it can never drift from Stripe's reality. Read by the proxy's entitlement check (cached ~30–60s, Wave 2 §A-5).
+The single answer to "is this user allowed to use the app right now?" **Written only by Stripe webhooks**, and only through the `apply_subscription()` function (never a raw write) — so it can never drift from Stripe's reality. Read by the proxy's entitlement check (cached ~30–60s, Wave 2 §A-5).
 
-One row per user. The row is **upserted, never deleted** — on cancel we set `status = 'canceled'` but keep the row so the `stripe_customer_id` is never lost (prevents duplicate Stripe customers on resubscribe).
+One row per user. The row is **upserted, never deleted** — on cancel we set `status = 'canceled'` but keep the row so the `stripe_customer_id` is never lost (prevents duplicate Stripe customers on resubscribe). `status` is a Postgres enum (`subscription_status`).
 
 | Column | Type | Represents |
 |---|---|---|
-| `user_id` | uuid (PK, FK → auth.users) | Which user this subscription belongs to. One row per user. |
-| `stripe_customer_id` | text | The user's stable Stripe customer ID. Created once at first checkout, reused forever (incl. resubscribe). |
+| `user_id` | uuid (PK, FK → auth.users, ON DELETE CASCADE) | Which user this subscription belongs to. One row per user. |
 | `stripe_subscription_id` | text | The current Stripe subscription object ID. |
-| `status` | text | Stripe's subscription status: `active`, `trialing`, `past_due`, `canceled`, `unpaid`, etc. **This drives the entitlement decision.** |
-| `price_id` | text (FK → plans) | Which price/tier they're subscribed to → joins to `plans` for the allowance. |
-| `current_period_end` | timestamptz | When the current billing cycle ends (also anchors the `usage` reset). |
-| `trial_end` | timestamptz (nullable) | When the trial converts to paid, if trialing. |
-| `updated_at` | timestamptz | Last webhook write. |
+| `stripe_customer_id` | text | The user's stable Stripe customer ID. Created once at first checkout, reused forever (incl. resubscribe). |
+| `status` | enum `subscription_status` | Stripe's status: `active`, `trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused`. **Drives the entitlement decision.** |
+| `price_id` | text (FK → plans) | Which tier → joins `plans` for the allowance. |
+| `plan` | text | Denormalized label (`'pro'`/`'max'`) copied from `plans`. |
+| `current_period_start` | timestamptz | Start of the current billing cycle (the `usage` reset anchor). |
+| `current_period_end` | timestamptz | End of the current billing cycle. |
+| `cancel_at_period_end` | boolean | Whether the sub is scheduled to end at period end. |
+| `last_event_at` | timestamptz | Stripe `event.created` of the last applied event — older events are ignored (out-of-order protection). |
+| `updated_at` | timestamptz | Last write. |
+
+> **The trial** lives in Stripe (`trial_period_days`) and surfaces here as `status = 'trialing'` — we don't store a separate `trial_end`. It is **built but OFF by default**; flip `TRIAL.enabled` in `functions/_shared/config.ts` to enable (§C-4).
+> **Out-of-order safety:** `apply_subscription()` is the sole webhook write path — a guarded upsert that applies an event only if its `event.created` ≥ the stored `last_event_at`, so a stale "active" can't resurrect a "canceled" row.
 
 **Entitlement rule (the product decision):** a user is entitled when
 `status IN ('active', 'trialing', 'past_due')`.
@@ -118,7 +124,7 @@ One row per user per billing cycle. Reset = a new row each cycle (old rows are f
 |---|---|---|
 | `user_id` | uuid (FK → auth.users) | Which user. |
 | `period_start` | timestamptz | Start of the billing cycle this counter covers. **Aligned to the Stripe billing anchor**, not the calendar month, so resets match what Stripe actually bills. Part of the key. |
-| `spent_cents` | integer | Running total spent this cycle. Proxy does an atomic `spent_cents = spent_cents + cost` upsert per request. |
+| `spent_cents` | numeric(14,4) | Running total spent this cycle (cost-cents, sub-cent precision). Proxy does an atomic `spent_cents = spent_cents + cost` upsert per request. |
 | `updated_at` | timestamptz | Last metering write. |
 
 Key: `(user_id, period_start)`.
@@ -131,13 +137,14 @@ Key: `(user_id, period_start)`.
 
 The Wave-2 proxy makes **one** call per request and gets back everything it needs. In plain terms, the RPC:
 
-1. Looks up the user's `subscriptions` row → reads `status` and `price_id`.
-2. Checks `status IN ('active', 'trialing', 'past_due')` → if not, returns **blocked**.
-3. Joins `plans` on `price_id` → reads `allowance_cents`.
-4. Reads the user's current-cycle `usage` row → reads `spent_cents`.
-5. Returns `{ entitled, remaining_cents = allowance_cents − spent_cents }`.
+1. **Access check** — only `service_role` (the proxy) may read another user's row; a logged-in user may read only their own (`auth.uid()`); signed-out/anon is rejected.
+2. Looks up the user's `subscriptions` row → reads `status` and `price_id`.
+3. Checks `status IN ('active', 'trialing', 'past_due')` → if not, returns **blocked**.
+4. Joins `plans` on `price_id` → reads `allowance_cents`.
+5. **Sums** the user's `usage` across the current billing window `[current_period_start, current_period_end)` → `spent_cents`.
+6. Returns `{ entitled, plan, price_id, allowance_cents, spent_cents, period_start, period_end, status }` — where `entitled` = status-ok **AND** `spent_cents < allowance_cents` (over-cap blocks even with a good status).
 
-Because the allowance comes back inside the RPC result, the proxy never needs its own copy of the price→allowance map — the `plans` table is the only place that number lives.
+Because the allowance comes back inside the RPC result, the proxy never needs its own copy of the price→allowance map — the `plans` table is the only place that number lives. It is a `SECURITY DEFINER` function so the predicate can't be re-implemented (and diverge) elsewhere.
 
 ---
 
@@ -147,7 +154,7 @@ Because the allowance comes back inside the RPC result, the proxy never needs it
 |---|---|
 | `auth.users` | Supabase Auth |
 | `plans` | migration seed (reference data) |
-| `subscriptions` | Stripe webhooks |
+| `subscriptions` | Stripe webhooks (only via `apply_subscription()`) |
 | `usage` | the proxy/Worker |
 
 Keeping these disjoint is what guarantees the local DB never disagrees with Stripe and that no two services race on the same row.

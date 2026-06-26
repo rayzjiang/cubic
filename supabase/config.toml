@@ -1,0 +1,52 @@
+# Supabase local config for the WT-BILLING worktree.
+# Minimal-but-bootable: enough to run `supabase start` and exercise the billing
+# Edge Functions + migrations locally. WT-AUTH never created a supabase/ dir, so
+# this worktree owns it outright (no merge collision). At integration, fold any
+# WT-AUTH auth provider config into the [auth] section below.
+project_id = "cubic"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+# Local dev only. The renderer/app deep-links via cubic://; OAuth providers are
+# configured by WT-AUTH at integration. site_url + redirects here just let the
+# local emulator mint sessions for the seeded billing test user.
+site_url = "http://localhost:54321"
+additional_redirect_urls = ["cubic://billing/success", "cubic://billing/cancel", "cubic://billing/portal-return"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# Edge Functions. All three verify identity in code (manual JWT verify for
+# checkout/portal; Stripe signature for the webhook), so the platform JWT gate
+# is OFF — the webhook in particular is called by Stripe with no Supabase JWT.
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.create-portal]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
