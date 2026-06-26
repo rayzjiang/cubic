@@ -66,3 +66,12 @@ Or step through it manually — see the script; the key steps are:
   (consumes `get_entitlement` + the `usage` atomic increment).
 - Per-charge append-only ledger — added when real money flows.
 - Locking real price/allowance/trial numbers — launch gate §G-1.
+
+## Verified vs. not (in this worktree)
+
+Locally verified: Checkout creation, real test-mode payment, webhook signature
+verify + subscription sync, and `get_entitlement` across all states (active /
+over-cap / past_due / canceled). NOT yet exercised end-to-end — **covered by
+launch gate §G-3** (`pay → use → cancel via Portal → access revoked` on a clean
+machine): the Customer Portal flow, cancel/past_due via real Stripe webhooks, and
+the prod deploy (cloud Supabase + real webhook endpoint + in-app deep link).

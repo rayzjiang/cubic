@@ -18,8 +18,9 @@ Deno.serve(async (req) => {
     if (plan !== 'pro' && plan !== 'max') return json({ error: 'unknown plan' }, 400);
 
     // Resolve the Stripe price from the plans table (the allowance/price SSOT).
-    const { data: planRow } = await admin
+    const { data: planRow, error: planErr } = await admin
       .from('plans').select('price_id').eq('plan', plan).eq('active', true).maybeSingle();
+    if (planErr) return json({ error: `plans lookup failed: ${planErr.message}` }, 500);
     if (!planRow) return json({ error: 'plan unavailable' }, 400);
 
     // Reuse the user's existing Stripe customer if they've subscribed before

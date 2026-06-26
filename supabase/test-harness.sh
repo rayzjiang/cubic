@@ -21,7 +21,7 @@ say() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 # ──────────────────────────────────────────────────────────────────────────────
 offline() {
   have supabase || { echo "supabase CLI not installed — see supabase/README.md"; exit 1; }
-  have psql     || { echo "psql not found (comes with the supabase CLI / postgres)"; exit 1; }
+  have psql     || { echo "psql not found — install: brew install libpq && brew link --force libpq"; exit 1; }
 
   say "Resetting local DB (migrations + seed)"
   supabase db reset
