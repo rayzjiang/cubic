@@ -190,6 +190,12 @@ export class AnthropicProvider implements LLMProvider {
 
   constructor() {
     const proxyMode = process.env.CUBIC_ENV === 'prod';
+    // Proxy mode MUST route through the Worker via ANTHROPIC_BASE_URL (set by app config from
+    // CUBIC_PROXY_URL). Without it the SDK would silently call api.anthropic.com with a placeholder
+    // key (a confusing 401) AND a bare, ruleless request — fail loud on the misconfiguration instead.
+    if (proxyMode && !process.env.ANTHROPIC_BASE_URL) {
+      throw new Error('CUBIC_ENV=prod requires CUBIC_PROXY_URL (→ ANTHROPIC_BASE_URL); refusing to call Anthropic directly with no key.');
+    }
     // Direct-local needs a real key; proxy mode has none on-device (the Worker holds it).
     // The SDK still requires a non-empty apiKey string, so pass a placeholder in proxy mode —
     // baseURL (ANTHROPIC_BASE_URL, set by app config from CUBIC_PROXY_URL) routes to the Worker,

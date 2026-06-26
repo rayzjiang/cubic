@@ -72,15 +72,25 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
 describe('AnthropicProvider constructor fork', () => {
   const PRIOR_ENV = process.env.CUBIC_ENV;
   const PRIOR_KEY = process.env.ANTHROPIC_API_KEY;
+  const PRIOR_BASE = process.env.ANTHROPIC_BASE_URL;
   afterEach(() => {
     if (PRIOR_ENV === undefined) delete process.env.CUBIC_ENV; else process.env.CUBIC_ENV = PRIOR_ENV;
     if (PRIOR_KEY === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = PRIOR_KEY;
+    if (PRIOR_BASE === undefined) delete process.env.ANTHROPIC_BASE_URL; else process.env.ANTHROPIC_BASE_URL = PRIOR_BASE;
   });
 
-  it('proxy mode (prod) with no on-device key: does NOT throw (Worker holds the key)', () => {
+  it('proxy mode (prod) routed at the Worker with no on-device key: does NOT throw', () => {
     process.env.CUBIC_ENV = 'prod';
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8787'; // set by app config from CUBIC_PROXY_URL
     delete process.env.ANTHROPIC_API_KEY;
     expect(() => new AnthropicProvider()).not.toThrow();
+  });
+
+  it('proxy mode (prod) with NO proxy URL: throws loud (won\'t silently call Anthropic direct)', () => {
+    process.env.CUBIC_ENV = 'prod';
+    delete process.env.ANTHROPIC_BASE_URL;
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => new AnthropicProvider()).toThrow('CUBIC_PROXY_URL');
   });
 
   it('direct-local mode with no key: throws (it calls Anthropic directly)', () => {

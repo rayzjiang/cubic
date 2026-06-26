@@ -38,6 +38,9 @@ function parseRegistry(src) {
     names.push(name);
     if (/\binternal:\s*true\b/.test(block)) internal.push(name);
   }
+  // Sanity floor: the registry has ~90 commands. A much smaller count means the regex stopped
+  // matching (reformatted registry / multi-line keys) — fail loud rather than ship a broken guard.
+  if (names.length < 50) throw new Error(`gen-command-names: only ${names.length} commands parsed — registry format likely changed`);
   return { names, internal };
 }
 
