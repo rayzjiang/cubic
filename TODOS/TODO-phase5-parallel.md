@@ -29,13 +29,14 @@
 - [x] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch (+ account-menu *shell/initial ui*: name/avatar/Log out; plan+Upgrade fill in at §D-5)
 - _Real Supabase cloud project stood up + Google OAuth configured; local emulator deferred to WT-BILLING. §B-5 (branded OAuth success page) → Wave 3 WT-PAYWALL-UX._
 
-**3. WT-BILLING** — §C (Stripe + Supabase `subscriptions`; soft-depends on WT-AUTH's Supabase project)
-- [ ] §C-1 `subscriptions` table (entitlement source of truth; webhook-written only)
-- [ ] §C-2 Stripe Checkout + Customer Portal (hosted) → `cubic://` back
-- [ ] §C-3 webhooks → Supabase sync (only writer of paid-state)
-- [ ] §C-4 card-up-front 7-day trial (`trial_period_days`, auto-convert)
-- [ ] §C-5 keep trial cap very small (pure CAC, few dollars)
-- [ ] §C-7 abuse defenses — one-trial-per-card + Stripe Radar
+**3. WT-BILLING** ✅ **DONE — backend built + verified (offline + Stripe test-mode E2E for subscribe→entitled); PR ready** — §C (Stripe + Supabase; `supabase/` dir owned + created here)
+- [x] §C-1 `subscriptions` (PK user_id, never-delete, `stripe_customer_id` inline — no separate `customers` table) + `plans` (allowance SSOT) + `usage` (cost-cents counter) + `get_entitlement` RPC — webhook-written only
+- [x] §C-2 Stripe Checkout + Customer Portal edge functions → `cubic://` back _(Checkout verified E2E; Portal built, not yet clicked-through → §G-3)_
+- [x] §C-3 webhooks → Supabase sync (only writer of paid-state) _(verified for subscribe; cancel/past_due via real Stripe webhooks → §G-3)_
+- [x] §C-4 trial built but **DEFAULT OFF** (trial-agnostic: `trial_period_days` flag + `trialing` status + cap constant) — no free tier, everyone paid day 1
+- [ ] §C-5 trial-cap sizing → deferred to §G-1 (trial currently OFF; `TRIAL.capCents` placeholder exists)
+- [x] §C-7 abuse defenses — Stripe Radar (dashboard) + one-active-sub-per-customer; one-trial-per-card moot (no trial); per-user rate-limit = §A-7 (Wave 2)
+- _Locked: 2 tiers (Pro+Max), allowance = internal cost-cents shown as %-bar, billing-cycle-anchored reset, past_due ~24h fail-fast grace, entitlement gates the LLM call (not app access). §C-6 cap enforcement = Wave-2 proxy. §C-8 price/allowance numbers = placeholders → §G-1. Full E2E (Portal, real cancel/past_due webhooks, prod deploy) → §G-3._
 
 **(floats — slot into any free lane; ship-blocker, collides with nothing)**
 **WT-WS-AUTH** — §??? (local transport hardening; `wsBridge.ts` + `getBackendPort()` IPC + `bridge/client.ts` + AE panel)
