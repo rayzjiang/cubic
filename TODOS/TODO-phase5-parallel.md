@@ -39,11 +39,11 @@
 - _Locked: 2 tiers (Pro+Max), allowance = internal cost-cents shown as %-bar, billing-cycle-anchored reset, past_due ~24h fail-fast grace, entitlement gates the LLM call (not app access). §C-6 cap enforcement = Wave-2 proxy. §C-8 price/allowance numbers = placeholders → §G-1. Full E2E (Portal, real cancel/past_due webhooks, prod deploy) → §G-3._
 
 **(floats — slot into any free lane; ship-blocker, collides with nothing)**
-**WT-WS-AUTH** — §??? (local transport hardening; `wsBridge.ts` + `getBackendPort()` IPC + `bridge/client.ts` + AE panel)
-- [ ] §???-4 dynamic backend port — `bind 127.0.0.1:0`, discover via `getBackendPort()` (**do first** — token + all clients ride this port; fixes Phase-4 §B "port-in-use")
-- [ ] §???-1 per-launch session token minted at startup, passed via `getBackendPort()` IPC
-- [ ] §???-2 reject sockets whose `hello` frame lacks the token (all 3 client types)
-- [ ] §???-3 (optional) explicit `127.0.0.1` bind — already done; just confirm
+**WT-WS-AUTH** ✅ **DONE** — §??? (local transport hardening; `wsBridge.ts` + `getBackendPort()` IPC + `bridge/client.ts` + AE panel + preflight/tests)
+- [x] §???-4 dynamic backend port — `bind 127.0.0.1:0`; backend reads the actual port back + reports `{port, token}` up to main (getBackendPort now returns `{port, token}`) + publishes `~/.cubic/conn.json`; fixes Phase-4 §B "port-in-use"
+- [x] §???-1 per-launch session token minted at startup (`crypto.randomUUID`), delivered via `getBackendPort()` IPC (renderer) + `~/.cubic/conn.json` (panel + loopback)
+- [x] §???-2 reject sockets whose `hello` frame lacks the token (all 3 client types + dev preflight + integration tests); close `4001` on bad token / ~2s no-auth timeout
+- [x] §???-3 explicit `127.0.0.1` bind — preserved as `bind 127.0.0.1:0` (loopback-only)
 
 **(floats — slim, instrumentation-only; depends only on WT-AUTH for user id; collides with nothing)**
 **WT-ANALYTICS** — §H (PostHog event hooks in the backend agent loop + dispatcher)
