@@ -4,7 +4,7 @@
 
 **Why it parallelizes well:** the big chunks are *separate services* — Cloudflare Worker (proxy), Supabase (auth+DB), Stripe (billing), the local WS layer, build/release tooling — not one shared `app/` dir. Contention is only where client integration touches `app/` and where the proxy's gating steps need auth+billing to exist first.
 
-**Critical path:** `(1 ∥ 2 ∥ 3) → 4 → 5 → 6 → 7 → launch gates`. WT-WS-AUTH floats free of all of it.
+**Critical path:** `(1 ∥ 2 ∥ 3) → 4 → 5 → WT-ANALYTICS → 6 → 7 → launch gates`. WT-WS-AUTH floats free of all of it; WT-ANALYTICS is a *late* float — pinned after Wave 3 (see Wave 3.5 below).
 
 ---
 
@@ -23,13 +23,13 @@
 - [x] §A-3 repoint client (`llm/anthropic.ts` `new Anthropic` → proxy `baseURL`, no on-device key)
 - [x] §A-9 keep `cache_control` breakpoint on the static prefix (prompt-cache win)
 
-**2. WT-AUTH** ✅ **DONE — verified end-to-end (PR ready)** — §B (Supabase project + `app/` auth UI; stand up the Supabase project here first)
+**2. WT-AUTH** ✅ **DONE — verified end-to-end (merged to main)** — §B (Supabase project + `app/` auth UI; stand up the Supabase project here first)
 - [x] §B-1 Google + Apple OAuth via system browser → `cubic://` deep link _(Google live + verified; Apple = config-only follow-up, §B-2 account acquired)_
 - [x] §B-3 secure on-device session — Electron `safeStorage` + auto-refresh
 - [x] §B-4 sign-in / sign-out UI + signed-out state + session recovery on launch (+ account-menu *shell/initial ui*: name/avatar/Log out; plan+Upgrade fill in at §D-5)
 - _Real Supabase cloud project stood up + Google OAuth configured; local emulator deferred to WT-BILLING. §B-5 (branded OAuth success page) → Wave 3 WT-PAYWALL-UX._
 
-**3. WT-BILLING** ✅ **DONE — backend built + verified (offline + Stripe test-mode E2E for subscribe→entitled); PR ready** — §C (Stripe + Supabase; `supabase/` dir owned + created here)
+**3. WT-BILLING** ✅ **DONE — backend built + verified (offline + Stripe test-mode E2E for subscribe→entitled); merged to main** — §C (Stripe + Supabase; `supabase/` dir owned + created here)
 - [x] §C-1 `subscriptions` (PK user_id, never-delete, `stripe_customer_id` inline — no separate `customers` table) + `plans` (allowance SSOT) + `usage` (cost-cents counter) + `get_entitlement` RPC — webhook-written only
 - [x] §C-2 Stripe Checkout + Customer Portal edge functions → `cubic://` back _(Checkout verified E2E; Portal built, not yet clicked-through → §G-3)_
 - [x] §C-3 webhooks → Supabase sync (only writer of paid-state) _(verified for subscribe; cancel/past_due via real Stripe webhooks → §G-3)_
@@ -44,14 +44,6 @@
 - [x] §???-1 per-launch session token minted at startup (`crypto.randomUUID`), delivered via `getBackendPort()` IPC (renderer) + `~/.cubic/conn.json` (panel + loopback)
 - [x] §???-2 reject sockets whose `hello` frame lacks the token (all 3 client types + dev preflight + integration tests); close `4001` on bad token / ~2s no-auth timeout
 - [x] §???-3 explicit `127.0.0.1` bind — preserved as `bind 127.0.0.1:0` (loopback-only)
-
-**(floats — slim, instrumentation-only; depends only on WT-AUTH for user id; collides with nothing)**
-**WT-ANALYTICS** — §H (PostHog event hooks in the backend agent loop + dispatcher)
-- [ ] §H-1 PostHog project + `posthog-node` in backend; identify by Supabase user id (soft-needs WT-AUTH)
-- [ ] §H-2 dispatcher `command_run { command, ok, retries }` event (the high-signal one — do first)
-- [ ] §H-3 activation funnel (`app_opened`/`ae_connected`/`first_prompt_sent`/`first_edit_succeeded`)
-- [ ] §H-4 conversion funnel (`trial_started`/`paywall_hit`/`subscribed`/`canceled`) — slots in as §C/§D land
-- [ ] §H-5 privacy line (no prompt/project content sent) → feeds §G-2 Privacy Policy
 
 ---
 
@@ -78,6 +70,23 @@
 - [ ] §D-4 non-technical copy throughout (consumer tone, no dev/terminal language)
 - [ ] §D-5 finish the account/profile menu (ChatGPT-style) — name/avatar/Log out (§B-4 shell) + plan tag + Upgrade (§D-2) + Manage subscription (§D-3) in one dropdown
 - [ ] account-widget polish (carried from WT-AUTH): (1) window-resize responsiveness — avatar/signed-in widget glitches on window grow/shrink → reflow cleanly, mirror ChatGPT/Claude desktop apps; (2) chat-page sidebar-collapse — avatar Y position shifts, must stay pinned at the same Y level
+
+---
+
+## Wave 3.5 — instrument the finished flow (WT-ANALYTICS; after Wave 3, before packaging)
+
+**WT-ANALYTICS** — §H (PostHog event hooks, server-side, in the backend agent loop + dispatcher). **Pinned here, not a free float:** wiring it after Waves 1–3 and before §E packaging means every dependency is already in place → one unblocked pass, no returning to it later.
+
+**Why here (nothing blocks it anymore):**
+- **Identity for free (from Wave 2):** §H-1 `identify(userId)` needs the Supabase user id *inside the backend child*, which today carries only `CUBIC_ENV`. WT-PROXY-GATING §A-4 already plumbs the Supabase JWT renderer→backend for the proxy call (the `CUBIC_AUTH_TOKEN` stub in `llm/anthropic.ts`); its `sub` is the user id. After Wave 2, `identify` piggybacks instead of building throwaway plumbing.
+- **Final surfaces + conversion fire sites (from Wave 3):** §H-3 instruments the first-run flow (`app_opened`/`ae_connected`/`first_prompt_sent`/`first_edit_succeeded`) that WT-PAYWALL-UX §D rebuilds — instrument once, after it's final. §H-4's `paywall_hit`/`trial_started`/`subscribed`/`canceled` only have fire sites once §D (+ the Wave-2 gate) exist.
+- **Before §E packaging:** §H-1 fires server-side to "survive §E obfuscation" → the analytics code must be in the bundle *before* WT-PACKAGING obfuscates/signs it, and gets exercised by the §G-3 clean-machine E2E.
+
+- [ ] §H-1 PostHog project + `posthog-node` in backend; identify by Supabase user id (id now available via Wave-2 §A-4)
+- [ ] §H-2 dispatcher `command_run { command, ok, retries }` event — the high-signal one (fire at the `executeTool` chokepoint, the 92-verb path). _Only §H item with standalone value pre-launch — can pull forward for dogfooding failure rates during §G-0 if wanted._
+- [ ] §H-3 activation funnel (`app_opened`/`ae_connected`/`first_prompt_sent`/`first_edit_succeeded`) — instrument the *final* §D first-run flow
+- [ ] §H-4 conversion funnel (`trial_started`/`paywall_hit`/`subscribed`/`canceled`) — fire sites land with the Wave-2 gate + §D; note `subscribed`/`canceled` are a *separate* integration in the remote Supabase `stripe-webhook` (Deno runtime, not `posthog-node`)
+- [ ] §H-5 privacy line (no prompt/project content sent — verb names + outcomes + counts only) → feeds §G-2 Privacy Policy
 
 ---
 
@@ -110,6 +119,7 @@
 - **Wave 1:** 1 ∥ 2 ∥ 3 (set up the Supabase project in WT-AUTH before WT-BILLING leans on it). WT-WS-AUTH floats — drop into any open lane.
 - **Wave 2:** WT-4 integrates 1+2+3 (needs all merged); same `proxy/` codebase as WT-1 so it follows it. WT-WS-AUTH can run parallel here.
 - **Wave 3:** WT-5 needs 2+3+4.
+- **Wave 3.5:** WT-ANALYTICS runs after WT-5, before WT-6 — identity from WT-4 (§A-4), final fire sites from WT-5 (§D), wired before §E obfuscates/signs the bundle.
 - **Wave 4:** 6 → 7 strictly serial (7 needs 6's signing). Then launch gates.
 - **If doing 2 parallel:** Wave 1 = 1 ∥ 2, then 3 in the freed lane (it soft-depends on 2 anyway); fit WT-WS-AUTH wherever.
 
@@ -117,7 +127,7 @@
 - WT-1 and WT-4 share the `proxy/` Worker codebase → sequential, not parallel.
 - WT-2, WT-5, WT-6 all touch `app/` (auth UI / paywall / packaging) → different waves, so no collision.
 - WT-WS-AUTH is local-transport only (`wsBridge.ts` + IPC + AE bridge) → parallel-safe with everything.
-- WT-ANALYTICS is instrumentation-only (adds event calls in the backend loop/dispatcher) → parallel-safe; soft-needs WT-AUTH for the user id, §H-4 fills in as §C/§D land.
+- WT-ANALYTICS is instrumentation-only (adds event calls in the backend loop/dispatcher) → collides with nothing, BUT pinned late (Wave 3.5): it wants Wave-2 identity plumbing (§A-4) + Wave-3 §D fire sites, and must land before §E packaging. Not an early free float.
 - WT-1 strips `rules.ts`/`definitions.ts` from the client; nothing else in Phase 5 edits those.
 - **Local-first (§A-0):** every paid-backend WT (1–4, BILLING, AUTH) is built+tested against local emulators (`wrangler dev` / `supabase start` / Stripe test) — real cloud/Supabase compute is spent only at the WT-PROXY-GATING §A-8 flip and the §G-3 clean-machine E2E. direct-local `npm run dev` stays untouched throughout.
 - Heavy parallelism is Wave 1 (3 separate services at once); Waves 2–4 narrow toward serial as integration + client/build work converge.
