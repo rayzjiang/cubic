@@ -29,7 +29,7 @@ cubic/
 │       └── tests/               # Per-domain integration tests (require live AE + panel)
 ```
 
-> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. Both the code-identifier rename (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`) AND the path/bundle rename (§B2, done 6/16/26) are complete: bundle id is now `com.cubic.ae-bridge`, the CEP panel displays as **Cubic**, and the port file lives at `~/.cubic/port` (alongside `~/.cubic/sessions/`).
+> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. Both the code-identifier rename (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`) AND the path/bundle rename (§B2, done 6/16/26) are complete: bundle id is now `com.cubic.ae-bridge`, the CEP panel displays as **Cubic**, and the backend publishes its `{port, token}` to `~/.cubic/conn.json` (alongside `~/.cubic/sessions/`).
 
 ## Commands
 ```bash
@@ -63,7 +63,7 @@ Both ids are content hashes, so an unchanged rebuild is a no-op (no spurious rel
 `startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).
 
 ## Architecture
-Two components over WebSocket: the **Node backend** hosts WS on `127.0.0.1:17923` (via the shared `startBackend()` — used by both `serve.ts`, the standalone bridge + agent loop the app spawns, and `index.ts`, the optional MCP dev entrypoint), receives `{ id, command, args }`, and forwards them to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` round-trip.
+Two components over WebSocket: the **Node backend** hosts WS on `127.0.0.1:0` (an OS-assigned dynamic port; via the shared `startBackend()` — used by both `serve.ts`, the standalone bridge + agent loop the app spawns, and `index.ts`, the optional MCP dev entrypoint), receives `{ id, command, args }`, and forwards them to the **CEP panel** in AE (`cep-extension/`), which runs `evalScript(handlersBundle + footer)` and sends back `{ id, ok, result }`. Results are synchronous — no `getResults` round-trip. The backend mints a per-launch token + publishes `{port, token}` to `~/.cubic/conn.json`; every client must echo the token in its first `hello` frame or be dropped (see `PROTOCOL.md`).
 
 > **Wire protocol contract:** the full WS message contract (both channels + `AgentEvent` + error codes) is locked in [`PROTOCOL.md`](./PROTOCOL.md) — the single source future host adapters depend on.
 

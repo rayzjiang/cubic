@@ -358,7 +358,7 @@ Handler errors return:
 
 ## 15. Architecture (one-paragraph)
 
-Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:17923`, receives MCP tool calls, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
+Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:0` (an OS-assigned dynamic port, published with a per-launch session token to `~/.cubic/conn.json`; every client authenticates with the token in its first `hello` frame), receives MCP tool calls, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
 
 ---
 

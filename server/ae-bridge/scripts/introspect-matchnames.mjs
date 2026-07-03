@@ -16,8 +16,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(__dirname, '..', 'tests', 'fixtures', 'ae-matchnames.json');
-const PORT_FILE = path.join(os.homedir(), '.ae-mcp-bridge', 'port');
-const PORTS = [17923, 17924, 17925, 17926, 17927];
+const CONN_FILE = path.join(os.homedir(), '.cubic', 'conn.json');
 
 // Every EFFECT matchName our code hardcodes (EFFECT_DICT), plus the two known-wrong guesses so the
 // fixture documents that they are NOT real (valid:false) — proof the guard would have caught them.
@@ -31,27 +30,23 @@ const CANDIDATES = [
   'ADBE Glow', 'ADBE Directional Blur',
 ];
 
-function candidatePorts() {
-  try {
-    const p = parseInt(fs.readFileSync(PORT_FILE, 'utf8').trim(), 10);
-    if (p) return [p, ...PORTS.filter((x) => x !== p)];
-  } catch { /* no file */ }
-  return PORTS;
-}
-
-function connect(port) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    ws.once('open', () => resolve(ws));
-    ws.once('error', () => reject(new Error('no bridge on ' + port)));
-  });
+function readConn() {
+  const { port, token } = JSON.parse(fs.readFileSync(CONN_FILE, 'utf8'));
+  return { port, token };
 }
 
 async function findBridge() {
-  for (const port of candidatePorts()) {
-    try { return await connect(port); } catch { /* next */ }
-  }
-  throw new Error('Could not reach the AE WS bridge — is AE open with the MCP Bridge panel connected?');
+  let conn;
+  try { conn = readConn(); }
+  catch { throw new Error('Could not read ~/.cubic/conn.json — is AE open with the Cubic panel connected?'); }
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${conn.port}`);
+    ws.once('open', () => {
+      ws.send(JSON.stringify({ type: 'hello', token: conn.token, role: 'dev' })); // authenticate first
+      resolve(ws);
+    });
+    ws.once('error', () => reject(new Error('no bridge on ' + conn.port)));
+  });
 }
 
 function call(ws, command, args) {

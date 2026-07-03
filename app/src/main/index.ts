@@ -43,8 +43,8 @@ function runDevPreflight(): void {
 }
 
 // Single-instance lock FIRST — load-bearing: a 2nd instance would spawn a 2nd backend that
-// hard-fails binding the fixed port 17923 (no fallback). The 2nd process quits immediately;
-// the existing window just refocuses.
+// overwrites ~/.cubic/conn.json and races for the single AE CEP worker connection. The 2nd process
+// quits immediately; the existing window just refocuses.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -106,6 +106,11 @@ if (!app.requestSingleInstanceLock()) {
     backend.markInstall(install)
     buildAppMenu()
     backend.start()
+    // Wait for the backend to OS-assign its port + mint the session token and report them up (it also
+    // writes ~/.cubic/conn.json here), so getBackendPort() has a value and the preflight/panel/loopback
+    // can discover the connection. Non-fatal on timeout — the renderer retries and the dot shows the
+    // real cause (reconnecting/stopped) from the supervisor status.
+    await backend.whenReady().catch((e: Error) => console.error('[main] backend not ready:', e.message))
     runDevPreflight() // dev-only; non-blocking, quits the app if the panel was stale + reloaded
     createWindow()
 

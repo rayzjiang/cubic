@@ -10,28 +10,45 @@ implement what's on this page** — nothing else in the codebase is part of the 
 
 ## Transport
 
-- **One WebSocket server** on `127.0.0.1:17923` (fixed; no fallback). Opened by the
-  backend (`bridge.start()` in `wsBridge.ts`, via the shared `startBackend()` — the app
-  spawns `src/serve.ts`; the MCP dev entrypoint is `src/index.ts`). A port
-  conflict is a hard error — only one backend runs at a time.
+- **One WebSocket server** bound loopback-only to **`127.0.0.1:0`** — the OS assigns a free
+  port at boot, so a port conflict can never make startup fatal (an explicit `AE_BRIDGE_PORT`
+  forces a fixed port for tests). Opened by the backend (`bridge.start()` in `wsBridge.ts`, via
+  the shared `startBackend()` — the app spawns `src/serve.ts`; the MCP dev entrypoint is
+  `src/index.ts`). Only one backend runs at a time (it owns the single worker connection).
+- The backend mints a **per-launch session token** at startup and publishes `{port, token}` to
+  **`~/.cubic/conn.json`** (and reports them up to Electron main over the child IPC channel).
 - Every message is a single JSON object, one per WS frame. Messages are dispatched by
   shape (see *Routing* below), not by a wrapping envelope.
-- **Three kinds of client** connect to this one port:
-  | Client | Role | Identifies itself by |
+- **Three kinds of client** connect to this one port; each must **authenticate first** (see
+  *Authentication*):
+  | Client | Role | First frame |
   |---|---|---|
-  | CEP worker (the AE panel) | **Role B** — runs `evalScript`, the only client that executes commands in AE | sends `{type:"hello", buildId}` on connect |
-  | `server/ai` loopback (`bridgeClient`) | the agent loop fetching live state / running tool calls | sends `{id,command,args}` |
-  | Electron renderer (Phase 4) | the chat UI | sends chat-channel messages (`userChat`…) |
+  | CEP worker (the AE panel) | **Role B** — runs `evalScript`, the only client that executes commands in AE | `{type:"hello", token, role:"worker", buildId}` |
+  | `server/ai` loopback (`bridgeClient`) | the agent loop fetching live state / running tool calls | `{type:"hello", token, role:"loopback"}`, then `{id,command,args}` |
+  | Electron renderer | the chat UI | `{type:"hello", token, role:"ui"}`, then chat-channel messages (`userChat`…) |
 
-  > The Electron renderer learns the port from the app's main process via a
-  > `getBackendPort()` IPC (main owns the port and passes it to the spawned backend) —
-  > it does **not** read `~/.ae-mcp-bridge/port`. That file is for the independently
-  > launched CEP worker + loopback client.
+  > How each client learns `{port, token}`: the Electron renderer asks the app's main process
+  > via the `getBackendPort()` IPC (main relays what the backend reported up); the CEP worker +
+  > loopback client read `~/.cubic/conn.json`. Main no longer decides the port — the backend
+  > OS-assigns it and reports it up.
+
+## Authentication
+
+- Every socket must present the session token in its **first frame**: `{type:"hello", token,
+  role}`. The backend holds the socket unauthenticated until then and **drops it** (close code
+  `4001`) if the first frame's token is missing/wrong, or if nothing valid arrives within ~2 s.
+- The token gate defeats a malicious localhost-reaching webpage: a page can't read
+  `~/.cubic/conn.json`, so it can never present the token. (A co-resident native process is out
+  of scope — same threat model as VS Code / Cursor.)
+- The **worker's** hello doubles as registration: `role:"worker"` (or a `buildId`) registers/replaces
+  the single worker client; `ui`/`loopback`/`dev` roles authenticate only. `role` is otherwise just
+  a label — there is no per-role authorization; the one shared token authenticates any legit client.
 
 ## Routing (how the backend tells messages apart)
 
-In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`):
-1. `type === "hello"` → register/replace the single **worker** client (records its `buildId`).
+In order, on each inbound message (`setupConnectionHandler` in `wsBridge.ts`). **The first frame must be
+a valid-token `hello` (see *Authentication*) — everything below is gated on an authenticated socket:**
+1. `type === "hello"` → authenticate the socket (token check); if `role:"worker"`/`buildId`, also register/replace the single **worker** client (records its `buildId`).
 2. `type === "devReload"` / `type === "workerInfo"` / `type === "backendInfo"` → **dev-only** control messages (see below).
 3. `type ∈ ChatInbound` (`userChat`/`cancel`/`queue`/`editQueue`/`removeQueue`/`attach`/`delete`/`list`/`loadHistory`) → agent **chat channel**.
 4. has an `ok` field → a **command response** from the worker (correlated by `id`).
@@ -166,7 +183,9 @@ list via the `list` → `conversations` query and `delete`, and load a conversat
 ## Who sends what (adapter checklist)
 
 A new **host adapter** (Role B worker) must:
-- Connect to `ws://127.0.0.1:17923` and send `{type:"hello"}`.
+- Read `{port, token}` from `~/.cubic/conn.json`, connect to `ws://127.0.0.1:<port>`, and send
+  `{type:"hello", token, role:"worker"}` as its first frame (re-read the file on each reconnect so a
+  backend restart's new port/token is picked up).
 - Receive `{id,command,args}`, execute it in the host, reply `{id,ok,result}` /
   `{id,ok:false,error}`. Emit the structured-error shape above on domain failures.
 - Reconnect automatically on socket close. It does **not** touch the chat channel.

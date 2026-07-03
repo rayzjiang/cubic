@@ -51,9 +51,9 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - **Consumed by `server/ae-bridge`:** that package folds this loop into its process (`cubic-ai` as a `file:../ai` dep) and owns the panel↔loop wiring, session persistence, and steer-queue editing — see `server/ae-bridge/CLAUDE.md`. Build note: rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
 
 ## Bridge transport (BridgeClient)
-- **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on port 17923. The CEP panel inside AE connects *to* that WS port as a client. `BridgeClient` here connects to the same port as a second external client. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
+- **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on a dynamic OS-assigned port and publishes `{port, token}` to `~/.cubic/conn.json`. The CEP panel inside AE connects *to* that WS port as a client; `BridgeClient` here connects as a second external client — both read `conn.json` and authenticate with the token. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
 - **`npm start` is NOT needed** when Claude Code is running — the bridge is already up. Run `npm start` only when running `server/ai` standalone outside Claude Code.
-- Port discovery: read `~/.cubic/port`, then fall back to scanning `17923–17927`. `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
+- Connection: read `{port, token}` from `~/.cubic/conn.json` (the backend OS-assigns a dynamic port + mints a per-launch token), connect, and send `{type:'hello', token, role:'loopback'}` as the first frame (the backend drops any socket whose first frame lacks the token). Then `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
 - Requires AE open **with the Cubic panel connected**; a bare bridge with no panel replies with empty/blank state.
 
 ## Context pipeline (per turn)

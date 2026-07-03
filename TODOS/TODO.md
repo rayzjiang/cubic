@@ -181,7 +181,7 @@ leftovers above — status dot + rename chat — shipped already, so ⑦ = just 
 
 > Mirrored here so they're not forgotten; full detail lives in the phase files. These are deliberately **not** parallelized into the worktree waves above.
 
-> _Local transport hardening (dynamic port + WebSocket auth) moved into Phase 5 — see `WT-WS-AUTH` in `TODO-phase5-parallel.md` (§???-1/2/3/4)._
+> _Local transport hardening (dynamic port + WebSocket auth) moved into Phase 5 — ✅ **DONE** (`WT-WS-AUTH`, §???-1/2/3/4 in `TODO-phase5-parallel.md`): backend binds `127.0.0.1:0` + mints a per-launch token, publishes `~/.cubic/conn.json` + reports up to main, all clients authenticate via a token `hello`._
 - _→ moved to [`POSTMVP.md`](POSTMVP.md) (Architecture cleanup): brain→bridge direct in-process call._
 - _→ moved to [`POSTMVP.md`](POSTMVP.md) (Test-truth & handler correctness): exhaustive test-truth pass._
 - [x] **FIXED (6/13/26) — handler atomicity (no orphans / no partial updates).** Self-heal retries were stacking duplicates because a failed create left an orphan. (1) All orphan-prone create/apply handlers (`createTextLayer`, solid/camera/light/null, shape, `applyEffect`/`applyEffectTemplate`, `setLayerMask` create) now roll back the partial object on failure. (2) `set*` handlers (`setLayerProperties`, `batchSetLayerProperties`, `setCompositionProperties`, `setLayerMask` update, `setTextAnimatorRangeSelector`) are validate-first: invalid enum/font throws a self-healing error (via shared `_requireEnum`) BEFORE any mutation, so nothing partially applies; `updateMarker` already atomic. Live-verified. Genuine mid-`setValue` AE rejections still backstopped by idempotent retry + `.aep` snapshot (not in-handler restore — riskier than the partial).

@@ -6,11 +6,10 @@
 (function () {
   "use strict";
 
-  // Headless worker: single hardcoded port. One backend + one connection at a time —
-  // any other port would mean a duplicate/orphaned bridge, which the backend now
-  // fails loudly on rather than papering over with a fallback scan (see wsBridge.ts).
-  const PORT = 17923;
-
+  // The backend OS-assigns its WS port and mints a per-launch session token, publishing both to
+  // ~/.cubic/conn.json. This headless worker reads that file (via ExtendScript, which resolves ~)
+  // on every connect attempt and echoes the token in its `hello` — the backend drops any socket whose
+  // first frame lacks it. Re-reading each attempt means a backend restart (new port/token) is picked up.
   const statusEl = document.getElementById("status");
   const errorEl = document.getElementById("error-box");
 
@@ -51,47 +50,80 @@
     });
   }
 
+  // Read ~/.cubic/conn.json through ExtendScript (resolves ~ on both platforms; the panel has no Node
+  // fs). Calls back with {port, token} or null if the file is missing/unreadable (backend not up yet).
+  function readConn(cb) {
+    if (!cs) { cb(null); return; }
+    const es =
+      "(function(){" +
+      "  try {" +
+      "    var f = new File(\"~/.cubic/conn.json\");" +
+      "    if (!f.exists) return \"\";" +
+      "    f.open(\"r\"); var c = f.read(); f.close();" +
+      "    return c;" +
+      "  } catch (e) { return \"\"; }" +
+      "})();";
+    cs.evalScript(es, function (raw) {
+      if (!raw || raw === "EvalScript error.") { cb(null); return; }
+      try {
+        const conn = JSON.parse(raw);
+        cb((conn && typeof conn.port === "number" && typeof conn.token === "string") ? conn : null);
+      } catch (e) { cb(null); }
+    });
+  }
+
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
     clearError();
     setStatus("Connecting…", "connecting");
-    const url = "ws://127.0.0.1:" + PORT;
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
-      scheduleReconnect("Failed to create WebSocket: " + e);
-      return;
-    }
+    readConn(function (conn) {
+      if (!conn) {
+        scheduleReconnect("Waiting for Cubic backend (no ~/.cubic/conn.json yet)…");
+        return;
+      }
+      const url = "ws://127.0.0.1:" + conn.port;
+      try {
+        ws = new WebSocket(url);
+      } catch (e) {
+        scheduleReconnect("Failed to create WebSocket: " + e);
+        return;
+      }
 
-    ws.onopen = function () {
-      backoffMs = 1000;
-      clearError();
-      setStatus("Connected", "connected");
-      // Report the baked-in bundle id so the dev preflight can detect a stale panel.
-      ws.send(JSON.stringify({ type: "hello", buildId: (typeof __CUBIC_BUILD_ID__ !== "undefined" ? __CUBIC_BUILD_ID__ : null) }));
-    };
+      ws.onopen = function () {
+        backoffMs = 1000;
+        clearError();
+        setStatus("Connected", "connected");
+        // Authenticate as the worker (token) + report the baked-in bundle id (stale-panel preflight).
+        ws.send(JSON.stringify({
+          type: "hello",
+          token: conn.token,
+          role: "worker",
+          buildId: (typeof __CUBIC_BUILD_ID__ !== "undefined" ? __CUBIC_BUILD_ID__ : null),
+        }));
+      };
 
-    ws.onmessage = function (evt) {
-      var msg;
-      try { msg = JSON.parse(evt.data); } catch (e) { return; }
-      // Dev preflight asks a stale panel to reload — re-fetches index.html → main.js?b=<newid>
-      // with the fresh baked-in bundle (the only way to swap HANDLERS_BUNDLE without a manual reopen).
-      if (msg.type === "reload") { location.reload(); return; }
-      if (msg.id === undefined || msg.command === undefined) return;
-      executeCommand(msg.id, msg.command, msg.args || {});
-    };
+      ws.onmessage = function (evt) {
+        var msg;
+        try { msg = JSON.parse(evt.data); } catch (e) { return; }
+        // Dev preflight asks a stale panel to reload — re-fetches index.html → main.js?b=<newid>
+        // with the fresh baked-in bundle (the only way to swap HANDLERS_BUNDLE without a manual reopen).
+        if (msg.type === "reload") { location.reload(); return; }
+        if (msg.id === undefined || msg.command === undefined) return;
+        executeCommand(msg.id, msg.command, msg.args || {});
+      };
 
-    ws.onerror = function () {
-      showError("WebSocket error on " + url);
-    };
+      ws.onerror = function () {
+        showError("WebSocket error on " + url);
+      };
 
-    ws.onclose = function () {
-      ws = null;
-      setStatus("Disconnected", "disconnected");
-      scheduleReconnect();
-    };
+      ws.onclose = function () {
+        ws = null;
+        setStatus("Disconnected", "disconnected");
+        scheduleReconnect();
+      };
+    });
   }
 
   function scheduleReconnect(errMsg) {

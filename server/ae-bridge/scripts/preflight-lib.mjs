@@ -24,13 +24,14 @@ export function runNode(scriptPath, { cwd } = {}) {
   });
 }
 
-/** The backend WS port — written to ~/.cubic/port on boot, else the canonical 17923. */
-export function resolvePort() {
+/** The backend WS connection ({port, token}) — published to ~/.cubic/conn.json on boot. Returns
+ *  {port:0, token:''} when no backend is up, so a query below simply fails to connect (→ null). */
+export function resolveConn() {
   try {
-    return parseInt(fs.readFileSync(path.join(os.homedir(), '.cubic', 'port'), 'utf8').trim(), 10) || 17923;
-  } catch {
-    return 17923;
-  }
+    const { port, token } = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.cubic', 'conn.json'), 'utf8'));
+    if (typeof port === 'number' && typeof token === 'string') return { port, token };
+  } catch { /* no backend up yet */ }
+  return { port: 0, token: '' };
 }
 
 /** How long to wait for a panel/backend to (re)connect before giving up. Tests run with things already
@@ -42,14 +43,17 @@ export function waitMs() {
 
 /** Ask the backend for a build id over a `{type}` query (reply `{type, buildId}`). Retries briefly so
  *  a panel/backend reconnecting right after launch is seen. Returns the id, or null if none/unreachable. */
-export async function queryBuildId(port, deadlineMs, type) {
+export async function queryBuildId(port, deadlineMs, type, token) {
   const end = Date.now() + deadlineMs;
   while (Date.now() < end) {
     const id = await new Promise((resolve) => {
       const ws = new WebSocket(`ws://127.0.0.1:${port}`);
       let settled = false;
       const finish = (v) => { if (!settled) { settled = true; try { ws.close(); } catch { /* ignore */ } resolve(v); } };
-      ws.on('open', () => ws.send(JSON.stringify({ type })));
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ type: 'hello', token, role: 'dev' })); // authenticate first
+        ws.send(JSON.stringify({ type }));
+      });
       ws.on('message', (d) => { try { const m = JSON.parse(d.toString()); if (m.type === type) finish(m.buildId ?? null); } catch { /* ignore */ } });
       ws.on('error', () => finish(null));
       setTimeout(() => finish(null), 600);
@@ -61,11 +65,15 @@ export async function queryBuildId(port, deadlineMs, type) {
 }
 
 /** Fire a one-way control message at the backend (e.g. devReload) and close. */
-export async function sendControl(port, type) {
+export async function sendControl(port, type, token) {
   await new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}`);
     const done = () => { try { ws.close(); } catch { /* ignore */ } resolve(); };
-    ws.on('open', () => { ws.send(JSON.stringify({ type })); setTimeout(done, 150); });
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'hello', token, role: 'dev' })); // authenticate first
+      ws.send(JSON.stringify({ type }));
+      setTimeout(done, 150);
+    });
     ws.on('error', done);
   });
 }

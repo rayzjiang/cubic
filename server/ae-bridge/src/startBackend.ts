@@ -5,9 +5,10 @@ import { defaultModel, COMPACT_THRESHOLD, KEEP_RECENT_TURNS } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
-// The WS bridge port. Override via AE_BRIDGE_PORT for tests; defaults to the
-// canonical 17923 (the bridge hard-binds this with no fallback — see wsBridge.ts).
-export const AE_BRIDGE_PORT = parseInt(process.env.AE_BRIDGE_PORT ?? "17923", 10);
+// The WS bridge port to bind. Default 0 → the OS assigns a free port (no fixed-port conflict can make
+// startup fatal — see wsBridge.ts); the actual bound port is read back + published to ~/.cubic/conn.json.
+// An explicit AE_BRIDGE_PORT (tests) forces that exact port instead.
+export const AE_BRIDGE_PORT = process.env.AE_BRIDGE_PORT ? parseInt(process.env.AE_BRIDGE_PORT, 10) : 0;
 
 // Distinct (non-1) exit code serve.ts uses when the port is already taken (the bridge threw a
 // BridgeError('PORT_IN_USE')). Electron main maps this exact code to the blocking "another copy of
@@ -63,14 +64,18 @@ export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void>
   console.error(bar);
   await bridge.start(port);
   registerAgentChat();
+  // Report the actual bound port + per-launch token UP to the Electron parent, which relays them to the
+  // renderer via getBackendPort(). No-op when there's no IPC channel — the MCP entrypoint (Claude Code
+  // over stdio) and a bare `npm run serve` both discover {port, token} via ~/.cubic/conn.json instead.
+  process.send?.({ type: "bridgeReady", port: bridge.port, token: bridge.token });
 }
 
 /**
- * Install termination handlers that free the WS port before exit. Since the
- * bridge binds 17923 with no fallback and hard-fails on conflict, a squatting
- * stale instance would block every future backend from starting — so freeing
- * the port on exit is load-bearing. Returns the `shutdown` fn so the MCP
- * entrypoint can also bind it to its stdin/transport close (the host's signal).
+ * Install termination handlers that close the WS server + drop the worker before exit, so a
+ * terminating backend never orphans its socket or leaves a stale ~/.cubic/conn.json pointing at a dead
+ * port. (The OS-assigned dynamic port means a leaked port no longer blocks the next boot, but clean
+ * teardown still matters for the panel's reconnect + a correct conn file.) Returns the `shutdown` fn so
+ * the MCP entrypoint can also bind it to its stdin/transport close (the host's signal).
  */
 export function installShutdown(): () => void {
   let shuttingDown = false;

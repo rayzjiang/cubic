@@ -1,7 +1,9 @@
 /**
- * Backend WebSocket transport (single socket). The renderer learns the port from main via the
- * `getBackendPort()` IPC, then opens a browser `WebSocket` directly to the backend (renderer stays
- * sandboxed — no `ws`/`fs`). Inbound server messages are handed to a bound dispatch fn; outbound
+ * Backend WebSocket transport (single socket). The renderer learns the backend's {port, token} from
+ * main via the `getBackendPort()` IPC, opens a browser `WebSocket` directly to the backend (renderer
+ * stays sandboxed — no `ws`/`fs`), and authenticates by sending a `hello` carrying the per-launch token
+ * as its FIRST frame (the backend drops any socket whose first frame lacks it). Inbound server messages
+ * are handed to a bound dispatch fn; outbound
  * messages go through the typed send helpers. The socket reconnects indefinitely with a bounded
  * backoff so a backend restart (the supervisor in main bounded-restarts the child — §B6) self-heals:
  * the renderer keeps showing "connecting" and rejoins automatically, and App.tsx's `connection`
@@ -27,10 +29,27 @@ const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 3000]
 
 export function connectBackend(): void {
   let attempt = 0
+  // Keep retrying indefinitely so a backend restart (§B6) reconnects on its own; the dot stays
+  // "connecting" throughout (the actionable cause — reconnecting/port-in-use — comes from main).
+  const retry = (): void => {
+    onStatus('connecting')
+    const delay = RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)]
+    attempt++
+    setTimeout(() => void open(), delay)
+  }
   const open = async (): Promise<void> => {
-    const port = await window.cubic.getBackendPort()
-    socket = new WebSocket(`ws://127.0.0.1:${port}`)
+    let conn: { port: number; token: string }
+    try {
+      conn = await window.cubic.getBackendPort()
+    } catch {
+      // Backend hasn't reported ready yet (whenReady timed out during a crash/restart) — back off + re-ask.
+      retry()
+      return
+    }
+    socket = new WebSocket(`ws://127.0.0.1:${conn.port}`)
     socket.onopen = () => {
+      // Authenticate FIRST — before App.tsx's `list`/reattach — or the backend drops this socket.
+      socket!.send(JSON.stringify({ type: 'hello', token: conn.token, role: 'ui' }))
       attempt = 0 // healthy connection → reset backoff
       onStatus('open')
     }
@@ -43,12 +62,7 @@ export function connectBackend(): void {
     }
     socket.onclose = () => {
       socket = null
-      // Keep retrying indefinitely so a backend restart (§B6) reconnects on its own; the dot stays
-      // "connecting" throughout (the actionable cause — reconnecting/port-in-use — comes from main).
-      onStatus('connecting')
-      const delay = RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)]
-      attempt++
-      setTimeout(() => void open(), delay)
+      retry()
     }
     // onerror is followed by onclose; let onclose drive the reconnect.
   }

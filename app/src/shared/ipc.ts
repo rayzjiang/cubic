@@ -37,6 +37,14 @@ export interface BackendStatus {
   install: InstallState
 }
 
+/** The backend's WS connection info, discovered by main from the child's `bridgeReady` report and
+ *  handed to the renderer via getBackendPort(). `port` is OS-assigned (dynamic); `token` is the
+ *  per-launch session secret every client must echo in its first `hello` frame. */
+export interface BackendConn {
+  port: number
+  token: string
+}
+
 /** Which deployment the app runs as — mirrors main's `CubicEnv`, surfaced to the renderer so the
  *  prod-only sign-in gate knows whether to block (see App.tsx). Defined here (not imported from main's
  *  config) to keep the renderer free of main-process modules. */
@@ -72,8 +80,9 @@ export interface AuthState {
 
 /** The API the preload bridges onto `window.cubic` in the renderer. */
 export interface CubicApi {
-  /** The WS port the backend bound — resolved by main (the single source of truth). */
-  getBackendPort(): Promise<number>
+  /** The backend WS connection — its OS-assigned port + the per-launch session token the renderer must
+   *  send in its first `hello` frame. Resolves once the backend child has reported them up to main. */
+  getBackendPort(): Promise<BackendConn>
   /** Current backend-link status (snapshot) — for a renderer that mounts/reloads mid-run. */
   getBackendStatus(): Promise<BackendStatus>
   /** Subscribe to backend-link status pushes. Returns an unsubscribe fn. */

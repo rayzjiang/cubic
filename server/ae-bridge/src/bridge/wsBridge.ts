@@ -53,6 +53,11 @@ const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;
 
+/** Grace window for a freshly-connected socket to present a valid-token `hello`. A socket that stays
+ *  silent (or sends anything else) past this is dropped — bounds the malicious-webpage attacker that
+ *  opens the port and waits. Legit clients all send their `hello` synchronously on open. */
+const AUTH_TIMEOUT_MS = 2000;
+
 class AEBridge {
   private wss: WebSocketServer | null = null;
   private workerClient: WebSocket | null = null;
@@ -63,26 +68,44 @@ class AEBridge {
   private chatCloseHandler: ((ws: WebSocket) => void) | null = null;
   public lastResult: string = '';
 
+  /** The OS-assigned port actually bound (set after `listening`) + the per-launch session token minted
+   *  at startup. Both are written to ~/.cubic/conn.json and reported up to Electron main; every client
+   *  must echo the token in its first `hello` frame. Getters let the entrypoint report them up. */
+  private _port = 0;
+  private _token = '';
+  get port(): number { return this._port; }
+  get token(): string { return this._token; }
+
+  /** Sockets that have presented the valid token in their first frame. Every privileged dispatch is
+   *  gated on membership; a socket is added on a good `hello` and removed on close. */
+  private authed = new Set<WebSocket>();
+
   /** Bundle id the connected panel reported in `hello` — read by the dev preflight (workerInfo) to
    *  detect a panel running a stale baked-in bundle. Null when no panel / an older panel build. */
   private workerBuildId: string | null = null;
 
   /**
-   * Bind the single canonical port (17923) — no fallback scan. One backend + one CEP
-   * worker connection at a time is the invariant; a port conflict means another Cubic
-   * backend is already running (or one was orphaned), so we fail loudly instead of
-   * silently binding a neighbour port where the new bridge sits blind (no panel
-   * connected). The headless panel always dials this same port (cep-extension/src/main.js).
+   * Boot the WS server. `port` is 0 in normal use → the OS assigns a free port (`bind 127.0.0.1:0`),
+   * so a port conflict can never make startup fatal on a stranger's machine; an explicit AE_BRIDGE_PORT
+   * (tests) binds that exact port and still fails loudly on conflict. Mints a per-launch session token,
+   * then publishes {port, token} to ~/.cubic/conn.json for the independently-launched clients (CEP
+   * panel + cubic-ai loopback) to discover; the entrypoint additionally reports them up to Electron
+   * main (for the renderer) via the child IPC channel.
    */
   async start(port: number): Promise<void> {
-    await this.bind(port);
+    await this.bind(port); // sets this._port to the actual bound port
+    this._token = crypto.randomUUID();
     // All Cubic runtime state lives under one home dir (~/.cubic also holds sessions/ — see persist.ts).
     const bridgeDir = path.join(os.homedir(), '.cubic');
     try {
       fs.mkdirSync(bridgeDir, { recursive: true });
-      fs.writeFileSync(path.join(bridgeDir, 'port'), String(port), 'utf8');
+      fs.writeFileSync(
+        path.join(bridgeDir, 'conn.json'),
+        JSON.stringify({ port: this._port, token: this._token }),
+        'utf8',
+      );
     } catch { /* non-fatal */ }
-    console.error(`WS bridge listening on 127.0.0.1:${port}`);
+    console.error(`WS bridge listening on 127.0.0.1:${this._port}`);
   }
 
   private bind(port: number): Promise<void> {
@@ -90,16 +113,19 @@ class AEBridge {
       const wss = new WebSocketServer({ host: '127.0.0.1', port });
       wss.once('listening', () => {
         this.wss = wss;
+        // Read the actual port back — with port 0 the OS picked it; with an override it echoes `port`.
+        const addr = wss.address();
+        this._port = (typeof addr === 'object' && addr) ? addr.port : port;
         this.setupConnectionHandler();
         resolve();
       });
       wss.once('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {
-          // Tagged PORT_IN_USE so serve.ts can map it to the distinct EXIT_PORT_IN_USE exit code,
-          // letting Electron main show the "another copy of Cubic is running" state without scraping
-          // stderr. (Root fix = hardening #2 dynamic free port; deferred.)
+          // Only reachable via an explicit AE_BRIDGE_PORT override (normal boot binds :0 → the OS never
+          // hands out a taken port). Tagged PORT_IN_USE so serve.ts maps it to EXIT_PORT_IN_USE and
+          // Electron main shows "another copy of Cubic is running" without scraping stderr.
           reject(new BridgeError('PORT_IN_USE',
-            `A Cubic backend is already running on 127.0.0.1:${port} — close it first. ` +
+            `A Cubic backend is already bound to 127.0.0.1:${port} (AE_BRIDGE_PORT override) — close it first. ` +
             `Only one backend may run at a time (it owns the single AE bridge connection).`
           ));
         } else {
@@ -111,20 +137,42 @@ class AEBridge {
 
   private setupConnectionHandler(): void {
     this.wss!.on('connection', (ws) => {
+      // Every client must present the per-launch token in its first frame; drop a socket that never
+      // authenticates (a webpage can't read ~/.cubic/conn.json, so it can never present the token).
+      const authTimer = setTimeout(() => {
+        if (!this.authed.has(ws)) ws.close(4001, 'auth timeout');
+      }, AUTH_TIMEOUT_MS);
+
       ws.on('message', (data) => {
         let msg: any;
         try { msg = JSON.parse(data.toString()); } catch { return; }
 
-        if (msg.type === 'hello') {
-          // CEP panel registering as the ExtendScript worker
-          if (this.workerClient && this.workerClient !== ws) {
-            this.workerClient.close(4000, 'superseded by new worker');
+        // ── Gate: the FIRST frame must be a valid-token hello; nothing else is dispatched until then ──
+        if (!this.authed.has(ws)) {
+          if (msg.type === 'hello' && msg.token === this._token) {
+            this.authed.add(ws);
+            clearTimeout(authTimer);
+            // The AE panel's hello doubles as worker registration (role:'worker' / carries a buildId);
+            // the renderer/loopback/dev hellos authenticate only.
+            if (msg.role === 'worker' || typeof msg.buildId === 'string') {
+              if (this.workerClient && this.workerClient !== ws) {
+                this.workerClient.close(4000, 'superseded by new worker');
+              }
+              this.workerClient = ws;
+              this.workerBuildId = typeof msg.buildId === 'string' ? msg.buildId : null;
+              for (const w of this.connectWaiters) w();
+              this.connectWaiters = [];
+              this.emit('connect');
+            }
+          } else {
+            ws.close(4001, 'unauthorized');
           }
-          this.workerClient = ws;
-          this.workerBuildId = typeof msg.buildId === 'string' ? msg.buildId : null;
-          for (const w of this.connectWaiters) w();
-          this.connectWaiters = [];
-          this.emit('connect');
+          return;
+        }
+
+        if (msg.type === 'hello') {
+          // Already authenticated — a duplicate hello is a no-op (re-registration goes through the gate).
+          return;
         } else if (msg.type === 'devReload') {
           // Dev preflight (scripts/preflight-panel.mjs) asks a stale panel to reload onto fresh code.
           this.reloadWorker();
@@ -159,6 +207,8 @@ class AEBridge {
       });
 
       ws.on('close', () => {
+        clearTimeout(authTimer);
+        this.authed.delete(ws);
         // Notify the chat layer so it can drop this socket from the re-attach fan-out set
         // (harmless for non-chat sockets — agentChat just won't find it in any set).
         this.chatCloseHandler?.(ws);
