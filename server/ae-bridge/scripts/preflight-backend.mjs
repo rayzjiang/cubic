@@ -13,7 +13,7 @@
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { computeBackendBuildIdFromSource } from './build-id.mjs';
-import { green, yellow, dim, runNode, resolvePort, waitMs, queryBuildId } from './preflight-lib.mjs';
+import { green, yellow, dim, runNode, resolveConn, waitMs, queryBuildId } from './preflight-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -25,8 +25,8 @@ export async function run() {
 
   // 2. Ask the running backend for the id baked into its bundle. No backend reachable → nothing to
   //    verify → proceed.
-  const port = resolvePort();
-  const runningId = await queryBuildId(port, waitMs(), 'backendInfo');
+  const { port, token } = resolveConn();
+  const runningId = await queryBuildId(port, waitMs(), 'backendInfo', token);
 
   // 3. Fresh / unverifiable → verdict + return 0. Definitely stale → rebuild both trees in dependency
   //    order (cubic-ai first so serve.js's runtime import is current, then serve.js re-bakes the id),

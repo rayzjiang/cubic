@@ -1,9 +1,19 @@
 import WebSocket from 'ws';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const WS_URL    = `ws://127.0.0.1:${process.env.AE_BRIDGE_PORT ?? 17923}`;
 export const TIMEOUT_MS = 30_000;
+
+// The backend publishes its OS-assigned port + per-launch session token to ~/.cubic/conn.json; read it
+// authoritatively (the port is dynamic now) and echo the token in the first `hello` frame — the backend
+// drops any socket whose first frame lacks it.
+function readConn() {
+  const { port, token } = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.cubic', 'conn.json'), 'utf8'));
+  return { port, token };
+}
 
 // ─── ANSI ─────────────────────────────────────────────────────────────────────
 
@@ -19,9 +29,13 @@ let _ws = null;
 
 async function getWS() {
   if (_ws && _ws.readyState === WebSocket.OPEN) return _ws;
-  _ws = new WebSocket(WS_URL);
+  const { port, token } = readConn();
+  _ws = new WebSocket(`ws://127.0.0.1:${port}`);
   await new Promise((resolve, reject) => {
-    _ws.once('open', resolve);
+    _ws.once('open', () => {
+      _ws.send(JSON.stringify({ type: 'hello', token, role: 'dev' })); // authenticate first
+      resolve();
+    });
     _ws.once('error', err => reject(new Error(`WS connect failed: ${err.message}`)));
   });
   _ws.on('error', () => { _ws = null; });
@@ -37,13 +51,15 @@ export async function closeConnection() {
 }
 
 export async function checkConnection(timeoutMs = 5000) {
-  const ws = new WebSocket(WS_URL);
+  const { port, token } = readConn();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       ws.terminate();
       reject(new Error('WS connect timed out'));
     }, timeoutMs);
     ws.once('open', () => {
+      ws.send(JSON.stringify({ type: 'hello', token, role: 'dev' })); // authenticate before closing
       clearTimeout(timer);
       ws.close();
       resolve();

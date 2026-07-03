@@ -12,7 +12,7 @@
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { computeBuildIdFromSource } from './build-id.mjs';
-import { green, yellow, dim, runNode, resolvePort, waitMs, queryBuildId, sendControl } from './preflight-lib.mjs';
+import { green, yellow, dim, runNode, resolveConn, waitMs, queryBuildId, sendControl } from './preflight-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -24,8 +24,8 @@ export async function run() {
 
   // 2. Compare against the open panel. No backend/panel, or an old panel that can't report an id →
   //    nothing to verify → proceed without touching anything.
-  const port = resolvePort();
-  const panelId = await queryBuildId(port, waitMs(), 'workerInfo');
+  const { port, token } = resolveConn();
+  const panelId = await queryBuildId(port, waitMs(), 'workerInfo', token);
 
   // 3. Fresh (or unverifiable) → verdict + return 0, no rebuild/reload. Only when the panel is
   //    DEFINITELY stale do we rebuild + reinstall + reload it, then return 1 so the dev re-runs clean.
@@ -41,7 +41,7 @@ export async function run() {
   console.error(yellow(`\n[preflight] ⚠ AE panel is running a STALE bundle (${panelId}, latest ${freshId}) — rebuilding + reloading…`));
   await runNode(path.join(here, 'build-cep-extension.mjs'));
   await runNode(path.join(root, 'install-cep-extension.js'));
-  await sendControl(port, 'devReload');
+  await sendControl(port, 'devReload', token);
   console.error(yellow('[preflight] ↻ Rebuilt + reloaded the panel. Re-run your command (npm run dev / the test) — it will start on the fresh bundle.\n'));
   return 1;
 }
