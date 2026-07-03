@@ -50,9 +50,12 @@ ideas explain all of it:
   messages anytime, in both directions. This is the main nervous system of Cubic: the
   AI streams live progress to the UI, and AE streams results back, over open
   WebSocket lines.
-- **Port** — a numbered "door" a program listens on. The backend listens on port
-  **17923**. Everything that wants to talk to it connects to `127.0.0.1:17923`
-  (`127.0.0.1` = "this same computer").
+- **Port** — a numbered "door" a program listens on. The backend asks the OS for a **free
+  port** at launch (so a port conflict can never make startup fail) and publishes which one it
+  got; everything that wants to talk to it connects to `127.0.0.1:<that port>` (`127.0.0.1` =
+  "this same computer"). To keep out impostors (e.g. a malicious web page that also knows how to
+  dial `localhost`), the backend mints a **per-launch token** and drops any socket that doesn't
+  present it.
 
 Keep **process, IPC, WebSocket, port** in mind and the rest follows.
 
@@ -72,7 +75,7 @@ everything is routed through the backend.
 │  what you SEE      │                       │  opens window, starts backend │
 └─────────┬──────────┘                       └───────────────┬───────────────┘
           │                                                  │ spawns
-          │  (2) WebSocket  ws://127.0.0.1:17923             ▼
+          │  (2) WebSocket  ws://127.0.0.1:<port>  (token-authed)  ▼
           └──────────────────────────────────► ┌──────────────────────────────┐
                                                │  2. The Backend              │
           ┌──────────────────────────────────► │  • WebSocket bridge (router) │
@@ -101,24 +104,26 @@ The repo is a **monorepo of three packages** with no root `package.json`: `app/`
 ## 3. How they connect (the wiring, start to finish)
 
 1. You launch Cubic → the **Launcher** (`app/src/main/index.ts`) starts.
-2. The Launcher reads config (`app/src/main/config.ts`, default port 17923) and
-   **spawns the Backend** as a child process
+2. The Launcher **spawns the Backend** as a child process, over an IPC channel
    (`app/src/main/backend.ts` → `BackendSupervisor.start()`, which runs
-   `server/ae-bridge/build/serve.js`).
-3. The Backend opens the WebSocket door on 17923
-   (`server/ae-bridge/src/bridge/wsBridge.ts` → `start()`).
+   `server/ae-bridge/build/serve.js`). It no longer decides the port.
+3. The Backend opens the WebSocket door on an **OS-assigned free port** (`bind 127.0.0.1:0`),
+   mints a **per-launch token**, writes both to `~/.cubic/conn.json`, and **reports `{port, token}`
+   back up** to the Launcher over the IPC channel
+   (`server/ae-bridge/src/bridge/wsBridge.ts` → `start()`; report in `startBackend.ts`).
 4. The Launcher opens the window (`app/src/main/window.ts`) and loads the **UI**.
-5. The UI is sandboxed and doesn't know the port, so it asks via **IPC**:
-   `window.cubic.getBackendPort()` → answered in `app/src/main/ipc.ts`. (The only
-   bridge between the sandbox and the launcher is `app/src/preload/index.ts`, which
-   safely exposes that single function — nothing else.)
-6. The UI opens its **WebSocket** to `ws://127.0.0.1:17923`
+5. The UI is sandboxed and doesn't know the connection, so it asks via **IPC**:
+   `window.cubic.getBackendPort()` → resolves `{port, token}` once the backend reported them
+   (`app/src/main/ipc.ts`). (The only bridge between the sandbox and the launcher is
+   `app/src/preload/index.ts`, which safely exposes that single function — nothing else.)
+6. The UI opens its **WebSocket** to `ws://127.0.0.1:<port>` and authenticates by sending
+   `{type:"hello", token, role:"ui"}` as its first frame
    (`app/src/renderer/src/ws.ts` → `connectBackend()`).
-7. Separately, the **AE panel** inside After Effects connects to the same port and
-   announces itself with `{type:"hello"}`
+7. Separately, the **AE panel** inside After Effects reads `~/.cubic/conn.json`, connects to the
+   same port, and announces itself with `{type:"hello", token, role:"worker", buildId}`
    (`server/ae-bridge/cep-extension/src/main.js` → `connect()`).
 8. The **Claude brain** runs inside the Backend process and connects to the bridge as
-   a loopback client (`server/ai/src/bridge/client.ts`).
+   a loopback client (reads `conn.json`, sends its own authed `hello` — `server/ai/src/bridge/client.ts`).
 
 Now all three clients (UI, AE panel, brain) share one switchboard, and Cubic is live.
 
@@ -193,19 +198,20 @@ Starts everything, then gets out of the way.
 |---|---|
 | Boot sequence | `index.ts` |
 | Open the OS window | `window.ts` → `createWindow()` |
-| **Spawn + supervise the backend** | `backend.ts` → `BackendSupervisor.start()` |
-| Config (port, environment) | `config.ts` → `loadConfig()` |
-| Answer "what port?" over IPC | `ipc.ts` (handles `cubic:getBackendPort`) |
+| **Spawn + supervise the backend** (+ receive its `{port, token}` report) | `backend.ts` → `BackendSupervisor.start()` |
+| Config (environment; the backend owns the port) | `config.ts` → `loadConfig()` |
+| Answer "what port + token?" over IPC | `ipc.ts` (handles `cubic:getBackendPort` → `{port, token}`) |
 | Sandbox-safe IPC surface | `../preload/index.ts` |
 
 ### 5.3 The Backend, part A — the WebSocket bridge — `server/ae-bridge/`
 
 The switchboard. Core file: **`src/bridge/wsBridge.ts`**.
 
-It opens port 17923 and tells clients apart by their first message: the AE panel says
-`{type:"hello"}` (tagged "the worker" — the *only* client allowed to run AE code); the
-UI sends chat messages; the brain sends commands. `sendCommand()` implements the
-id-matching described in Section 4.
+It opens an OS-assigned port (`bind 127.0.0.1:0`), requires a per-launch token in each socket's
+first `hello` frame (else it drops the socket), and tells authenticated clients apart by their
+messages: the AE panel's hello is tagged "the worker" (`role:"worker"` — the *only* client allowed
+to run AE code); the UI sends chat messages; the brain sends commands. `sendCommand()` implements
+the id-matching described in Section 4.
 
 | To change… | Look at |
 |---|---|
@@ -519,12 +525,13 @@ Everything else in Part I is unchanged. These are the only edits production make
 | `server/ai/src/llm/anthropic.ts` | `new Anthropic({apiKey})`, direct, no `baseURL` | `baseURL` = proxy URL, auth = sign-in token, **no key on device** | §A-3 |
 | `app/src/main/config.ts` | `CUBIC_ENV` switch exists; `prod` is an inert stub | Ships defaulting to `prod` → real proxy URL | §A-8 |
 | `app/src/renderer/` | Chat UI only | Adds sign-in, paywall, and account/billing menu | §B-4, §D |
-| `server/ae-bridge/src/bridge/wsBridge.ts` | Fixed port `17923`, **any socket accepted** | Per-launch token required + **dynamic OS-assigned port** | §??? |
 
-> **Note — supersedes Part I.** The hardening above changes a fact stated in Part I §1 and
-> §3: the backend port is **no longer the fixed `17923`** in production — it is an
-> OS-assigned free port discovered via the same `getBackendPort()` channel, and the socket
-> now requires a per-launch token. Read Part I's "17923" as "the (then-fixed) backend port."
+> **Note — local transport hardening already landed in Part I (§???).** The WS transport is no
+> longer a Part-I→Part-II diff: `wsBridge.ts` already binds an **OS-assigned dynamic port** and
+> **requires a per-launch token** in each socket's first `hello` frame (published to
+> `~/.cubic/conn.json` + reported to main over `getBackendPort()`). This is local-transport
+> hardening, independent of the `CUBIC_ENV` proxy switch, so it holds in every mode (direct-local,
+> full-stack-local, prod) — Part I §1/§2/§3/§5 describe it as the current reality.
 
 ---
 

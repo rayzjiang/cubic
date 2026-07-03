@@ -31,11 +31,11 @@ npm run dev          # electron-vite: builds main/preload, serves the renderer (
 What to expect:
 - A native macOS window (inset traffic-lights + translucent vibrancy). On Windows it
   launches with a normal frame (mac-only chrome is guarded).
-- Console: `[backend] ... listening on 127.0.0.1:17923`.
+- Console: `[backend] WS bridge listening on 127.0.0.1:<port>` (an OS-assigned dynamic port).
 - A Cubic splash (`LoadingScreen`) while the first conversation list loads, then the
   **Home view** (greeting + your conversations + New chat) — or the chat layout if you
-  open/start a conversation. This exercises the full chain: spawn → port config →
-  `getBackendPort()` IPC → renderer WebSocket → `list`/`conversations`.
+  open/start a conversation. This exercises the full chain: spawn → backend reports `{port, token}`
+  up → `getBackendPort()` IPC → renderer WebSocket (authed `hello`) → `list`/`conversations`.
 
 ## Scripts
 
@@ -65,10 +65,11 @@ What to expect:
 
 ## Notes / seams
 
-- **Port is owned by main** (`config.ts`): default `17923`, overridable via
-  `AE_BRIDGE_PORT`. Main passes it to the child AND answers `getBackendPort()` with the
-  same value — it never reads the bridge's on-disk port file (that file is owned by
-  the bridge, for the independently-launched CEP/loopback clients).
+- **Port + token are owned by the backend** (§???): the backend OS-assigns its WS port
+  (`bind 127.0.0.1:0`, overridable via `AE_BRIDGE_PORT` for tests) and mints a per-launch session
+  token, then reports `{port, token}` UP to main over the child IPC channel. `getBackendPort()`
+  relays them to the renderer, which echoes the token in its first `hello` frame. The backend also
+  writes `~/.cubic/conn.json` for the independently-launched CEP/loopback clients.
 - **ESM main**: with `"type":"module"`, electron-vite emits ESM for the main process.
   If a CJS-only native dep ever forces it, drop `"type":"module"` to flip to CJS.
 - **Packaging** (signing, electron-builder) is Phase 5; `backend.ts` has an

@@ -12,7 +12,7 @@ Built for video editors, not developers: a standalone desktop app with a consume
 │ (React chat UI) │   WebSocket  │  (AE bridge +    │
 └─────────────────┘◄────────────►│   Claude brain)  │
                                  └────────┬─────────┘
-                                          │ WebSocket (127.0.0.1:17923)
+                                          │ WebSocket (127.0.0.1, OS-assigned port, token-authed)
                                           ▼
                                  ┌──────────────────┐
                                  │  CEP extension   │
@@ -73,7 +73,7 @@ cubic/
 |-------|------|
 | Desktop app | Electron, React, Zustand, Tailwind CSS, TypeScript |
 | Build | electron-vite, esbuild |
-| Transport | WebSocket (`ws`), Electron IPC |
+| Transport | WebSocket (`ws`, loopback + per-launch token auth), Electron IPC |
 | AI | Anthropic SDK (Claude Sonnet 4.6 default, configurable) |
 | AE scripting | ExtendScript via CEP extension |
 | Validation / data | Zod, JSON/JSONL files |
