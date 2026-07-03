@@ -5,15 +5,16 @@ import type { BackendSupervisor } from './backend.js'
 import type { AuthManager } from './auth.js'
 
 /**
- * §0 + §B6 + §B — main↔renderer IPC. `getBackendPort` is the one port-discovery call (returns the SAME
- * port main spawned the backend with, so renderer + child never drift). `getBackendStatus` returns
- * the current backend-link status as a snapshot (for a renderer that mounts/reloads mid-run), and we
- * broadcast every `status` change so the dot updates live even while the renderer's own WS is down
- * (e.g. during a backend crash + reconnect). The auth surface mirrors that shape exactly: snapshot
- * getters + a `change` broadcast. No filesystem access; the renderer stays sandboxed.
+ * §0 + §B6 + §B + §??? — main↔renderer IPC. `getBackendPort` is the one connection-discovery call: it
+ * resolves the backend's {port, token} once the child reports them up (see backend.whenReady) — the
+ * renderer echoes the token in its first WS `hello` frame. `getBackendStatus` returns the current
+ * backend-link status as a snapshot (for a renderer that mounts/reloads mid-run), and we broadcast every
+ * `status` change so the dot updates live even while the renderer's own WS is down (e.g. during a
+ * backend crash + reconnect). The auth surface mirrors that shape exactly: snapshot getters + a `change`
+ * broadcast. No filesystem access; the renderer stays sandboxed.
  */
 export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager): void {
-  ipcMain.handle(CHANNELS.getBackendPort, () => config.port)
+  ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
   backend.on('status', (status: BackendStatus) => {
     for (const win of BrowserWindow.getAllWindows()) {

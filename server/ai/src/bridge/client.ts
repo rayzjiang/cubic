@@ -3,38 +3,38 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-// wsBridge.ts writes the actual bound port here, but the file can be stale if a
-// manually-started instance overwrote it and then died. We try the file's port first,
-// then scan the fallback range that bindWithFallback uses (17923–17927).
-const PORT_FILE = path.join(os.homedir(), '.cubic', 'port');
-const PORT_SCAN_RANGE = [17923, 17924, 17925, 17926, 17927];
+// The backend OS-assigns its WS port and mints a per-launch session token, publishing both to
+// ~/.cubic/conn.json. We read it authoritatively (the fixed-port scan is gone — the port is now
+// dynamic) and echo the token in the first `hello` frame; the backend drops any socket that doesn't.
+const CONN_FILE = path.join(os.homedir(), '.cubic', 'conn.json');
 
-function candidatePorts(): number[] {
-  try {
-    const filePort = parseInt(fs.readFileSync(PORT_FILE, 'utf8').trim(), 10);
-    if (filePort) return [filePort, ...PORT_SCAN_RANGE.filter(p => p !== filePort)];
-  } catch { /* no file — start with defaults */ }
-  return PORT_SCAN_RANGE;
-}
+interface BridgeConn { port: number; token: string; }
 
-function tryConnect(port: number): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    ws.once('open', () => resolve(ws));
-    ws.once('error', () => reject());
-  });
+function readConn(): BridgeConn {
+  const { port, token } = JSON.parse(fs.readFileSync(CONN_FILE, 'utf8')) as Partial<BridgeConn>;
+  if (typeof port !== 'number' || typeof token !== 'string') throw new Error('malformed conn.json');
+  return { port, token };
 }
 
 async function findBridge(): Promise<WebSocket> {
-  for (const port of candidatePorts()) {
-    try {
-      return await tryConnect(port);
-    } catch { /* try next port */ }
+  let conn: BridgeConn;
+  try {
+    conn = readConn();
+  } catch {
+    throw new Error(
+      'Could not read ~/.cubic/conn.json — is the AE bridge running? ' +
+      '(the standalone backend, or the MCP server under Claude Code)'
+    );
   }
-  throw new Error(
-    `Could not connect to AE WS bridge on any of ${PORT_SCAN_RANGE.join(', ')} — ` +
-    'is the AE bridge running? (the standalone backend, or the MCP server under Claude Code)'
-  );
+  return new Promise<WebSocket>((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${conn.port}`);
+    ws.once('open', () => {
+      // Authenticate as the loopback client before any command is sent.
+      ws.send(JSON.stringify({ type: 'hello', token: conn.token, role: 'loopback' }));
+      resolve(ws);
+    });
+    ws.once('error', (e) => reject(e));
+  });
 }
 
 interface PendingEntry {

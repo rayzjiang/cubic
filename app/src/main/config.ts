@@ -1,16 +1,14 @@
-// §0 + §B7 — the single source of truth for the backend port and environment.
+// §0 + §B7 + §??? — the backend environment config (NOT the port).
 //
-// Main SPAWNS the backend, so it already knows the port; it passes the value to the
-// child (as AE_BRIDGE_PORT) AND answers getBackendPort() with the same value. We never
-// read ~/.cubic/port back — that file exists for the independently-launched CEP
-// worker + loopback client, which must discover the port; main is upstream of the
-// decision. (The bridge hard-binds this port with no fallback — see wsBridge.ts.)
+// The backend OS-assigns its own WS port (`bind 127.0.0.1:0`) and mints the per-launch session token,
+// then reports {port, token} back UP to main via the child IPC channel (see backend.ts / startBackend.ts).
+// Main relays those to the renderer through getBackendPort(); the CEP worker + loopback client discover
+// them from ~/.cubic/conn.json. So the port is no longer a config value main decides — this file only
+// carries the deployment env + Supabase settings forwarded to the child.
 
 export type CubicEnv = 'local' | 'prod'
 
 export interface BackendConfig {
-  /** WS port the backend binds + the renderer connects to. */
-  port: number
   /** Which Claude API endpoint the agent loop targets. */
   cubicEnv: CubicEnv
   /** Extra env vars forwarded into the spawned backend child. */
@@ -22,15 +20,7 @@ export interface BackendConfig {
   supabaseAnonKey: string
 }
 
-// Mirrors server/ae-bridge/src/startBackend.ts so main and the child agree by construction.
-const DEFAULT_PORT = 17923
-
 export function loadConfig(): BackendConfig {
-  // AE_BRIDGE_PORT override is for tests / avoiding a stale-instance collision; in normal
-  // use this resolves to 17923. NaN-guard falls back to the default.
-  const parsed = Number.parseInt(process.env.AE_BRIDGE_PORT ?? String(DEFAULT_PORT), 10)
-  const port = Number.isNaN(parsed) ? DEFAULT_PORT : parsed
-
   const cubicEnv: CubicEnv = process.env.CUBIC_ENV === 'prod' ? 'prod' : 'local'
 
   // The child always learns the env; in prod it also learns where to route Claude calls.
@@ -56,5 +46,5 @@ export function loadConfig(): BackendConfig {
   const supabaseUrl = process.env.SUPABASE_URL ?? ''
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? ''
 
-  return { port, cubicEnv, childEnv, supabaseUrl, supabaseAnonKey }
+  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey }
 }
