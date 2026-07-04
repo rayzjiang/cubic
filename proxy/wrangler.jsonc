@@ -1,14 +1,43 @@
 {
-  // Cubic LLM proxy — Anthropic-shaped passthrough that injects the secret prompt/tools.
-  // ANTHROPIC_API_KEY is a Worker SECRET, never committed: `wrangler secret put ANTHROPIC_API_KEY`.
+  // Cubic LLM proxy — Anthropic-shaped passthrough that injects the secret prompt/tools and,
+  // as of Wave 2 (WT-PROXY-GATING), verifies the caller's Supabase JWT, checks entitlement,
+  // meters usage, and rate-limits.
+  //
+  // Secrets (never committed — `wrangler secret put <NAME>`):
+  //   ANTHROPIC_API_KEY          — Anthropic key.
+  //   SUPABASE_SERVICE_ROLE_KEY  — reads any user's entitlement (get_entitlement) + writes usage
+  //                                (record_usage); both bypass RLS.
+  // Env-specific vars (NOT committed here — set at deploy / dev, since they differ per environment):
+  //   SUPABASE_URL      — prod: `wrangler deploy` var / dashboard; local: `--var SUPABASE_URL:http://127.0.0.1:54321`.
+  //   SUPABASE_JWKS_URL — optional JWKS override; local: point at the mint-test-jwt helper's JWKS.
   "name": "cubic-proxy",
   "main": "src/index.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
-    "ANTHROPIC_VERSION": "2023-06-01"
+    "ANTHROPIC_VERSION": "2023-06-01",
+    "SUPABASE_URL": "https://igdbwihwvksraoqghswr.supabase.co"
     // MOCK_UPSTREAM: set in dev (`wrangler dev --var MOCK_UPSTREAM:1`) to exercise the
     // full client→Worker path with a canned response — zero Anthropic spend.
+  },
+  // §A-7 — per-user + per-IP rate limiting. Native binding, enforced at the edge (also in `wrangler dev`).
+  // `period` accepts only 10 or 60. Limits are generous abuse backstops: one active agent turn can fire
+  // up to ~15 proxy calls back-to-back, so the per-user cap sits well above a single user's real burst.
+  "unsafe": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "type": "ratelimit",
+        "namespace_id": "1001",
+        "simple": { "limit": 120, "period": 60 }
+      },
+      {
+        "name": "IP_RATE_LIMITER",
+        "type": "ratelimit",
+        "namespace_id": "1002",
+        "simple": { "limit": 300, "period": 60 }
+      }
+    ]
   }
 }

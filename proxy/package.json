@@ -8,10 +8,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "gen:command-names": "node scripts/gen-command-names.mjs",
+    "mint:test-jwt": "node scripts/mint-test-jwt.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "jose": "^5.9.6",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.2"
   },
@@ -19,6 +21,6 @@
     "@cloudflare/workers-types": "^4.20240000.0",
     "typescript": "^5.2.2",
     "vitest": "^4.1.7",
-    "wrangler": "^3.80.0"
+    "wrangler": "^4.86.0"
   }
 }

@@ -1,0 +1,2 @@
+# Wrangler local dev cache / state (miniflare, local KV, build artifacts) — never commit.
+.wrangler/
