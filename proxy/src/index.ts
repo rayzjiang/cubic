@@ -1,7 +1,7 @@
 import { injectedSystem, injectedTools } from './inject.js';
 import { verifyJwt, bearerToken } from './auth.js';
 import { getEntitlement } from './entitlement.js';
-import { meterResponse } from './metering.js';
+import { meterResponse, ALLOWED_MODELS } from './metering.js';
 
 /**
  * WT-PROXY-CORE — Anthropic-shaped passthrough Worker (Phase 5 §A-2).
@@ -50,11 +50,24 @@ export interface Env {
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_ANTHROPIC_VERSION = '2023-06-01';
+/** Server-authoritative cap on client-requested output tokens — bounds worst-case per-call spend no
+ *  matter what the client (or a raw curl) asks for. The desktop client's own default is 4096. */
+const MAX_OUTPUT_TOKENS = 8192;
+
+/** The auth + version headers every upstream call carries. The real Anthropic key is attached here
+ *  server-side (the client never holds it). */
+function upstreamHeaders(env: Env): Record<string, string> {
+  return {
+    'content-type': 'application/json',
+    'x-api-key': env.ANTHROPIC_API_KEY,
+    'anthropic-version': env.ANTHROPIC_VERSION ?? DEFAULT_ANTHROPIC_VERSION,
+  };
+}
 
 /**
- * Build the upstream request: inject system + tools + tool_choice (overwriting
- * anything the client sent) and set the auth + version headers. Pure + exported
- * so unit tests can assert injection with no network and no API spend.
+ * Build the upstream request for an AGENT call: inject system + tools + tool_choice (overwriting
+ * anything the client sent) and set the auth + version headers. Pure + exported so unit tests can
+ * assert injection with no network and no API spend.
  */
 export function prepareUpstream(
   body: Record<string, unknown>,
@@ -66,15 +79,21 @@ export function prepareUpstream(
     tools: injectedTools(),
     tool_choice: { type: 'auto' },
   };
-  return {
-    url: ANTHROPIC_URL,
-    body: injected,
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': env.ANTHROPIC_VERSION ?? DEFAULT_ANTHROPIC_VERSION,
-    },
-  };
+  return { url: ANTHROPIC_URL, body: injected, headers: upstreamHeaders(env) };
+}
+
+/**
+ * Build the upstream request for a UTILITY call (e.g. the agent loop's history-compaction summary):
+ * forward the client body AS-IS — no system/tools/tool_choice injection. A utility call carries its own
+ * NON-secret system prompt (the summary instruction) and needs no AE tools, so the crown jewels are
+ * never sent. Still fully gated + metered by the handler. Selected via the `x-cubic-request: utility`
+ * request header. Pure + exported for unit tests.
+ */
+export function prepareBareUpstream(
+  body: Record<string, unknown>,
+  env: Env,
+): { url: string; body: Record<string, unknown>; headers: Record<string, string> } {
+  return { url: ANTHROPIC_URL, body, headers: upstreamHeaders(env) };
 }
 
 /** A minimal Anthropic Messages-shaped response for MOCK_UPSTREAM (no real call). */
@@ -148,8 +167,24 @@ export default {
       return errorResponse('entitlement_error', message, 402, reason);
     }
 
-    // Gate passed — inject the crown jewels + forward (unchanged from WT-PROXY-CORE).
-    const { url: upstreamUrl, body: upstreamBody, headers } = prepareUpstream(body, env);
+    // Server-authoritative request bounds (applies to every path — app OR raw curl). Reject any model the
+    // proxy can't price (ALLOWED_MODELS is derived from the pricing map), so nothing reaches Anthropic
+    // without a known meter rate; then clamp max_tokens so one call can't request a huge (expensive) output.
+    const model = typeof body.model === 'string' ? body.model : undefined;
+    if (!model || !ALLOWED_MODELS.has(model)) {
+      return errorResponse('invalid_request_error', 'unsupported model', 400);
+    }
+    if (typeof body.max_tokens === 'number') {
+      body.max_tokens = Math.min(body.max_tokens, MAX_OUTPUT_TOKENS);
+    }
+
+    // Gate passed — forward. An agent call gets the crown jewels injected; a UTILITY call (e.g. the
+    // compaction summary, flagged `x-cubic-request: utility`) forwards the client body as-is (its own
+    // non-secret prompt, no AE tools). Both are gated above and metered below.
+    const utility = req.headers.get('x-cubic-request') === 'utility';
+    const { url: upstreamUrl, body: upstreamBody, headers } = utility
+      ? prepareBareUpstream(body, env)
+      : prepareUpstream(body, env);
     if (env.MOCK_UPSTREAM) return json(mockResponse(upstreamBody), 200);
 
     let upstream: Response;
@@ -180,7 +215,6 @@ export default {
     // Tee: one branch streams to the client now; the other is drained async (waitUntil) to pull the
     // token counts → cost-cents → the usage counter, stamped with the subscription's current period.
     const [clientBody, meterBody] = upstream.body.tee();
-    const model = typeof body.model === 'string' ? body.model : undefined;
     const contentType = upstream.headers.get('content-type') ?? '';
     ctx.waitUntil(meterResponse(meterBody, contentType, model, userId, entitlement.periodStart, env));
     return new Response(clientBody, { status: upstream.status, headers: respHeaders });

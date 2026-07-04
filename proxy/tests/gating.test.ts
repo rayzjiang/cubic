@@ -12,7 +12,12 @@ vi.mock('../src/auth.js', () => ({
   bearerToken: (h: string | null) => (h ?? '').replace(/^Bearer\s+/i, '').trim(),
 }));
 vi.mock('../src/entitlement.js', () => ({ getEntitlement: vi.fn() }));
-vi.mock('../src/metering.js', () => ({ meterResponse: vi.fn() }));
+// index.ts imports both meterResponse AND ALLOWED_MODELS from metering — the mock must supply both,
+// or the model-allowlist gate throws on an undefined Set.
+vi.mock('../src/metering.js', () => ({
+  meterResponse: vi.fn(),
+  ALLOWED_MODELS: new Set(['claude-sonnet-4-6', 'claude-haiku-4-5']),
+}));
 
 import worker, { type Env } from '../src/index.js';
 import { verifyJwt } from '../src/auth.js';
@@ -32,12 +37,25 @@ function env(overrides: Partial<Env> = {}): Env {
   } as Env;
 }
 
-function req(headers: Record<string, string> = {}): Request {
+function req(headers: Record<string, string> = {}, body: Record<string, unknown> = {}): Request {
   return new Request('https://proxy.example/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', messages: [{ role: 'user', content: 'hi' }] }),
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', messages: [{ role: 'user', content: 'hi' }], ...body }),
   });
+}
+
+/** A stubbed upstream 200 (with a usage body so the meter branch has something to read). Returns the
+ *  spy so a test can inspect the forwarded request body. */
+function stubUpstream200(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ usage: { input_tokens: 1, output_tokens: 1 } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+  vi.stubGlobal('fetch', spy);
+  return spy;
 }
 
 const AUTHED = { authorization: 'Bearer good.jwt.token' };
@@ -136,5 +154,41 @@ describe('gate', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: string };
     expect(body.id).toBe('msg_mock_upstream');
+  });
+
+  it('400s an unsupported model (allowlist, after entitlement, before any upstream spend)', async () => {
+    const res = await worker.fetch(req(AUTHED, { model: 'claude-opus-4-8' }), env(), ctx);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toBe('unsupported model');
+    expect(meterResponse).not.toHaveBeenCalled();
+  });
+
+  it('400s a request with no model', async () => {
+    const res = await worker.fetch(req(AUTHED, { model: undefined }), env(), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('clamps an oversized max_tokens to the server ceiling before forwarding', async () => {
+    const fetchSpy = stubUpstream200();
+    const res = await worker.fetch(req(AUTHED, { max_tokens: 100000 }), env(), ctx);
+    expect(res.status).toBe(200);
+    const sent = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(sent.max_tokens).toBe(8192);
+  });
+
+  it('utility mode forwards the client body bare (no AE injection) and still meters', async () => {
+    const fetchSpy = stubUpstream200();
+    const res = await worker.fetch(
+      req({ ...AUTHED, 'x-cubic-request': 'utility' }, { system: 'SUMMARY INSTRUCTION' }),
+      env(),
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const sent = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(sent.system).toBe('SUMMARY INSTRUCTION'); // the call's own prompt is kept…
+    expect(sent.tools).toBeUndefined(); // …no AE tools injected
+    expect(sent.tool_choice).toBeUndefined();
+    expect(meterResponse).toHaveBeenCalledTimes(1); // still metered
   });
 });

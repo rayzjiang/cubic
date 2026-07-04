@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prepareUpstream, mockResponse, type Env } from '../src/index.js';
+import { prepareUpstream, prepareBareUpstream, mockResponse, type Env } from '../src/index.js';
 import { injectedSystem, injectedTools } from '../src/inject.js';
 
 /**
@@ -53,6 +53,21 @@ describe('prepareUpstream', () => {
     const { body } = prepareUpstream(sneaky as Record<string, unknown>, ENV);
     expect(body.system).not.toBe('CLIENT INJECTED');
     expect((body.tools as Array<{ name: string }>).map((t) => t.name)).not.toContain('evil');
+  });
+});
+
+describe('prepareBareUpstream (utility calls)', () => {
+  it('forwards the client body untouched — no system/tools/tool_choice injection — but sets the key header', () => {
+    const summary = { model: 'claude-sonnet-4-6', max_tokens: 2048, system: 'SUMMARY INSTRUCTION', messages: [{ role: 'user', content: 'transcript' }] };
+    const { url, body, headers } = prepareBareUpstream({ ...summary }, ENV);
+    expect(url).toBe('https://api.anthropic.com/v1/messages');
+    // The call's own (non-secret) system prompt is kept…
+    expect(body.system).toBe('SUMMARY INSTRUCTION');
+    // …and NO AE crown jewels are added.
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    // The real key is still attached server-side.
+    expect(headers['x-api-key']).toBe('sk-test-secret');
   });
 });
 

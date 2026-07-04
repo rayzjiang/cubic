@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { costCentsForUsage } from '../src/metering.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { costCentsForUsage, recordUsage } from '../src/metering.js';
 import { parseUsageFromResponse } from '../src/usage-parse.js';
+import type { Env } from '../src/index.js';
 
 /**
  * §A-6 — cost math (USD × 100) + pulling token counts out of both response shapes. All offline.
@@ -28,8 +29,44 @@ describe('costCentsForUsage', () => {
     expect(costCentsForUsage('claude-haiku-4-5', { input_tokens: 1_000_000, output_tokens: 0 })).toBeCloseTo(100, 4);
   });
 
-  it('falls back to default pricing for an unknown model', () => {
-    expect(costCentsForUsage('claude-unknown-9', { input_tokens: 1_000_000, output_tokens: 0 })).toBeCloseTo(300, 4);
+  it('throws for an unknown/unpriced model — drift is loud, never a silent fallback', () => {
+    expect(() => costCentsForUsage('claude-unknown-9', { input_tokens: 1_000_000, output_tokens: 0 })).toThrow();
+  });
+});
+
+const RU_ENV = { SUPABASE_URL: 'http://localhost:54321', SUPABASE_SERVICE_ROLE_KEY: 'svc' } as Env;
+
+describe('recordUsage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('posts once and stays quiet on success', async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    vi.stubGlobal('fetch', spy);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await recordUsage('u1', '2026-07-01T00:00:00+00:00', 12.5, RU_ENV);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(err).not.toHaveBeenCalled();
+  });
+
+  it('logs and retries once on a non-ok response (never throws)', async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
+    vi.stubGlobal('fetch', spy);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(recordUsage('u1', '2026-07-01T00:00:00+00:00', 12.5, RU_ENV)).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2); // one retry
+    expect(err).toHaveBeenCalledTimes(2); // each failure logged
+  });
+
+  it('logs and retries on a fetch throw (never throws)', async () => {
+    const spy = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', spy);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(recordUsage('u1', '2026-07-01T00:00:00+00:00', 12.5, RU_ENV)).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(err).toHaveBeenCalledTimes(2);
   });
 });
 
