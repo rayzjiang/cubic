@@ -89,6 +89,9 @@ export interface ChatOptions {
   /** Aborts the in-flight request (cancel/Stop). The SDK rejects with an abort error,
    *  which the agent loop treats as a clean cancellation (Claude Code-style interrupt). */
   signal?: AbortSignal;
+  /** The caller's Supabase access token (proxy mode only). Attached as a per-request `Authorization`
+   *  header so a rotating/refreshed token is always current; the Worker verifies it (WT-PROXY-GATING §A-4). */
+  authToken?: string;
 }
 
 export interface ChatResponse {

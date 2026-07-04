@@ -187,9 +187,12 @@ function toAnthropicContent(
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic;
+  /** Proxy mode (CUBIC_ENV=prod): route through the Worker + attach the caller's Supabase JWT per call. */
+  private readonly proxyMode: boolean;
 
   constructor() {
     const proxyMode = process.env.CUBIC_ENV === 'prod';
+    this.proxyMode = proxyMode;
     // Proxy mode MUST route through the Worker via ANTHROPIC_BASE_URL (set by app config from
     // CUBIC_PROXY_URL). Without it the SDK would silently call api.anthropic.com with a placeholder
     // key (a confusing 401) AND a bare, ruleless request — fail loud on the misconfiguration instead.
@@ -202,12 +205,18 @@ export class AnthropicProvider implements LLMProvider {
     // which overwrites x-api-key with the real key before forwarding to Anthropic.
     const apiKey = process.env.ANTHROPIC_API_KEY ?? (proxyMode ? 'cubic-proxy-placeholder' : undefined);
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
-    // Auth seam (Wave 2 / WT-PROXY-GATING): the Worker will verify a Supabase token. Send a
-    // placeholder Authorization header now so the wire shape is fixed; the Worker reads but
-    // does not enforce it yet. Direct mode sends no such header.
-    const opts: ConstructorParameters<typeof Anthropic>[0] = { apiKey };
-    if (proxyMode) opts.defaultHeaders = { authorization: `Bearer ${process.env.CUBIC_AUTH_TOKEN ?? ''}` };
-    this.client = new Anthropic(opts);
+    // Auth (Wave 2 / WT-PROXY-GATING): the Supabase JWT is now attached PER REQUEST in chat()/stream()
+    // (opts.authToken), not baked once here — a session's token refreshes ~hourly, so a fixed
+    // construction-time header would go stale. Direct mode sends no such header.
+    this.client = new Anthropic({ apiKey });
+  }
+
+  /** Per-request options: the abort signal + (proxy mode) the caller's Supabase JWT as `Authorization`. */
+  private requestOptions(opts: ChatOptions): { signal?: AbortSignal; headers?: Record<string, string> } {
+    const req: { signal?: AbortSignal; headers?: Record<string, string> } = {};
+    if (opts.signal) req.signal = opts.signal;
+    if (this.proxyMode && opts.authToken) req.headers = { authorization: `Bearer ${opts.authToken}` };
+    return req;
   }
 
   contextWindow(model?: string): number {
@@ -237,10 +246,7 @@ export class AnthropicProvider implements LLMProvider {
       params.tool_choice = { type: 'auto' };
     }
 
-    const response = await this.client.messages.create(
-      params,
-      opts.signal ? { signal: opts.signal } : undefined,
-    );
+    const response = await this.client.messages.create(params, this.requestOptions(opts));
 
     // Join all text blocks → content; collect all tool_use blocks → toolUses.
     let content = '';
@@ -277,7 +283,7 @@ export class AnthropicProvider implements LLMProvider {
       messages: messages.map(m => ({ role: m.role, content: toAnthropicContent(m.content) })),
     };
     if (opts.systemPrompt !== undefined) params.system = toSystemParam(opts.systemPrompt);
-    const stream = await this.client.messages.stream(params);
+    const stream = await this.client.messages.stream(params, this.requestOptions(opts));
 
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {

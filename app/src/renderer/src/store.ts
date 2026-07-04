@@ -53,8 +53,12 @@ function loadAndAttach(sessionId: string): void {
 }
 
 // ── Friendly transient-error mapping (raw SDK/transport text → plain English) ──
-function mapError(raw: string): string {
-  if (/overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
+// `status` (when present) is the proxy gate's HTTP status — the specific, actionable cases come first
+// (WT-PROXY-GATING §C-6). Wave-3 §D replaces these interim messages with real paywall/sign-in screens.
+function mapError(raw: string, status?: number): string {
+  if (status === 401) return 'Please sign in again to keep using Cubic.'
+  if (status === 402) return "You've reached your plan's limit. Upgrade to keep going."
+  if (status === 429 || /overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
   if (/network|fetch failed|ECONN|ENOTFOUND|socket hang/i.test(raw)) return "Couldn't reach the server — check your connection and try again."
   if (/AE.?disconnect|plugin not connected|not connected/i.test(raw)) return "After Effects isn't connected. Open AE with the Cubic bridge running."
   if (/timed? ?out|timeout/i.test(raw)) return 'That step took too long. Want to try again?'
@@ -374,7 +378,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
         break
       case 'error':
-        set({ error: { friendly: mapError(event.message), raw: event.message }, running: false, cancelling: false, progressWord: null })
+        set({ error: { friendly: mapError(event.message, event.status), raw: event.message }, running: false, cancelling: false, progressWord: null })
         track('turn_error')
         break
       case 'cancelled':
@@ -470,7 +474,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...(isNewChat ? { pendingNewChats: [...s.pendingNewChats, { id: s.sessionId, title: text }] } : {}),
     })
     track('message_sent')
-    sendUserChat(s.sessionId, text)
+    void sendUserChat(s.sessionId, text)
   },
 
   cancelSteer: (id) => {
@@ -543,7 +547,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!s.lastUserText || !s.sessionId) return
     set({ error: null })
     track('message_sent')
-    sendUserChat(s.sessionId, s.lastUserText) // resend without duplicating the user bubble
+    void sendUserChat(s.sessionId, s.lastUserText) // resend without duplicating the user bubble
   },
 
   dismissError: () => set({ error: null }),

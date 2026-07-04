@@ -33,7 +33,9 @@ export type AgentEvent =
   // Hard ceiling: compaction can't free enough room, so the turn is paused. A call-to-action
   // (start a new conversation), NOT an error — the panel renders it differently.
   | { type: 'context_full'; message: string }
-  | { type: 'error'; message: string }
+  // `status` (when present) is the HTTP status the proxy returned (401 signed-out / 402 not-paid-or-over-cap
+  // / 429 rate-limited), surfaced so the renderer can map it to a specific message (WT-PROXY-GATING §C-6).
+  | { type: 'error'; message: string; status?: number }
   | { type: 'done'; stopReason: string };
 
 export type EmitFn = (event: AgentEvent) => void;

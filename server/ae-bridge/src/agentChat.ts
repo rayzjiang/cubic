@@ -124,7 +124,7 @@ function lastUserString(session: Session): string | undefined {
   return undefined;
 }
 
-async function runTurnAndPersist(session: Session, text: string, emit: (e: AgentEvent) => void): Promise<void> {
+async function runTurnAndPersist(session: Session, text: string, emit: (e: AgentEvent) => void, authToken?: string): Promise<void> {
   resetBuffer(session.id); // fresh buffer for this turn (drops any stale between-turn events)
   const committed: Message[] = [];
   // A turn stopped before any output is DISCARDED (as if never sent): the loop pops the user prompt
@@ -152,6 +152,7 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   const keepOverride = process.env.CUBIC_KEEP_RECENT_TURNS ? Number(process.env.CUBIC_KEEP_RECENT_TURNS) : undefined;
   await runAgentTurn(session, text, capture, {
     onCommit: (m) => committed.push(m),
+    authToken,
     contextWindowOverride: ctxOverride,
     compactThreshold: threshOverride,
     keepRecentTurns: keepOverride,
@@ -370,7 +371,7 @@ export function registerAgentChat(): void {
       }
     }
 
-    await runTurnAndPersist(session, msg.text, emit);
+    await runTurnAndPersist(session, msg.text, emit, msg.token);
     // Mid-turn steers are consumed inside runAgentTurn (which emits a `steer` per drain). Messages
     // that arrived AFTER the model's last tool boundary are still queued here → drain the whole
     // remaining queue into one combined follow-up turn (consistent with the in-turn drain-all).
@@ -386,7 +387,7 @@ export function registerAgentChat(): void {
       // follow-up turn won't replay them — it recovers them from committed history (loadHistory).
       for (const m of drained) emit({ type: "steer", id: m.id, text: m.text });
       const combined = drained.map((m) => m.text).join("\n");
-      await runTurnAndPersist(session, combined, emit);
+      await runTurnAndPersist(session, combined, emit, msg.token);
     }
   });
 }

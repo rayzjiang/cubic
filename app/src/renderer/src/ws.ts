@@ -76,7 +76,13 @@ function wsSend(msg: ClientMessage): void {
 
 export const sendList = (): void => wsSend({ type: 'list' })
 export const sendLoadHistory = (sessionId: string): void => wsSend({ type: 'loadHistory', sessionId })
-export const sendUserChat = (sessionId: string, text: string): void => wsSend({ type: 'userChat', sessionId, text })
+// Attach the user's fresh (auto-refreshed) Supabase access token per send so the Worker can verify it
+// per request (WT-PROXY-GATING §A-4). `getAccessToken()` returns null when signed out / in local mode —
+// harmless (the proxy is only hit in prod). Never blocks the optimistic UI (the store already painted).
+export const sendUserChat = async (sessionId: string, text: string): Promise<void> => {
+  const token = await window.cubic.getAccessToken().catch(() => null)
+  wsSend({ type: 'userChat', sessionId, text, ...(token ? { token } : {}) })
+}
 export const sendQueue = (sessionId: string, text: string, id: string): void => wsSend({ type: 'queue', sessionId, text, id })
 export const sendRemoveQueue = (sessionId: string, id: string): void => wsSend({ type: 'removeQueue', sessionId, id })
 export const sendDelete = (sessionId: string): void => wsSend({ type: 'delete', sessionId })

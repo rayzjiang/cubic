@@ -38,6 +38,10 @@ export interface ChatInbound {
   type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename';
   sessionId?: string;
   text?: string;
+  /** The renderer's fresh Supabase access token, attached to each `userChat` (proxy mode). Threaded into
+   *  the agent turn → the per-request `Authorization` header the Worker verifies (WT-PROXY-GATING §A-4).
+   *  Rides the loopback WS frame, which is already 127.0.0.1-only + token-authed (WT-WS-AUTH). */
+  token?: string;
   /** Queue item id (panel-generated for queue/editQueue/removeQueue). */
   id?: string;
   /** Pre-turn snapshot id to revert to (restore: "restore to before this request"). */

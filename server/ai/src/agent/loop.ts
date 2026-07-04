@@ -27,6 +27,9 @@ export interface AgentDeps {
   buildSystemPrompt: () => SystemPromptInput;
   /** Model override (default: provider default). */
   model?: string;
+  /** The caller's Supabase access token (proxy mode). Threaded into every `chat()` this turn as a
+   *  per-request `Authorization` header for the Worker to verify (WT-PROXY-GATING §A-4). */
+  authToken?: string;
   maxIterations?: number;
   /** Set false to skip the pre-turn snapshot (tests / read-only contexts). */
   takeSnapshot?: boolean;
@@ -191,7 +194,7 @@ export async function runAgentTurn(
       // there either). The model captured state when it planned on call 1 and executes from the
       // conversation + tool results; it can re-read (getSelectedLayers/getCurrentTime) in the rare
       // case it needs fresh state mid-turn.
-      const response = await llm.chat(session.messages, { systemPrompt, tools: proxyMode ? undefined : AE_TOOLS, model, signal: abort.signal, liveState: iter === 0 ? liveState : undefined });
+      const response = await llm.chat(session.messages, { systemPrompt, tools: proxyMode ? undefined : AE_TOOLS, model, authToken: deps.authToken, signal: abort.signal, liveState: iter === 0 ? liveState : undefined });
       session.lastContextTokens = contextTokensOf(response.usage);
 
       // The model itself reports the prompt was too large to process — pause honestly.
@@ -286,7 +289,11 @@ export async function runAgentTurn(
     if (/context|too long|prompt is too long/i.test(message)) {
       emit({ type: 'context_full', message: 'This conversation is too long to continue. Please start a new one.' });
     } else {
-      emit({ type: 'error', message });
+      // The proxy's gate returns a distinct HTTP status (401 signed-out / 402 not-paid-or-over-cap /
+      // 429 rate-limited); the Anthropic SDK surfaces it on `.status`. Pass it through so the renderer
+      // can show a specific message instead of the generic "something went wrong" (WT-PROXY-GATING §C-6).
+      const status = typeof (e as { status?: unknown })?.status === 'number' ? (e as { status: number }).status : undefined;
+      emit({ type: 'error', message, ...(status !== undefined ? { status } : {}) });
     }
   } finally {
     session.running = false;

@@ -25,7 +25,9 @@ export type AgentEvent =
   // renderer ignores it — the divider is placed at the compaction moment (before the triggering prompt).
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   | { type: 'context_full'; message: string }
-  | { type: 'error'; message: string }
+  // `status` = the proxy's HTTP status (401 signed-out / 402 not-paid-or-over-cap / 429 rate-limited),
+  // surfaced so mapError can show a specific message (WT-PROXY-GATING §C-6).
+  | { type: 'error'; message: string; status?: number }
   | { type: 'done'; stopReason: string }
 
 // ── Display model (one shape for history + live turn) ──
@@ -53,7 +55,9 @@ export interface ConversationMeta {
 
 // ── Renderer → backend (the server's ChatInbound union) ──
 export type ClientMessage =
-  | { type: 'userChat'; sessionId: string; text: string }
+  // `token` = the user's fresh Supabase access token, attached per send so the Worker can verify it
+  // (WT-PROXY-GATING §A-4). Absent in local/signed-out; the proxy is only hit in prod.
+  | { type: 'userChat'; sessionId: string; text: string; token?: string }
   | { type: 'cancel'; sessionId: string }
   | { type: 'queue'; sessionId: string; text: string; id: string }
   | { type: 'editQueue'; sessionId: string; text: string; id: string }
