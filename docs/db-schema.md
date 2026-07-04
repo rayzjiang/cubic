@@ -1,7 +1,7 @@
 # Cubic — Database Schema (Data Model Design)
 
 > **Date:** 2026-06-26 (refreshed after the WT-BILLING fix pass)
-> **Status:** Implementing **Wave 1 of Phase 5** (paid-backend infra). This documents the billing/auth data model that WT-BILLING creates and WT-PROXY-GATING (Wave 2) reads.
+> **Status:** Implementing **Wave 1 of Phase 5** (paid-backend infra). This documents the billing/auth data model that WT-BILLING creates and WT-PROXY-GATING (Wave 2) reads (entitlement) + writes (usage).
 >
 > **Source of truth:** the SQL migrations under `supabase/migrations/` are authoritative for the actual DDL (column types, constraints, indexes). This file is the human-readable design/diagram view — if it ever disagrees with the migrations, the migrations win.
 
@@ -15,7 +15,7 @@ Supabase (Postgres + Auth). Stripe is the source of truth for *money*; Postgres 
 
 ## Overview
 
-Four tables total: **3 we create** (`plans`, `subscriptions`, `usage`) + **1 we get free** (`auth.users`, built into Supabase Auth). _(The migration **files** also define two functions — `apply_subscription()` the guarded webhook writer, and `get_entitlement()` the single read the proxy calls — plus RLS/grants; those are not tables.)_
+Four tables total: **3 we create** (`plans`, `subscriptions`, `usage`) + **1 we get free** (`auth.users`, built into Supabase Auth). _(The migration **files** also define **three** functions — `apply_subscription()` the guarded webhook writer, `get_entitlement()` the single read the proxy calls, and `record_usage()` the proxy's atomic usage-meter write — plus RLS/grants; those are not tables.)_
 
 Design principle: **one writer per table.** No two pieces of code write the same table, and no fact is stored twice.
 
@@ -124,7 +124,7 @@ One row per user per billing cycle. Reset = a new row each cycle (old rows are f
 |---|---|---|
 | `user_id` | uuid (FK → auth.users) | Which user. |
 | `period_start` | timestamptz | Start of the billing cycle this counter covers. **Aligned to the Stripe billing anchor**, not the calendar month, so resets match what Stripe actually bills. Part of the key. |
-| `spent_cents` | numeric(14,4) | Running total spent this cycle (cost-cents, sub-cent precision). Proxy does an atomic `spent_cents = spent_cents + cost` upsert per request. |
+| `spent_cents` | numeric(14,4) | Running total spent this cycle (cost-cents, sub-cent precision). Proxy adds each request's cost via the `record_usage()` RPC — an atomic `spent_cents = spent_cents + cost` upsert. |
 | `updated_at` | timestamptz | Last metering write. |
 
 Key: `(user_id, period_start)`.
@@ -145,6 +145,12 @@ The Wave-2 proxy makes **one** call per request and gets back everything it need
 6. Returns `{ entitled, plan, price_id, allowance_cents, spent_cents, period_start, period_end, status }` — where `entitled` = status-ok **AND** `spent_cents < allowance_cents` (over-cap blocks even with a good status).
 
 Because the allowance comes back inside the RPC result, the proxy never needs its own copy of the price→allowance map — the `plans` table is the only place that number lives. It is a `SECURITY DEFINER` function so the predicate can't be re-implemented (and diverge) elsewhere.
+
+---
+
+## The write path: `record_usage` RPC
+
+The proxy's counterpart to the read. After each LLM response it converts Anthropic's token counts to cost-cents and calls `record_usage(user_id, period_start, cents)` — a `SECURITY DEFINER`, `service_role`-only atomic increment (`insert … on conflict (user_id, period_start) do update set spent_cents = spent_cents + excluded`), stamped with the subscription's current `period_start` (from the entitlement read). It exists as an RPC (not a raw table write) because the proxy writes over PostgREST/HTTP, which can't express an atomic increment inline — only a replace. Written **async**, out of the response path, so metering never adds latency (WT-PROXY-GATING §A-6).
 
 ---
 

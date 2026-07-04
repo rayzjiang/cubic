@@ -97,7 +97,7 @@ Transport-level failures instead use `ok:false` + `error` (a `BridgeError` on th
 
 Inbound (UI → backend), the `ChatInbound` union:
 ```json
-{ "type": "userChat",    "sessionId": "<uuid>", "text": "make it bounce" }
+{ "type": "userChat",    "sessionId": "<uuid>", "text": "make it bounce", "token": "<supabase-jwt | omitted>" }
 { "type": "cancel",      "sessionId": "<uuid>" }
 { "type": "queue",       "sessionId": "<uuid>", "text": "...", "id": "<queue-item-id>" }
 { "type": "editQueue",   "sessionId": "<uuid>", "text": "...", "id": "<queue-item-id>" }
@@ -111,6 +111,10 @@ Inbound (UI → backend), the `ChatInbound` union:
 ```
 - `sessionId` is **renderer-minted** (uuid on "New chat"), used verbatim as the backend
   session-map key AND the persisted JSONL filename. Omitted → `"default"`.
+- `userChat.token` (prod/proxy mode only) — the sender's **Supabase access token**, fetched fresh per
+  send; the backend threads it to the LLM call as a per-request `Authorization` header the hosted proxy
+  verifies (WT-PROXY-GATING §A-4). **Distinct from the `hello` session token**: that gates the *local
+  socket*; this authenticates the *user* to the *proxy*. Omitted in direct-local / signed-out.
 - A `userChat` arriving mid-run is treated as a steer (queued, drained at the next
   iteration boundary) — mirrors Claude Code. `cancel` stops at the next boundary.
 - `editQueue`/`removeQueue` revise a queued steer by `id` before it fires (no-op once drained).
@@ -168,7 +172,7 @@ event, so the reloaded renderer needs it to render the prompt bubble above the r
 | `cancelled` | turn stopped by `cancel` |
 | `compaction` | history compaction — `status: start\|done\|failed`, `reason?` (a `done`/`cleared` also covers `/clear`). A subtle indicator, **not** an error. |
 | `context_full` | hard ceiling — `message`. A "start a new chat" CTA, **not** an error. |
-| `error` | `message` (raw SDK text; the UI renders it friendly) |
+| `error` | `message` (raw SDK text; the UI renders it friendly); `status?` (hosted-proxy HTTP status: 401 signed-out / 402 not-paid-or-over-cap / 429 rate-limited); `reason?` (402 sub-state: `no_plan`\|`over_cap` — the §D paywall routes on it) |
 | `done` | turn finished — `stopReason` |
 
 ## Persistence (backend-side, not part of the wire contract)
