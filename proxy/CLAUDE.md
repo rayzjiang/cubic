@@ -6,21 +6,30 @@
 > agent loop stays client-side (`server/ai`), one Claude response per call.
 >
 > **Gated (WT-PROXY-GATING, Wave 2).** Every `POST /v1/messages` now runs: IP throttle → verify the
-> Supabase JWT (JWKS) → per-user rate limit → entitlement check (paid + under cap) → forward → meter
-> usage. Fail-closed: an un-verifiable/un-entitled/over-cap request is rejected (401/402/429/503) before
-> any Anthropic spend. §A-8 (real deploy + flipping the shipped default) is the remaining Wave-2 step.
+> Supabase JWT (JWKS) → per-user rate limit → entitlement check (paid + under cap) → **model allowlist +
+> `max_tokens` clamp** → forward → meter usage. Fail-closed: an un-verifiable/un-entitled/over-cap/
+> unpriced-model request is rejected (400/401/402/429/503) before any Anthropic spend. The gate runs
+> server-side on EVERY request (app or raw curl), so there is no metering bypass. §A-8 (real deploy +
+> flipping the shipped default) is the remaining Wave-2 step.
 
 ## Layout
 - `src/index.ts` — the Worker. `POST /v1/messages` → **gate** (IP limit → `verifyJwt` → user rate
-  limit → `getEntitlement`; 401/402/429/503 on failure) → inject system+tools+tool_choice
-  (`prepareUpstream`), set `x-api-key` from the Worker secret, forward to `api.anthropic.com`, then
-  `tee` the body: one branch streams to the client, the other is metered async via `ctx.waitUntil`.
+  limit → `getEntitlement` → **model allowlist (`ALLOWED_MODELS`) + `max_tokens` clamp
+  (`MAX_OUTPUT_TOKENS`)**; 400/401/402/429/503 on failure) → forward, then `tee` the body (one branch
+  streams to the client, the other is metered async via `ctx.waitUntil`). An **agent** call injects
+  system+tools+tool_choice (`prepareUpstream`); a **utility** call (`x-cubic-request: utility` header —
+  e.g. the compaction summary) forwards the client body bare (`prepareBareUpstream`, no AE injection),
+  still gated + metered. The real `x-api-key` is set from the Worker secret either way.
 - `src/auth.ts` — §A-4 `verifyJwt`: stateless JWKS verification with `jose` (pins asymmetric algs +
   checks iss/aud/exp). `verifyJwtWithKeySet` is the unit-testable core; `bearerToken` parses the header.
 - `src/entitlement.ts` — §A-5 `getEntitlement`: `get_entitlement` RPC as service-role, ~60s in-memory
   cache, **strict fail-closed** (throws on lookup failure → 503, never serves stale).
 - `src/metering.ts` + `src/usage-parse.ts` — §A-6 `meterResponse`: parse token counts from the teed
-  response (JSON now, SSE forward-compat) → cost-cents (proxy-side pricing map) → `record_usage` RPC.
+  response (JSON now, SSE forward-compat) → cost-cents (proxy-side pricing map, which is ALSO the
+  `ALLOWED_MODELS` source — the gate rejects anything unpriced) → `record_usage` RPC. `recordUsage`
+  checks the response, logs failures, and retries once, so a systematic write outage is visible in
+  observability instead of silently zeroing everyone's usage. Adding a model = one row in the pricing
+  map (+ the client-side debug mirror in `server/ai/src/llm/anthropic.ts`).
 - `src/inject.ts` — builds the injected `system` (static prefix + `cache_control: ephemeral`,
   §A-9) and `tools` (zod → JSON-Schema) from the secrets. Computed once at module load.
 - `src/secrets/` — **the single source of truth + the crown jewels** (moved from `server/ai`):
