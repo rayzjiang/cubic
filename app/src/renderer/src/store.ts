@@ -99,6 +99,9 @@ interface ChatState {
   conversations: ConversationMeta[]
   listLoaded: boolean
   sidebarCollapsed: boolean
+  // Narrow-window overlay drawer (the inline sidebar's replacement below the responsive breakpoint).
+  // Transient (starts closed, not persisted); any navigation closes it (see newChat/openChat/goHome).
+  mobileDrawerOpen: boolean
   // ── Project-switch (Cubic mirrors AE) ──
   // `projectPath` is the project currently DISPLAYED; `liveProjectPath` is the project actually open in AE.
   // Every `conversations` message reflects live AE, so after each adopt the two are equal — Cubic always
@@ -145,6 +148,8 @@ interface ChatState {
   setAuth: (s: AuthState) => void
   setCubicEnv: (e: CubicEnvName) => void
   toggleSidebar: () => void
+  setMobileDrawerOpen: (open: boolean) => void
+  toggleMobileDrawer: () => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -198,6 +203,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   listLoaded: false,
   sidebarCollapsed: false,
+  mobileDrawerOpen: false,
   liveProjectPath: null,
   pendingNewChats: [],
   ...blankConversation(),
@@ -212,6 +218,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setAuth: (s) => set({ auth: s }),
   setCubicEnv: (e) => set({ cubicEnv: e }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setMobileDrawerOpen: (open) => set({ mobileDrawerOpen: open }),
+  toggleMobileDrawer: () => set((s) => ({ mobileDrawerOpen: !s.mobileDrawerOpen })),
 
   handleServerMessage: (msg) => {
     const s = get()
@@ -443,7 +451,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newChat: () => {
     const sessionId = crypto.randomUUID()
-    set({ sessionId, view: 'chat', ...blankConversation() })
+    set({ sessionId, view: 'chat', mobileDrawerOpen: false, ...blankConversation() })
     saveNav(sessionId, 'chat')
     track('new_chat')
   },
@@ -453,13 +461,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // re-attach to any still-running turn (restores the spinner + in-flight prompt + buffered live
     // events). Without the attach, switching back to a chat that's still working would lose its spinner
     // and in-flight message until a Home round-trip — the bug this fixes.
-    set({ sessionId: id, view: 'chat', ...blankConversation() })
+    set({ sessionId: id, view: 'chat', mobileDrawerOpen: false, ...blankConversation() })
     saveNav(id, 'chat')
     loadAndAttach(id)
   },
 
   goHome: () => {
-    set({ view: 'home' })
+    set({ view: 'home', mobileDrawerOpen: false })
     saveNav(get().sessionId, 'home')
     sendList()
   },
@@ -534,7 +542,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
     track('conversation_deleted')
     sendDelete(id)
-    if (s.sessionId === id) get().newChat() // deleting the open chat → drop into a fresh New chat
+    // Post-delete navigation only matters when the deleted chat is the one the pointer is on:
+    //  - inside a chat → drop into a fresh New chat (can't stay on a now-gone transcript)
+    //  - on Home → stay on Home; just reset the (now-dangling) session pointer to a fresh blank session
+    //    so a later reload/reattach doesn't target the deleted conversation.
+    // Deleting any other row leaves you exactly where you are.
+    if (s.sessionId === id) {
+      if (s.view === 'chat') {
+        get().newChat()
+      } else {
+        const sessionId = crypto.randomUUID()
+        set({ sessionId, ...blankConversation() })
+        saveNav(sessionId, 'home')
+      }
+    }
   },
 
   renameConversation: (id, title) => {

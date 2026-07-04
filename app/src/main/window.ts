@@ -16,7 +16,9 @@ export function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 720,
+    // 560 lets the window shrink well past the 768px responsive breakpoint, so the narrow overlay-drawer
+    // layout has real range (e.g. two windows tiled on a 1440px display = 720 each).
+    minWidth: 560,
     minHeight: 480,
     show: false,
     // mac shows vibrancy through a transparent body; other platforms get a solid bg.

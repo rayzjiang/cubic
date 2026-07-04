@@ -6,6 +6,8 @@ import { bindWs, connectBackend, sendList } from './ws'
 import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
+import { MobileDrawer } from './components/MobileDrawer'
+import { useIsNarrow } from './useMediaQuery'
 import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { AuthScreen } from './components/AuthScreen'
@@ -25,6 +27,7 @@ export function App() {
   const backendPhase = useChatStore((s) => s.backendStatus.phase)
   const authStatus = useChatStore((s) => s.auth.status)
   const cubicEnv = useChatStore((s) => s.cubicEnv)
+  const isNarrow = useIsNarrow()
   const { crossfade } = useMotion()
 
   useEffect(() => {
@@ -44,6 +47,12 @@ export function App() {
       offAuth()
     }
   }, [])
+
+  // Widening past the breakpoint restores the inline sidebar → make sure a drawer opened while narrow
+  // doesn't linger as stale open state (which would pop it back open on the next narrowing).
+  useEffect(() => {
+    if (!isNarrow) useChatStore.getState().setMobileDrawerOpen(false)
+  }, [isNarrow])
 
   useEffect(() => {
     if (connection === 'open') {
@@ -110,10 +119,13 @@ export function App() {
                 animate="animate"
                 exit="exit"
               >
-                <Sidebar />
+                {/* Wide: inline sidebar. Narrow: it's replaced by the MobileDrawer overlay (below), so
+                    the chat pane gets the full width and the sidebar rides the hamburger instead. */}
+                {!isNarrow && <Sidebar />}
                 <div className="min-w-0 flex-1">
                   <ChatPane />
                 </div>
+                {isNarrow && <MobileDrawer />}
               </motion.div>
             )}
           </AnimatePresence>
