@@ -92,6 +92,11 @@ export interface ChatOptions {
   /** The caller's Supabase access token (proxy mode only). Attached as a per-request `Authorization`
    *  header so a rotating/refreshed token is always current; the Worker verifies it (WT-PROXY-GATING §A-4). */
   authToken?: string;
+  /** Marks this as a UTILITY call (e.g. the history-compaction summary) rather than an agent turn. In
+   *  proxy mode it sets the `x-cubic-request: utility` header, so the Worker forwards the request WITHOUT
+   *  injecting the AE system prompt or tools — the call's own (non-secret) `systemPrompt` is used and no
+   *  AE tools are added. Still fully gated + metered by the Worker. Ignored in direct-local mode. */
+  utility?: boolean;
 }
 
 export interface ChatResponse {

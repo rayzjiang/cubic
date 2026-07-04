@@ -123,7 +123,7 @@ export function renderTranscript(messages: Message[]): string {
  */
 export async function compactSession(
   session: Session,
-  opts: { llm?: LLMProvider; keepRecentTurns?: number; model?: string } = {},
+  opts: { llm?: LLMProvider; keepRecentTurns?: number; model?: string; authToken?: string } = {},
 ): Promise<{ ok: boolean; reason?: string; summary?: string; keptTurns?: number }> {
   const keepRecentTurns = opts.keepRecentTurns ?? KEEP_RECENT_TURNS;
   const cut = findCompactionCut(session.messages, keepRecentTurns);
@@ -142,6 +142,10 @@ export async function compactSession(
         systemPrompt: SUMMARY_SYSTEM_PROMPT,
         model: opts.model,
         maxTokens: 2048,
+        // Proxy mode: carry the caller's token (else the Worker 401s) and flag this as a utility call so
+        // the Worker uses SUMMARY_SYSTEM_PROMPT as-is instead of overwriting it with the AE prompt+tools.
+        authToken: opts.authToken,
+        utility: true,
       });
       const summary = res.content.trim();
       // Guard: never replace real history with a blank summary — that silently destroys context (the

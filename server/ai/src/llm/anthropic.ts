@@ -215,7 +215,14 @@ export class AnthropicProvider implements LLMProvider {
   private requestOptions(opts: ChatOptions): { signal?: AbortSignal; headers?: Record<string, string> } {
     const req: { signal?: AbortSignal; headers?: Record<string, string> } = {};
     if (opts.signal) req.signal = opts.signal;
-    if (this.proxyMode && opts.authToken) req.headers = { authorization: `Bearer ${opts.authToken}` };
+    // Proxy-only headers: the caller's JWT (Worker verifies it) + a utility-call flag (Worker skips AE
+    // injection for it). A utility call still needs the token — both are attached when present.
+    if (this.proxyMode && (opts.authToken || opts.utility)) {
+      req.headers = {
+        ...(opts.authToken ? { authorization: `Bearer ${opts.authToken}` } : {}),
+        ...(opts.utility ? { 'x-cubic-request': 'utility' } : {}),
+      };
+    }
     return req;
   }
 

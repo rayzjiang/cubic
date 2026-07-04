@@ -342,7 +342,9 @@ export function registerAgentChat(): void {
         return;
       }
       emit({ type: "compaction", status: "start" });
-      const res = await compactSession(session);
+      // Proxy mode: pass the caller's token (the summary call is gated + metered like any other) — else
+      // it 401s. Mirrors runTurnAndPersist(..., msg.token).
+      const res = await compactSession(session, { authToken: msg.token });
       emit({ type: "compaction", status: res.ok ? "done" : "failed", reason: res.reason });
       return;
     }
