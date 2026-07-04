@@ -5,14 +5,22 @@
 > shipped desktop binary never contains either. Anthropic-shaped passthrough: the
 > agent loop stays client-side (`server/ai`), one Claude response per call.
 >
-> **WT-PROXY-CORE only** — this Worker injects + forwards. It does NOT yet gate:
-> JWT verify / entitlement / metering / rate-limit are Wave 2 (WT-PROXY-GATING).
+> **Gated (WT-PROXY-GATING, Wave 2).** Every `POST /v1/messages` now runs: IP throttle → verify the
+> Supabase JWT (JWKS) → per-user rate limit → entitlement check (paid + under cap) → forward → meter
+> usage. Fail-closed: an un-verifiable/un-entitled/over-cap request is rejected (401/402/429/503) before
+> any Anthropic spend. §A-8 (real deploy + flipping the shipped default) is the remaining Wave-2 step.
 
 ## Layout
-- `src/index.ts` — the Worker. `POST /v1/messages` → inject system+tools+tool_choice
-  (`prepareUpstream`, exported + unit-tested), set `x-api-key` from the Worker secret,
-  forward to `api.anthropic.com`, pipe `upstream.body` straight back (handles streaming +
-  non-streaming alike). Reads the `Authorization` header but does NOT enforce it (Wave-2 seam).
+- `src/index.ts` — the Worker. `POST /v1/messages` → **gate** (IP limit → `verifyJwt` → user rate
+  limit → `getEntitlement`; 401/402/429/503 on failure) → inject system+tools+tool_choice
+  (`prepareUpstream`), set `x-api-key` from the Worker secret, forward to `api.anthropic.com`, then
+  `tee` the body: one branch streams to the client, the other is metered async via `ctx.waitUntil`.
+- `src/auth.ts` — §A-4 `verifyJwt`: stateless JWKS verification with `jose` (pins asymmetric algs +
+  checks iss/aud/exp). `verifyJwtWithKeySet` is the unit-testable core; `bearerToken` parses the header.
+- `src/entitlement.ts` — §A-5 `getEntitlement`: `get_entitlement` RPC as service-role, ~60s in-memory
+  cache, **strict fail-closed** (throws on lookup failure → 503, never serves stale).
+- `src/metering.ts` + `src/usage-parse.ts` — §A-6 `meterResponse`: parse token counts from the teed
+  response (JSON now, SSE forward-compat) → cost-cents (proxy-side pricing map) → `record_usage` RPC.
 - `src/inject.ts` — builds the injected `system` (static prefix + `cache_control: ephemeral`,
   §A-9) and `tools` (zod → JSON-Schema) from the secrets. Computed once at module load.
 - `src/secrets/` — **the single source of truth + the crown jewels** (moved from `server/ai`):
@@ -22,10 +30,18 @@
 - `scripts/gen-command-names.mjs` — codegens the client's names-only mirror
   (`server/ai/src/tools/command-names.generated.ts`). Names aren't secret; the catalog is.
   `--check` mode is the drift gate.
-- `tests/` — vitest: worker injection, the moved secret tests, and the registry drift guard.
+- `scripts/mint-test-jwt.mjs` — DEV helper: mints Supabase-shaped ES256 tokens + serves a local JWKS
+  (`--var SUPABASE_JWKS_URL`) so you can curl the gate against `wrangler dev` with no real Supabase.
+- `tests/` — vitest: worker injection, the moved secret tests, the registry drift guard, and the gate
+  (`auth`/`entitlement`/`metering`/`gating` — all offline, zero API spend).
 
 ## Secrets / config
 - `ANTHROPIC_API_KEY` — Worker **secret**: `wrangler secret put ANTHROPIC_API_KEY` (never committed).
+- `SUPABASE_SERVICE_ROLE_KEY` — Worker **secret**: reads any user's entitlement (`get_entitlement`) +
+  writes usage (`record_usage`), both bypass RLS. `wrangler secret put SUPABASE_SERVICE_ROLE_KEY`.
+- `SUPABASE_URL` — env-specific **var** (JWKS + PostgREST base). Prod: `wrangler deploy` var / dashboard;
+  local: `--var SUPABASE_URL:http://127.0.0.1:54321`. `SUPABASE_JWKS_URL` optionally overrides the JWKS.
+- Rate limits — `RATE_LIMITER` (per user) + `IP_RATE_LIMITER` (per IP) native bindings in `wrangler.jsonc`.
 - `MOCK_UPSTREAM` — when set, return a canned Anthropic-shaped response instead of calling
   upstream → lets full-stack-local exercise the whole client→Worker path at **zero API spend**.
 

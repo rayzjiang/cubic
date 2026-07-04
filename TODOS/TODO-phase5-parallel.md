@@ -49,13 +49,13 @@
 
 ## Wave 2 — make the proxy gate + meter (integration; same `proxy/` codebase as WT-1 → follows it)
 
-**4. WT-PROXY-GATING** — §A remainder (needs WT-AUTH + WT-BILLING merged)
-- [ ] §A-4 verify Supabase JWT on every request (needs WT-AUTH)
-- [ ] §A-5 entitlement check — read `subscriptions`, cached ~30–60s (needs WT-BILLING)
-- [ ] §A-6 usage metering — write usage + deduct allowance + reject over cap (needs WT-BILLING + locked numbers)
-- [ ] §C-6 cap/trial enforcement at the proxy → emits the "out of allowance / trial ended" signal
-- [ ] §A-7 per-user rate-limit + abuse guard
-- [ ] §A-8 flip the Phase-4 §B env-switch → prod proxy URL (deploy fr, cloudflare)
+**4. WT-PROXY-GATING** — §A remainder (needs WT-AUTH + WT-BILLING merged) — **gate built + verified locally; only the real-deploy capstone (§A-8) remains**
+- [x] §A-4 verify Supabase JWT on every request (needs WT-AUTH) — `proxy/src/auth.ts`, JWKS via `jose`; token rides the `userChat` frame → per-request header
+- [x] §A-5 entitlement check — read `subscriptions`, cached ~30–60s (needs WT-BILLING) — `entitlement.ts`, service-role `get_entitlement`, strict fail-closed (503)
+- [x] §A-6 usage metering — write usage + deduct allowance + reject over cap (needs WT-BILLING + locked numbers) — `metering.ts`/`usage-parse.ts`, tee + async `waitUntil` → new `record_usage` RPC
+- [x] §C-6 cap/trial enforcement at the proxy → emits the "out of allowance / trial ended" signal — over-cap → 402; client maps 401/402/429 (interim copy; §D screens = Wave 3)
+- [x] §A-7 per-user rate-limit + abuse guard — Cloudflare native `RATE_LIMITER` (per user) + `IP_RATE_LIMITER` (per IP) + free edge DDoS
+- [ ] §A-8 flip the Phase-4 §B env-switch → prod proxy URL (deploy fr, cloudflare) — **the real-deploy E2E capstone (also lands the pulled-forward §G-3 cloud-Supabase deploy); keep direct-local the default**
 
 ---
 
