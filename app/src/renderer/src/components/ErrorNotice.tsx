@@ -23,7 +23,7 @@ export function ErrorNotice() {
           <div className="min-w-0 flex-1">
             <p className="text-white/85">{error.friendly}</p>
             <div className="mt-1.5 flex items-center gap-3 text-[12px]">
-              {lastUserText && (
+              {lastUserText && error.retryable && (
                 <button onClick={retry} className="text-blue-300 hover:underline">
                   Try again
                 </button>

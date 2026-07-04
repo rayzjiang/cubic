@@ -88,10 +88,20 @@ describe('gate', () => {
     expect(getEntitlement).not.toHaveBeenCalled();
   });
 
-  it('402s a not-entitled user (no plan / over cap)', async () => {
-    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: 'canceled' });
+  it('402s a no-plan user with reason=no_plan (status null → never-subscribed/cancelled)', async () => {
+    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: null });
     const res = await worker.fetch(req(AUTHED), env(), ctx);
     expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: { reason: string } };
+    expect(body.error.reason).toBe('no_plan');
+  });
+
+  it('402s an over-cap user with reason=over_cap (active plan, spent >= allowance)', async () => {
+    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: 'active', spentCents: 50000, allowanceCents: 50000 });
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: { reason: string } };
+    expect(body.error.reason).toBe('over_cap');
   });
 
   it('503s when the entitlement lookup fails (strict fail-closed)', async () => {

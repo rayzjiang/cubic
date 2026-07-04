@@ -96,9 +96,11 @@ function json(data: unknown, status: number): Response {
 }
 
 /** Anthropic-shaped error envelope with an HTTP status the client SDK surfaces as `.status`
- *  (401 = signed out, 402 = not paid / over cap, 429 = rate limited, 503 = gate unavailable). */
-function errorResponse(type: string, message: string, status: number): Response {
-  return json({ type: 'error', error: { type, message } }, status);
+ *  (401 = signed out, 402 = not paid / over cap, 429 = rate limited, 503 = gate unavailable). An
+ *  optional machine-readable `reason` rides in the body (SDK exposes it via `.error`) so the client +
+ *  Wave-3 §D paywall can route the right screen — e.g. 'no_plan' vs 'over_cap' on a 402. */
+function errorResponse(type: string, message: string, status: number, reason?: string): Response {
+  return json({ type: 'error', error: { type, message, ...(reason ? { reason } : {}) } }, status);
 }
 
 export default {
@@ -138,7 +140,13 @@ export default {
     // a not-entitled user (no active plan or monthly allowance reached) → 402.
     const entitlement = await getEntitlement(userId, env).catch(() => null);
     if (!entitlement) return errorResponse('api_error', 'entitlement check unavailable — try again shortly', 503);
-    if (!entitlement.entitled) return errorResponse('entitlement_error', 'no active plan or monthly allowance reached', 402);
+    if (!entitlement.entitled) {
+      // Split the block reason so the client + §D paywall can route: no active subscription
+      // (status null — never-subscribed / cancelled / unpaid) vs an active plan over its monthly cap.
+      const reason = entitlement.status == null ? 'no_plan' : 'over_cap';
+      const message = reason === 'no_plan' ? 'no active plan' : 'monthly allowance reached';
+      return errorResponse('entitlement_error', message, 402, reason);
+    }
 
     // Gate passed — inject the crown jewels + forward (unchanged from WT-PROXY-CORE).
     const { url: upstreamUrl, body: upstreamBody, headers } = prepareUpstream(body, env);

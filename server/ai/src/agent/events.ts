@@ -34,8 +34,9 @@ export type AgentEvent =
   // (start a new conversation), NOT an error — the panel renders it differently.
   | { type: 'context_full'; message: string }
   // `status` (when present) is the HTTP status the proxy returned (401 signed-out / 402 not-paid-or-over-cap
-  // / 429 rate-limited), surfaced so the renderer can map it to a specific message (WT-PROXY-GATING §C-6).
-  | { type: 'error'; message: string; status?: number }
+  // / 429 rate-limited); `reason` is the machine-readable 402 sub-state ('no_plan' | 'over_cap') the client
+  // + §D paywall route on. Surfaced so the renderer can map to a specific message (WT-PROXY-GATING §C-6).
+  | { type: 'error'; message: string; status?: number; reason?: string }
   | { type: 'done'; stopReason: string };
 
 export type EmitFn = (event: AgentEvent) => void;

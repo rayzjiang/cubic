@@ -53,11 +53,16 @@ function loadAndAttach(sessionId: string): void {
 }
 
 // ── Friendly transient-error mapping (raw SDK/transport text → plain English) ──
-// `status` (when present) is the proxy gate's HTTP status — the specific, actionable cases come first
-// (WT-PROXY-GATING §C-6). Wave-3 §D replaces these interim messages with real paywall/sign-in screens.
-function mapError(raw: string, status?: number): string {
+// `status` = the proxy gate's HTTP status; `reason` = the 402 sub-state ('no_plan' | 'over_cap'). The
+// specific, actionable cases come first (WT-PROXY-GATING §C-6). Wave-3 §D replaces these interim messages
+// with real paywall/sign-in screens (routing off the same `reason`).
+function mapError(raw: string, status?: number, reason?: string): string {
   if (status === 401) return 'Please sign in again to keep using Cubic.'
-  if (status === 402) return "You've reached your plan's limit. Upgrade to keep going."
+  if (status === 402) {
+    if (reason === 'no_plan') return 'You need an active plan to use Cubic. Subscribe to get started.'
+    if (reason === 'over_cap') return "You've used up this month's allowance. Upgrade for more."
+    return "You've reached your plan's limit. Upgrade to keep going." // fallback (reason absent)
+  }
   if (status === 429 || /overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
   if (/network|fetch failed|ECONN|ENOTFOUND|socket hang/i.test(raw)) return "Couldn't reach the server — check your connection and try again."
   if (/AE.?disconnect|plugin not connected|not connected/i.test(raw)) return "After Effects isn't connected. Open AE with the Cubic bridge running."
@@ -119,7 +124,9 @@ interface ChatState {
   progressWord: string | null
   compacting: boolean
   contextFull: { message: string } | null
-  error: { friendly: string; raw: string } | null
+  // `retryable` = false for 401/402 (signing in / subscribing is the fix, not resending) → ErrorNotice
+  // hides "Try again". Everything else (busy/network/timeout/upstream) stays retryable.
+  error: { friendly: string; raw: string; retryable: boolean } | null
   lastUserText: string | null
   queuedSteers: { id: string; text: string }[]
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
@@ -377,10 +384,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       case 'context_full':
         set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
         break
-      case 'error':
-        set({ error: { friendly: mapError(event.message, event.status), raw: event.message }, running: false, cancelling: false, progressWord: null })
+      case 'error': {
+        // 401 (sign in) / 402 (subscribe/upgrade) can't be fixed by resending → not retryable.
+        const retryable = event.status !== 401 && event.status !== 402
+        set({ error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message, retryable }, running: false, cancelling: false, progressWord: null })
         track('turn_error')
         break
+      }
       case 'cancelled':
         if (event.discarded) {
           // Stopped before any output → throw the turn away: pull the optimistic user prompt back out

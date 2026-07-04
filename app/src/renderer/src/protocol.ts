@@ -25,9 +25,9 @@ export type AgentEvent =
   // renderer ignores it — the divider is placed at the compaction moment (before the triggering prompt).
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   | { type: 'context_full'; message: string }
-  // `status` = the proxy's HTTP status (401 signed-out / 402 not-paid-or-over-cap / 429 rate-limited),
-  // surfaced so mapError can show a specific message (WT-PROXY-GATING §C-6).
-  | { type: 'error'; message: string; status?: number }
+  // `status` = the proxy's HTTP status (401 signed-out / 402 not-paid-or-over-cap / 429 rate-limited);
+  // `reason` = the machine-readable 402 sub-state ('no_plan' | 'over_cap') the paywall routes on (§C-6/§D).
+  | { type: 'error'; message: string; status?: number; reason?: string }
   | { type: 'done'; stopReason: string }
 
 // ── Display model (one shape for history + live turn) ──

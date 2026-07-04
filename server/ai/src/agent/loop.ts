@@ -293,7 +293,10 @@ export async function runAgentTurn(
       // 429 rate-limited); the Anthropic SDK surfaces it on `.status`. Pass it through so the renderer
       // can show a specific message instead of the generic "something went wrong" (WT-PROXY-GATING §C-6).
       const status = typeof (e as { status?: unknown })?.status === 'number' ? (e as { status: number }).status : undefined;
-      emit({ type: 'error', message, ...(status !== undefined ? { status } : {}) });
+      // On a 402 the proxy also carries a machine-readable `reason` ('no_plan' | 'over_cap') in the body;
+      // the SDK exposes the parsed body on `.error`. Forward it so the renderer (+ §D paywall) can route.
+      const reason = (e as { error?: { error?: { reason?: unknown } } })?.error?.error?.reason;
+      emit({ type: 'error', message, ...(status !== undefined ? { status } : {}), ...(typeof reason === 'string' ? { reason } : {}) });
     }
   } finally {
     session.running = false;
