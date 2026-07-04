@@ -39,6 +39,30 @@
   }
 }
 
+/* Dynamic scroll-fade (driven by useScrollFade). Fades the top and/or bottom edge to hint there's more
+   content that way — a "scroll up / down for more" cue (ChatGPT/Claude-style). The hook toggles the
+   --fade-top / --fade-bottom vars (0 ↔ 24px) from scroll position, so a fade shows ONLY on an edge with
+   clipped content and turns off once you reach that edge (first/last row stays crisp). Masks the content
+   (not a colored overlay), so it works over both the solid home pane and the translucent sidebar.
+   The vars are @property-registered as <length> so the show/hide can transition smoothly instead of snapping. */
+@property --fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.scroll-fade {
+  transition:
+    --fade-top 150ms ease,
+    --fade-bottom 150ms ease;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+}
+
 /* Markdown body (react-markdown output in AssistantMessage). Tailwind preflight resets element
    margins/lists, so restore readable spacing for the rendered semantic HTML. Kept minimal — no
    @tailwindcss/typography dependency. */

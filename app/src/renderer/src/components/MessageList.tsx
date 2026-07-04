@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { MSG_STAGGER_STEP, useMotion } from '../motion'
+import { useScrollFade } from '../useScrollFade'
 import type { DisplayItem } from '../protocol'
 import { UserPrompt } from './UserPrompt'
 import { AssistantMessage } from './AssistantMessage'
@@ -35,6 +36,7 @@ export function MessageList() {
   const sessionId = useChatStore((s) => s.sessionId)
   const { messageEntrance } = useMotion()
 
+  const fadeRef = useScrollFade<HTMLDivElement>()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
   const pinnedRef = useRef(true) // synchronous source of truth for effects
@@ -73,6 +75,15 @@ export function MessageList() {
     roRef.current = ro
     setViewportH(el.clientHeight)
   }, [])
+
+  // Compose the transcript's own scroll-node ref with the scroll-fade ref (dynamic top/bottom fade).
+  const attachScroll = useCallback(
+    (el: HTMLDivElement | null) => {
+      setScrollEl(el)
+      fadeRef(el)
+    },
+    [setScrollEl, fadeRef],
+  )
 
   const scrollToBottom = (behavior: ScrollBehavior) => {
     const el = scrollRef.current
@@ -206,11 +217,11 @@ export function MessageList() {
   return (
     <div className="relative min-h-0 flex-1">
       <div
-        ref={setScrollEl}
+        ref={attachScroll}
         onScroll={onScroll}
         onWheel={onUserScrollIntent}
         onTouchStart={onUserScrollIntent}
-        className="h-full overflow-y-auto"
+        className="scroll-fade h-full overflow-y-auto"
       >
         {/* pt-6 only: the bottom spacing lives INSIDE the last-turn block (pb-6) so scrolling to the
             very bottom can't over-scroll past the pinned message and clip it. */}
