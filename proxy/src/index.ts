@@ -122,6 +122,22 @@ function errorResponse(type: string, message: string, status: number, reason?: s
   return json({ type: 'error', error: { type, message, ...(reason ? { reason } : {}) } }, status);
 }
 
+/** Enforce a native rate-limit binding, FAIL-CLOSED. A missing binding is a deploy misconfig
+ *  (`unsafe.bindings` didn't attach — wrong env / partial deploy / `wrangler dev` without it), so we
+ *  return 503 rather than skip the check — silently proceeding would drop the abuse cap. Mirrors the
+ *  entitlement gate's strict fail-closed stance. Returns a Response to short-circuit with, or null to
+ *  proceed. (#6) */
+async function enforceRateLimit(limiter: RateLimit | undefined, key: string, label: string): Promise<Response | null> {
+  if (!limiter) {
+    console.error(`rate limiter binding missing (${label}) — failing closed`);
+    return errorResponse('api_error', 'service temporarily unavailable — try again shortly', 503);
+  }
+  if (!(await limiter.limit({ key })).success) {
+    return errorResponse('rate_limit_error', 'Too many requests — slow down.', 429);
+  }
+  return null;
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -132,9 +148,8 @@ export default {
     // §A-7 pre-auth flood guard: throttle by client IP BEFORE any parsing/verification, so an
     // unauthenticated flood is dropped cheapest. Cloudflare's edge DDoS protection sits in front of this.
     const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
-    if (env.IP_RATE_LIMITER && !(await env.IP_RATE_LIMITER.limit({ key: ip })).success) {
-      return errorResponse('rate_limit_error', 'Too many requests — slow down.', 429);
-    }
+    const ipLimited = await enforceRateLimit(env.IP_RATE_LIMITER, ip, 'ip');
+    if (ipLimited) return ipLimited;
 
     let body: Record<string, unknown>;
     try {
@@ -151,9 +166,8 @@ export default {
     const userId = caller.userId;
 
     // §A-7 per-user rate limit — bounds the soft-cap overshoot + runaway/abuse spend on the one key.
-    if (env.RATE_LIMITER && !(await env.RATE_LIMITER.limit({ key: userId })).success) {
-      return errorResponse('rate_limit_error', 'Too many requests — slow down.', 429);
-    }
+    const userLimited = await enforceRateLimit(env.RATE_LIMITER, userId, 'user');
+    if (userLimited) return userLimited;
 
     // §A-5/§C-6 entitlement gate. STRICT fail-closed: any lookup failure blocks (503), never spends;
     // a not-entitled user (no active plan or monthly allowance reached) → 402.
@@ -213,23 +227,37 @@ export default {
       return errorResponse('api_error', 'upstream request to Anthropic failed', 502);
     }
 
-    // Transparent body pipe (§A-2) + §A-6 metering. Strip body-framing headers: the Workers runtime
-    // may have already decompressed the body, so a copied `content-encoding`/`content-length` would
-    // make the client double-decode. The platform re-adds correct framing for the bytes we emit.
-    const respHeaders = new Headers(upstream.headers);
-    respHeaders.delete('content-encoding');
-    respHeaders.delete('content-length');
-    respHeaders.delete('transfer-encoding');
+    // §A-2 forward. A NON-2xx must NOT be piped verbatim: Anthropic's 401/403 (OUR rotated key / org
+    // permission) would reach the client as its reserved "signed out" 401 → a misleading, unretryable
+    // "sign in again" dead-end; and its request-id / anthropic-* / cf-* headers would leak our org +
+    // infra. Convert every non-2xx into a proxy-owned Anthropic-shaped envelope whose status maps to the
+    // right client behavior, and log the real upstream status so a rotated key shows up in Worker logs.
+    // 502 = Anthropic's fault (joins the network-fail 502 above); 503 stays reserved for OUR gate. (#5)
+    if (!upstream.ok) {
+      const detail = await upstream.text().catch(() => '');
+      console.error('anthropic upstream non-2xx', upstream.status, detail.slice(0, 500));
+      if (upstream.status === 429 || upstream.status === 529) {
+        return errorResponse('rate_limit_error', 'The AI service is busy — try again in a moment.', 429);
+      }
+      if (upstream.status === 401 || upstream.status === 403 || upstream.status >= 500) {
+        return errorResponse('api_error', 'The AI service is temporarily unavailable — try again shortly.', 502);
+      }
+      return errorResponse('invalid_request_error', 'The AI service rejected the request.', 400);
+    }
 
-    // No body to meter (non-2xx with empty body etc.) → pipe as-is.
+    // 2xx — transparent body pipe (§A-2) + §A-6 metering. Forward ONLY content-type (JSON or the SSE
+    // stream type); dropping every other upstream header both avoids the double-decode from a stale
+    // content-encoding/length AND strips the request-id / anthropic-* / cf-* leak.
+    const contentType = upstream.headers.get('content-type') ?? 'application/json';
+    const outHeaders = { 'content-type': contentType };
+    // No body (a 2xx with an empty body) → nothing to meter → emit as-is.
     if (!upstream.body) {
-      return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+      return new Response(null, { status: upstream.status, headers: outHeaders });
     }
     // Tee: one branch streams to the client now; the other is drained async (waitUntil) to pull the
     // token counts → cost-cents → the usage counter, stamped with the subscription's current period.
     const [clientBody, meterBody] = upstream.body.tee();
-    const contentType = upstream.headers.get('content-type') ?? '';
     ctx.waitUntil(meterResponse(meterBody, contentType, model, userId, entitlement.periodStart, env));
-    return new Response(clientBody, { status: upstream.status, headers: respHeaders });
+    return new Response(clientBody, { status: upstream.status, headers: outHeaders });
   },
 };

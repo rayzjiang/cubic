@@ -58,6 +58,18 @@ function stubUpstream200(): ReturnType<typeof vi.fn> {
   return spy;
 }
 
+/** Stub the upstream Anthropic fetch with an arbitrary status + headers + body — for the #5 non-2xx
+ *  remap + header-strip assertions. Defaults to a JSON content-type so the meter branch has a type. */
+function stubUpstream(
+  status: number,
+  headers: Record<string, string> = { 'content-type': 'application/json' },
+  body = '{}',
+): ReturnType<typeof vi.fn> {
+  const spy = vi.fn().mockResolvedValue(new Response(body, { status, headers }));
+  vi.stubGlobal('fetch', spy);
+  return spy;
+}
+
 const AUTHED = { authorization: 'Bearer good.jwt.token' };
 const ENTITLED = {
   entitled: true, plan: 'pro', priceId: 'price_pro', allowanceCents: 50000, spentCents: 10,
@@ -214,5 +226,88 @@ describe('gate', () => {
     expect(sent.tools).toBeUndefined(); // …no AE tools injected
     expect(sent.tool_choice).toBeUndefined();
     expect(meterResponse).toHaveBeenCalledTimes(1); // still metered
+  });
+
+  // ── #5 upstream error remap: a non-2xx from Anthropic is NEVER piped verbatim ──────────────────────
+  it('remaps an upstream 401 (our rotated key) to 502 — not a client 401 "sign in again" dead-end', async () => {
+    stubUpstream(
+      401,
+      { 'content-type': 'application/json', 'request-id': 'req_123', 'anthropic-organization-id': 'org_secret' },
+      JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }),
+    );
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(502); // NOT 401
+    const body = (await res.json()) as { error: { type: string } };
+    expect(body.error.type).toBe('api_error');
+    // upstream infra headers are stripped, never leaked to the client
+    expect(res.headers.get('request-id')).toBeNull();
+    expect(res.headers.get('anthropic-organization-id')).toBeNull();
+    expect(meterResponse).not.toHaveBeenCalled(); // no billable usage on an error
+  });
+
+  it('remaps an upstream 403 to 502', async () => {
+    stubUpstream(403);
+    expect((await worker.fetch(req(AUTHED), env(), ctx)).status).toBe(502);
+  });
+
+  it('remaps upstream 500 and 503 to 502', async () => {
+    stubUpstream(500);
+    expect((await worker.fetch(req(AUTHED), env(), ctx)).status).toBe(502);
+    stubUpstream(503);
+    expect((await worker.fetch(req(AUTHED), env(), ctx)).status).toBe(502);
+  });
+
+  it('remaps an upstream 429 to a 429 rate_limit_error (retryable "busy")', async () => {
+    stubUpstream(429);
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: { type: string } };
+    expect(body.error.type).toBe('rate_limit_error');
+  });
+
+  it('remaps an upstream 529 (overloaded) to 429', async () => {
+    stubUpstream(529);
+    expect((await worker.fetch(req(AUTHED), env(), ctx)).status).toBe(429);
+  });
+
+  it('remaps another upstream 4xx (400) to a 400 invalid_request_error', async () => {
+    stubUpstream(400);
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { type: string } };
+    expect(body.error.type).toBe('invalid_request_error');
+  });
+
+  it('on a 200, forwards ONLY content-type — strips the request-id / anthropic-* leak', async () => {
+    stubUpstream(
+      200,
+      {
+        'content-type': 'application/json',
+        'request-id': 'req_abc',
+        'anthropic-organization-id': 'org_secret',
+        'anthropic-ratelimit-requests-remaining': '99',
+      },
+      JSON.stringify({ usage: { input_tokens: 1, output_tokens: 1 } }),
+    );
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/json');
+    expect(res.headers.get('request-id')).toBeNull();
+    expect(res.headers.get('anthropic-organization-id')).toBeNull();
+    expect(res.headers.get('anthropic-ratelimit-requests-remaining')).toBeNull();
+    expect(meterResponse).toHaveBeenCalledTimes(1);
+  });
+
+  // ── #6 rate limiter fails CLOSED when its binding is missing (deploy misconfig, not fail-open) ─────
+  it('503s (fail-closed) when the IP_RATE_LIMITER binding is missing — pre-auth, JWT never checked', async () => {
+    const res = await worker.fetch(req(AUTHED), env({ IP_RATE_LIMITER: undefined }), ctx);
+    expect(res.status).toBe(503);
+    expect(verifyJwt).not.toHaveBeenCalled();
+  });
+
+  it('503s (fail-closed) when the RATE_LIMITER binding is missing — post-auth, entitlement never read', async () => {
+    const res = await worker.fetch(req(AUTHED), env({ RATE_LIMITER: undefined }), ctx);
+    expect(res.status).toBe(503);
+    expect(getEntitlement).not.toHaveBeenCalled();
   });
 });

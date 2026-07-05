@@ -67,6 +67,9 @@ function mapError(raw: string, status?: number, reason?: string): string {
   // 503 = a gate/server fault on OUR end (entitlement lookup down, or a price-misconfig we caught) — a
   // transient "our problem" message, never an upsell. Retryable (see the `error` case below).
   if (status === 503) return "Cubic is having a temporary issue on our end — we're on it. Try again in a moment."
+  // 502 = the proxy couldn't get a good response from the AI service (unreachable, or the upstream API
+  // returned an error the proxy remapped) — transient, our problem, retryable. Never a "sign in again".
+  if (status === 502) return "Cubic couldn't reach the AI service just now — try again in a moment."
   if (status === 429 || /overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
   if (/network|fetch failed|ECONN|ENOTFOUND|socket hang/i.test(raw)) return "Couldn't reach the server — check your connection and try again."
   if (/AE.?disconnect|plugin not connected|not connected/i.test(raw)) return "After Effects isn't connected. Open AE with the Cubic bridge running."
