@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, safeStorage, shell } from 'electron'
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, isAuthRetryableFetchError, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import type { BackendConfig } from './config.js'
 import type { AuthProvider, AuthState, AuthStatus, AuthUser } from '../shared/ipc.js'
 
@@ -21,7 +21,13 @@ import type { AuthProvider, AuthState, AuthStatus, AuthUser } from '../shared/ip
 // dashboard (and the scheme registered via setAsDefaultProtocolClient in index.ts).
 export const AUTH_REDIRECT = 'cubic://auth/callback'
 // Refresh this far before expiry (and treat a token within this window as "needs refresh on demand").
-const REFRESH_SKEW_MS = 60_000
+// 10 min (not 60s) so a token handed to a chat turn always has ≥10 min of life — longer than any
+// realistic multi-step turn — closing the mid-turn-expiry hole (#4A). Tunable.
+const REFRESH_SKEW_MS = 600_000
+// After a TRANSIENT refresh failure (offline / server blip) we keep the session and retry this often,
+// rather than deleting it — a bounded fixed interval, NOT scheduleRefresh's expiry-based timing (which
+// would hot-loop once the token is already expired + offline). Recovers automatically on reconnect (#12).
+const REFRESH_RETRY_MS = 60_000
 
 /** Derive the renderer-facing user from a Supabase session (name/avatar come from the OAuth provider's
  *  `user_metadata`, which varies by provider — fall back across the common keys). */
@@ -41,6 +47,19 @@ function toUser(session: Session): AuthUser {
 function friendlyAuthError(raw: string): string {
   if (/access_denied|denied|cancel/i.test(raw)) return 'Sign-in was cancelled.'
   return "Couldn't sign in. Please try again."
+}
+
+/** Is a refresh failure DEFINITIVE (the refresh token is genuinely revoked/invalid) vs transient
+ *  (offline / DNS / timeout / 5xx / rate-limit)? Only a definitive failure should drop the persisted
+ *  session; everything else must be kept and retried, or launching offline wipes the login (#12).
+ *  A revoked token comes back as an AuthApiError (HTTP 400, invalid_grant / refresh_token_not_found);
+ *  a gone session as AuthSessionMissingError. Network/5xx are AuthRetryableFetchError → never definitive. */
+function isDefinitiveInvalidGrant(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || isAuthRetryableFetchError(error)) return false
+  const e = error as { name?: string; status?: number; code?: string; message?: string }
+  if (e.name === 'AuthSessionMissingError') return true
+  const text = `${e.code ?? ''} ${e.message ?? ''}`
+  return e.status === 400 && /invalid.?grant|invalid.?refresh|refresh_token_not_found/i.test(text)
 }
 
 /** Simple in-memory storage for supabase-js. With persistSession off + a headless main there is no
@@ -191,11 +210,28 @@ export class AuthManager extends EventEmitter {
     if (!this.client || !this.session?.refresh_token) return this.clearSession('signedOut')
     try {
       const { data, error } = await this.client.auth.refreshSession({ refresh_token: this.session.refresh_token })
-      if (error || !data.session) return this.clearSession('signedOut') // revoked/expired → drop it
+      if (error) return this.handleRefreshFailure(error) // definitive → sign out; transient → keep + retry
+      if (!data.session) return this.clearSession('signedOut')
       this.applySession(data.session)
-    } catch {
-      this.clearSession('signedOut')
+    } catch (e) {
+      // A revoked token is RETURNED as `error` (handled above), so a throw here is unexpected/transient —
+      // keep the session and retry rather than nuking it (unless it's clearly an invalid-grant).
+      this.handleRefreshFailure(e)
     }
+  }
+
+  /** Only a definitive invalid-grant drops the persisted session; a transient failure (offline / blip)
+   *  keeps it, stays signed in, and retries on a bounded timer so it recovers on reconnect (#12). */
+  private handleRefreshFailure(error: unknown): void {
+    if (isDefinitiveInvalidGrant(error)) return this.clearSession('signedOut')
+    // If init() left us 'loading', resolve to signedIn so the gate doesn't flash the sign-in screen offline.
+    if (this.status !== 'signedIn') {
+      this.status = 'signedIn'
+      this.errorMsg = undefined
+      this.emitChange()
+    }
+    this.clearRefresh()
+    this.refreshTimer = setTimeout(() => void this.refresh(), REFRESH_RETRY_MS)
   }
 
   private scheduleRefresh(): void {

@@ -184,6 +184,22 @@ Deferred improvements (roughly in priority order):
   start, re-check before each *mutating* tool call, mismatch → emit `STATE_STALE` into the self-heal path → model
   re-reads fresh. Only bites if the user edits *while* a turn runs (rare; turns are seconds).
 
+- [ ] **Windows ACL hardening for `~/.cubic/conn.json`.** _(surfaced during P5W2 audit fix — Plan 3 #11)_
+  Plan 3 #11 locks the bridge token file to owner-only via POSIX `chmod` (0600 file / 0700 dir) in
+  `server/ae-bridge/src/bridge/wsBridge.ts` — a **no-op on Windows/NTFS** (ACL-based, not POSIX modes). When
+  Windows support lands, lock it with `icacls` (or a native ACL call) so a second local account can't read the
+  token that grants arbitrary ExtendScript execution in the open AE project. Mac/Linux are already protected.
+
+---
+
+## Platform support
+
+- [ ] **Windows support.** _(surfaced during P5W2 audit fix — Plan 3 #11)_
+  Cubic is **Mac-only** today. Expanding to Windows means (at least): the Windows CEP install path + PlayerDebugMode
+  (already branched in `installBridge.ts`), the normal Windows window frame (already guarded — Mac-only chrome), and
+  **ACL hardening for `~/.cubic/conn.json`** (the POSIX `chmod` from Plan 3 #11 is inert on Windows — see Resilience /
+  hardening above). Audit + close any other `process.platform === 'darwin'`-guarded seams before shipping Windows.
+
 ---
 
 ## Billing / payments ops (Stripe)

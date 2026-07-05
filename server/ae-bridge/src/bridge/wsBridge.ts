@@ -101,13 +101,17 @@ class AEBridge {
     this._token = crypto.randomUUID();
     // All Cubic runtime state lives under one home dir (~/.cubic also holds sessions/ — see persist.ts).
     const bridgeDir = path.join(os.homedir(), '.cubic');
+    const connPath = path.join(bridgeDir, 'conn.json');
     try {
       fs.mkdirSync(bridgeDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(bridgeDir, 'conn.json'),
-        JSON.stringify({ port: this._port, token: this._token }),
-        'utf8',
-      );
+      // conn.json holds the token that grants arbitrary ExtendScript execution in the open AE project —
+      // lock it to the owner so no other local account can read it (#11). chmod explicitly (not just a
+      // `mode:` on write): the dir/file usually already exist from a prior launch, and mode-on-create
+      // doesn't tighten an existing file. Locking the dir to 0700 also shields ~/.cubic/sessions.
+      // NOTE: POSIX modes are a no-op on Windows/NTFS (ACLs) — Windows hardening (icacls) is a POSTMVP item.
+      fs.chmodSync(bridgeDir, 0o700);
+      fs.writeFileSync(connPath, JSON.stringify({ port: this._port, token: this._token }), { mode: 0o600 });
+      fs.chmodSync(connPath, 0o600);
     } catch { /* non-fatal */ }
     console.error(`WS bridge listening on 127.0.0.1:${this._port}`);
   }

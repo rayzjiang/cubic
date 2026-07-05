@@ -400,8 +400,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
         break
       case 'error': {
-        // 401 (sign in) / 402 (subscribe/upgrade) can't be fixed by resending → not retryable.
-        const retryable = event.status !== 401 && event.status !== 402
+        // A 401 DURING a turn is usually just a mid-turn token expiry (#4B), not a real sign-out. Ask
+        // main for a token: a refresh that still yields one means the session is valid → this was
+        // recoverable, so make it retryable ("try again" resumes with the fresh token, completed steps
+        // already saved). Only a definitive sign-out (refresh returns nothing) keeps "please sign in
+        // again". Other statuses: 402 (subscribe/upgrade) isn't fixable by resending; everything else is.
+        if (event.status === 401) {
+          set({ running: false, cancelling: false, progressWord: null })
+          void window.cubic.getAccessToken().catch(() => null).then((token) => {
+            const recovered = !!token
+            set({
+              error: {
+                friendly: recovered ? 'That got interrupted — try again.' : mapError(event.message, 401, event.reason),
+                raw: event.message,
+                retryable: recovered,
+              },
+            })
+          })
+          track('turn_error')
+          break
+        }
+        const retryable = event.status !== 402
         set({ error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message, retryable }, running: false, cancelling: false, progressWord: null })
         track('turn_error')
         break

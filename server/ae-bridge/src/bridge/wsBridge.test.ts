@@ -42,6 +42,14 @@ describe('wsBridge auth gate', () => {
     expect(conn).toEqual({ port: bridge.port, token: bridge.token });
   });
 
+  it('locks conn.json to owner-only 0600 and ~/.cubic to 0700 (#11)', () => {
+    if (process.platform === 'win32') return; // POSIX modes are a no-op on Windows (ACLs) — see wsBridge.start
+    const connMode = fs.statSync(path.join(tmpHome, '.cubic', 'conn.json')).mode & 0o777;
+    const dirMode = fs.statSync(path.join(tmpHome, '.cubic')).mode & 0o777;
+    expect(connMode).toBe(0o600); // the token that grants AE scripting must not be world/group-readable
+    expect(dirMode).toBe(0o700);
+  });
+
   it('closes a socket whose first frame lacks the token (4001)', async () => {
     const ws = await connectRaw();
     const code = await new Promise<number>((resolve) => {
