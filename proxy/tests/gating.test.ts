@@ -122,6 +122,30 @@ describe('gate', () => {
     expect(body.error.reason).toBe('over_cap');
   });
 
+  it('402s a past_due user with reason=past_due (renewal failed → fix card, NOT an upsell)', async () => {
+    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: 'past_due' });
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: { reason: string } };
+    expect(body.error.reason).toBe('past_due');
+  });
+
+  it('503s (our-fault server issue, not a 402 upsell) an active subscriber whose allowance resolved to 0', async () => {
+    // The mispriced-cohort edge (unknown/rotated price): a paying account must NOT be told "upgrade".
+    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: 'active', allowanceCents: 0, spentCents: 0 });
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { reason?: string } };
+    expect(body.error.reason).toBeUndefined(); // not routed to the paywall (no over_cap/no_plan reason)
+    expect(meterResponse).not.toHaveBeenCalled();
+  });
+
+  it('503s a trialing subscriber with allowance 0 too (same misconfig guard)', async () => {
+    vi.mocked(getEntitlement).mockResolvedValueOnce({ ...ENTITLED, entitled: false, status: 'trialing', allowanceCents: 0, spentCents: 0 });
+    const res = await worker.fetch(req(AUTHED), env(), ctx);
+    expect(res.status).toBe(503);
+  });
+
   it('503s when the entitlement lookup fails (strict fail-closed)', async () => {
     vi.mocked(getEntitlement).mockRejectedValueOnce(new Error('supabase down'));
     const res = await worker.fetch(req(AUTHED), env(), ctx);

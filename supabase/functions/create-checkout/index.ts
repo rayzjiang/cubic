@@ -30,13 +30,22 @@ Deno.serve(async (req) => {
     // A failed lookup must 500 — never risk minting a duplicate customer.
     const { data: existing, error: existingErr } = await admin
       .from('subscriptions')
-      .select('stripe_customer_id, status')
+      .select('stripe_customer_id, status, stripe_subscription_id')
       .eq('user_id', caller.userId)
       .maybeSingle();
     if (existingErr) return json({ error: 'subscription lookup failed' }, 500);
     if (existing && ['active', 'trialing', 'past_due'].includes(existing.status)) {
       return json({ error: 'already_subscribed' }, 409);
     }
+
+    // Deterministic idempotency key so two rapid clicks / two tabs collapse to ONE Checkout session:
+    // a truly-concurrent second create with the same key gets Stripe's idempotency_key_in_use 409 (→ we
+    // return 'checkout_in_progress'); a slightly-later repeat gets the SAME session back. One session ⇒
+    // one customer ⇒ no double charge. Derived from the state we already read above — on a first-ever
+    // subscribe both concurrent requests observe no row → identical key. It changes once a row exists
+    // (different sub id/status), so a later legitimate resubscribe still mints a fresh session. (#10)
+    const idempotencyKey =
+      `checkout:${caller.userId}:${plan}:${existing?.stripe_subscription_id ?? 'none'}:${existing?.status ?? 'none'}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -54,11 +63,16 @@ Deno.serve(async (req) => {
       },
       success_url: RETURN_URLS.checkoutSuccess,
       cancel_url: RETURN_URLS.checkoutCancel,
-    });
+    }, { idempotencyKey });
 
     return json({ url: session.url }, 200);
   } catch (e) {
     if (e instanceof Response) return e;
+    // Two truly-concurrent checkouts sharing the idempotency key: Stripe 409s the loser while the first
+    // is in flight. That's the double-click guard doing its job — tell the client it's already going.
+    if (e && typeof e === 'object' && (e as { statusCode?: number }).statusCode === 409) {
+      return json({ error: 'checkout_in_progress' }, 409);
+    }
     console.error('create-checkout error', e);
     return json({ error: 'checkout failed' }, 500);
   }

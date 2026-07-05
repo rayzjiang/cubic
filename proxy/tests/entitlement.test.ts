@@ -57,6 +57,16 @@ describe('getEntitlement', () => {
     await expect(getEntitlement('u4', ENV)).rejects.toThrow();
   });
 
+  it('fails closed (throws) on an EMPTY body — a missing row must not silently become no_plan', async () => {
+    stubFetch(() => ({ ok: true, json: async () => [] }));
+    await expect(getEntitlement('u6', ENV)).rejects.toThrow();
+  });
+
+  it('fails closed (throws) on a malformed body (null / non-row)', async () => {
+    stubFetch(() => ({ ok: true, json: async () => null }));
+    await expect(getEntitlement('u7', ENV)).rejects.toThrow();
+  });
+
   it('fails closed (throws) when misconfigured (no service-role key)', async () => {
     stubFetch(() => ({ ok: true, json: async () => [ENTITLED_ROW] }));
     await expect(getEntitlement('u5', { SUPABASE_URL: 'http://x' } as Env)).rejects.toThrow();

@@ -11,7 +11,10 @@ import type { Env } from './index.js';
 /** ~60s freshness: short enough that a canceled/over-cap user loses access within the window. */
 export const ENTITLEMENT_TTL_MS = 60_000;
 
-/** The RPC's return row (one row; `entitled = status in (active,trialing,past_due) AND spent < allowance`). */
+/** The RPC's return row (exactly one row). `entitled = spent < allowance AND [ active within
+ *  current_period_end+48h (engineering grace) OR trialing within current_period_end ]`; past_due + every
+ *  other status is NOT entitled (fail-fast). `status` is the REAL row status even when blocked, so the
+ *  gate can route the paywall (past_due vs over_cap vs no_plan vs a 0-allowance misconfig). */
 export interface Entitlement {
   entitled: boolean;
   plan: string | null;
@@ -74,9 +77,14 @@ export async function getEntitlement(userId: string, env: Env): Promise<Entitlem
   if (!res.ok) {
     throw new Error(`get_entitlement failed: ${res.status}`);
   }
-  // A `returns table(...)` RPC comes back as a JSON array of rows; there is always exactly one.
-  const rows = (await res.json()) as Array<Record<string, unknown>>;
-  const value = toEntitlement(rows[0] ?? {});
+  // A `returns table(...)` RPC comes back as a JSON array with exactly one row. An empty/malformed body
+  // is a lookup failure — throw (→ the caller returns 503, fail-closed) rather than silently coercing to
+  // a not-entitled 'no_plan', which would show a paying user the wrong paywall screen.
+  const rows = (await res.json().catch(() => null)) as Array<Record<string, unknown>> | null;
+  if (!rows || rows.length === 0 || typeof rows[0] !== 'object' || rows[0] === null) {
+    throw new Error('get_entitlement returned an empty or malformed body');
+  }
+  const value = toEntitlement(rows[0]);
   cache.set(userId, { value, expiresAt: Date.now() + ENTITLEMENT_TTL_MS });
   return value;
 }

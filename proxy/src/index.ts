@@ -160,10 +160,23 @@ export default {
     const entitlement = await getEntitlement(userId, env).catch(() => null);
     if (!entitlement) return errorResponse('api_error', 'entitlement check unavailable — try again shortly', 503);
     if (!entitlement.entitled) {
-      // Split the block reason so the client + §D paywall can route: no active subscription
-      // (status null — never-subscribed / cancelled / unpaid) vs an active plan over its monthly cap.
-      const reason = entitlement.status == null ? 'no_plan' : 'over_cap';
-      const message = reason === 'no_plan' ? 'no active plan' : 'monthly allowance reached';
+      const st = entitlement.status;
+      // Our OWN misconfiguration, not the user's problem: an eligible-status subscriber (active/trialing)
+      // whose allowance resolved to 0 means we couldn't map their price → allowance (e.g. an unknown/
+      // rotated price). Surface it as a transient server issue (503, retryable), never a 402 "upgrade"
+      // upsell on a paying account — and it makes a mispricing show up as 503s in the logs.
+      if ((st === 'active' || st === 'trialing') && entitlement.allowanceCents === 0) {
+        return errorResponse('api_error', 'entitlement temporarily unavailable — try again shortly', 503);
+      }
+      // Route the block reason so the client + §D paywall show the right screen:
+      //   past_due → renewal payment failed (fix card); over_cap → a live plan over its monthly cap;
+      //   no_plan  → never-subscribed / canceled / unpaid / incomplete / paused (must (re)subscribe).
+      const reason = st === 'past_due' ? 'past_due'
+        : st === 'active' || st === 'trialing' ? 'over_cap'
+        : 'no_plan';
+      const message = reason === 'past_due' ? 'payment failed'
+        : reason === 'over_cap' ? 'monthly allowance reached'
+        : 'no active plan';
       return errorResponse('entitlement_error', message, 402, reason);
     }
 

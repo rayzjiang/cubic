@@ -67,12 +67,37 @@ async function applySubscription(
   const item = sub.items.data[0];
   const priceId = item.price.id;
 
-  // Map price_id -> plan via the plans SSOT. A FAILED query must NOT silently become
-  // 'unknown' (that would block a paying user) -> throw and let Stripe retry. Only a
-  // clean zero-row result means a genuinely unrecognized price.
+  // #10 double-checkout backstop. If we already track a DIFFERENT, live subscription for this user, the
+  // incoming one is a duplicate from a checkout race — never let its events touch our canonical row. On
+  // the duplicate's 'created' event, cancel + refund it at Stripe so the user isn't double-charged. (A
+  // legitimate resubscribe is safe: the stored row would be canceled/expired — not live — so this is
+  // skipped. The duplicate's own later 'deleted' event also lands here and is skipped, so our kept row
+  // is never clobbered.)
+  const { data: current } = await admin
+    .from('subscriptions').select('stripe_subscription_id, status').eq('user_id', userId).maybeSingle();
+  if (current && current.stripe_subscription_id !== sub.id
+      && ['active', 'trialing', 'past_due'].includes(current.status)) {
+    if (eventType === 'customer.subscription.created') {
+      console.error(`stripe-webhook: DUPLICATE subscription ${sub.id} for user ${userId} — already has ` +
+        `live ${current.stripe_subscription_id}; canceling + refunding the duplicate (checkout race).`);
+      await cancelAndRefundDuplicate(sub.id);
+    }
+    return; // ignore every event for a non-canonical (duplicate/foreign) subscription
+  }
+
+  // Map price_id -> plan via the plans SSOT. A FAILED query must NOT silently become 'unknown' (that
+  // would block a paying user) -> throw and let Stripe retry. A clean zero-row result is a genuinely
+  // unrecognized price: apply it anyway (plan='unknown' -> allowance 0 -> that one user blocked; the
+  // price_id FK was dropped in 20260705000001 so this no longer 500-loops + freezes ALL billing) but LOG
+  // loudly so the mispricing is visible and fixable (seed the price in `plans` to restore that cohort).
   const { data: planRow, error: planErr } = await admin
     .from('plans').select('plan').eq('price_id', priceId).maybeSingle();
   if (planErr) throw new Error(`plans lookup failed: ${planErr.message}`);
+  if (!planRow) {
+    console.error(`stripe-webhook: UNKNOWN price ${priceId} on subscription ${sub.id} (user ${userId}) — ` +
+      `not in the plans table; applying with plan='unknown' (allowance 0 -> user blocked). Seed the price ` +
+      `in plans to restore access.`);
+  }
 
   const period = periodOf(sub, item);
 
@@ -94,6 +119,33 @@ async function applySubscription(
     p_event_at: new Date(eventCreated * 1000).toISOString(),
   });
   if (error) throw new Error(`apply_subscription failed: ${error.message}`);
+}
+
+// #10 backstop helper: cancel a duplicate subscription at Stripe and best-effort refund its initial
+// charge, so a checkout race never leaves a user double-billed. The cancel is reliable (stops all future
+// charges); the refund is best-effort (the Stripe invoice→payment shape varies by API version) and logs
+// the ids on failure for a one-click manual refund. NEVER throws — a backstop failure must not 500 the
+// webhook (which would make Stripe retry the whole event).
+async function cancelAndRefundDuplicate(subscriptionId: string): Promise<void> {
+  try {
+    const canceled = await stripe.subscriptions.cancel(subscriptionId);
+    const invoiceId = typeof canceled.latest_invoice === 'string'
+      ? canceled.latest_invoice
+      : canceled.latest_invoice?.id;
+    if (!invoiceId) return;
+    const invoice = await stripe.invoices.retrieve(invoiceId, { expand: ['payment_intent'] });
+    const pi = (invoice as unknown as { payment_intent?: string | { id?: string } }).payment_intent;
+    const paymentIntentId = typeof pi === 'string' ? pi : pi?.id;
+    if (paymentIntentId) {
+      await stripe.refunds.create({ payment_intent: paymentIntentId });
+    } else {
+      console.error(`stripe-webhook: canceled duplicate ${subscriptionId} but found no payment_intent on ` +
+        `invoice ${invoiceId} to refund — refund it manually if it was charged.`);
+    }
+  } catch (e) {
+    console.error(`stripe-webhook: failed to cancel/refund duplicate subscription ${subscriptionId} — do ` +
+      `it manually from the Stripe dashboard.`, e);
+  }
 }
 
 // Resolve the Supabase user. We set subscription metadata at checkout, so it's

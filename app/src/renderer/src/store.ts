@@ -53,16 +53,20 @@ function loadAndAttach(sessionId: string): void {
 }
 
 // ── Friendly transient-error mapping (raw SDK/transport text → plain English) ──
-// `status` = the proxy gate's HTTP status; `reason` = the 402 sub-state ('no_plan' | 'over_cap'). The
-// specific, actionable cases come first (WT-PROXY-GATING §C-6). Wave-3 §D replaces these interim messages
-// with real paywall/sign-in screens (routing off the same `reason`).
+// `status` = the proxy gate's HTTP status; `reason` = the 402 sub-state ('no_plan' | 'past_due' |
+// 'over_cap'). The specific, actionable cases come first (WT-PROXY-GATING §C-6). Wave-3 §D replaces these
+// interim messages with real paywall/sign-in screens (routing off the same `reason`).
 function mapError(raw: string, status?: number, reason?: string): string {
   if (status === 401) return 'Please sign in again to keep using Cubic.'
   if (status === 402) {
     if (reason === 'no_plan') return 'You need an active plan to use Cubic. Subscribe to get started.'
+    if (reason === 'past_due') return "Your last payment didn't go through — update your card to keep using Cubic."
     if (reason === 'over_cap') return "You've used up this month's allowance. Upgrade for more."
     return "You've reached your plan's limit. Upgrade to keep going." // fallback (reason absent)
   }
+  // 503 = a gate/server fault on OUR end (entitlement lookup down, or a price-misconfig we caught) — a
+  // transient "our problem" message, never an upsell. Retryable (see the `error` case below).
+  if (status === 503) return "Cubic is having a temporary issue on our end — we're on it. Try again in a moment."
   if (status === 429 || /overloaded|rate.?limit|\b429\b|\b529\b/i.test(raw)) return 'Cubic is busy right now — try again in a moment.'
   if (/network|fetch failed|ECONN|ENOTFOUND|socket hang/i.test(raw)) return "Couldn't reach the server — check your connection and try again."
   if (/AE.?disconnect|plugin not connected|not connected/i.test(raw)) return "After Effects isn't connected. Open AE with the Cubic bridge running."
