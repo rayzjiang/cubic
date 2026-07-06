@@ -37,6 +37,17 @@
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 150ms;
   }
+
+  /* Pointer cursor on real interactive elements — browsers (and Tailwind Preflight) don't set it on
+     <button>. Scoped to actual click targets, NOT .group (which also wraps non-clickable hover
+     containers like message bubbles). Disabled buttons keep the default cursor; explicit cursor-*
+     utilities still win. */
+  button:not(:disabled),
+  a,
+  summary,
+  [role='button'] {
+    cursor: pointer;
+  }
 }
 
 /* Dynamic scroll-fade (driven by useScrollFade). Fades the top and/or bottom edge to hint there's more
