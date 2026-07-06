@@ -70,7 +70,7 @@
 - [ ] §D-3 "Manage subscription" → Customer Portal
 - [ ] §D-4 non-technical copy throughout (consumer tone, no dev/terminal language)
 - [ ] §D-5 finish the account/profile menu (ChatGPT-style) — name/avatar/Log out (§B-4 shell) + plan tag + Upgrade (§D-2) + Manage subscription (§D-3) in one dropdown
-- [ ] §D-6 host-status app-switcher dropdown — top-bar AE status button opens a dropdown (portal popover à la `AccountWidget.tsx`): After Effects row (logo + connectivity status, incl. a clearer "connecting" state than the bare status dot), Premiere Pro + DaVinci Resolve rows grayed "Coming Soon" (logos in `app/src/renderer/src/assets/`). Aligns with the host-agnostic adapter direction (`PROTOCOL.md`). Grew out of §E-6 — consumer UI, not packaging.
+- [x] §D-6 host-status app-switcher dropdown — top-bar AE status button opens a dropdown (portal popover à la `AccountWidget.tsx`): After Effects row (logo + connectivity status, incl. a clearer "connecting" state than the bare status dot), Premiere Pro + DaVinci Resolve rows grayed "Coming Soon" (logos in `app/src/renderer/src/assets/`). Aligns with the host-agnostic adapter direction (`PROTOCOL.md`). Grew out of §E-6 — consumer UI, not packaging.
 - [ ] account-widget polish (carried from WT-AUTH): (1) window-resize responsiveness — avatar/signed-in widget glitches on window grow/shrink → reflow cleanly, mirror ChatGPT/Claude desktop apps; (2) chat-page sidebar-collapse — avatar Y position shifts, must stay pinned at the same Y level
 
 ---
