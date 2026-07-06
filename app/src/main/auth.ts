@@ -178,13 +178,16 @@ export class AuthManager extends EventEmitter {
     return this.session?.access_token ?? null
   }
 
-  /** Sign out: best-effort local revoke, then clear the persisted session. */
+  /** Sign out: server-side revoke (default 'global' scope), then clear the persisted session. */
   async signOut(): Promise<void> {
     if (this.client) {
       try {
-        await this.client.auth.signOut({ scope: 'local' })
+        // Default 'global' scope revokes the refresh token(s) server-side, so a leaked/copied token
+        // can't mint fresh access tokens after sign-out (scope:'local' only cleared local state). We
+        // clear our own state regardless of the network result, so this stays best-effort.
+        await this.client.auth.signOut()
       } catch {
-        /* local sign-out is best-effort; we clear our own state regardless */
+        /* revoke is best-effort; we clear our own state regardless */
       }
     }
     this.clearSession('signedOut')
