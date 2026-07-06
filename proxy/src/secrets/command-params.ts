@@ -445,6 +445,10 @@ export const COMMAND_PARAMS = {
 
   // ── Project ───────────────────────────────────────────────────────────────
   getProjectPath: { domain: 'Project', summary: 'Get the project file path + dirty flag.', params: {} },
+  // internal: readiness probe — detects AE's "Allow Scripts to Write Files and Access Network"
+  // setting (File.open('w') returns false when off). Callable via MCP/diagnostic for the onboarding
+  // gate; the agent never needs it.
+  checkFileAccess: { domain: 'Project', summary: 'Detect whether AE scripting file/network write access is enabled.', params: {}, internal: true },
   saveProject: { domain: 'Project', summary: 'Save the project (optionally to a new path).', params: { saveAs: 'string (abs path)' } },
   restoreProject: { domain: 'Project', summary: 'Revert the whole project one turn back (undo the last change); call repeatedly to step further back. One-way — no redo. Reopens the project from disk. Omit args to undo the most recent turn; returns status "noop" when already at the earliest restore point.', params: { turnId: 'string (ms timestamp; omit for most recent)', backupPath: 'string (abs path; usually omit)' } },
   // internal: kept in the registry (drift-checked, callable via MCP/diagnostic) but hidden from

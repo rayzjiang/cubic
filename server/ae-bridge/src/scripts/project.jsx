@@ -17,6 +17,27 @@ function getProjectPath() {
     }
 }
 
+// R: checkFileAccess — detect whether AE's "Allow Scripts to Write Files and Access Network"
+// setting is enabled. ExtendScript does NOT throw when it's off; File.open("w") simply returns
+// false (same mechanism saveFrameToPng pre-checks). We probe a throwaway file in ~/.cubic (a
+// known-writable dir, so the boolean isolates the setting as the cause) and clean it up. Read-only
+// w.r.t. the AE project — used by onboarding to require the setting before Cubic can edit.
+function checkFileAccess() {
+    try {
+        var dir = new Folder('~/.cubic');
+        if (!dir.exists) { dir.create(); }
+        var probe = new File(dir.fsName + '/.cubic_write_test');
+        var canWrite = probe.open('w');
+        if (canWrite) {
+            probe.close();
+            if (probe.exists) { probe.remove(); }
+        }
+        return JSON.stringify({ status: "success", canWriteFiles: canWrite === true }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
+    }
+}
+
 // U: saveProject — save the current project; pass saveAs (fsName) to save as a new file
 function saveProject(args) {
     try {

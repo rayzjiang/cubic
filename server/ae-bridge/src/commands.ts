@@ -120,6 +120,7 @@ export const COMMANDS: readonly string[] = [
   "updateProjectItem",
   // Project
   "getProjectPath",
+  "checkFileAccess",
   "saveProject",
   "saveFrameToPng",
   "restoreProject",

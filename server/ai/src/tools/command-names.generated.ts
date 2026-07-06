@@ -96,6 +96,7 @@ export const COMMAND_NAMES = [
   'createFolder',
   'updateProjectItem',
   'getProjectPath',
+  'checkFileAccess',
   'saveProject',
   'restoreProject',
   'saveFrameToPng',
@@ -112,5 +113,6 @@ export type CommandName = (typeof COMMAND_NAMES)[number];
  *  the dispatch guard rejects these even if the model guesses the raw name. */
 export const INTERNAL_COMMANDS: ReadonlySet<string> = new Set([
   'introspectMatchNames',
+  'checkFileAccess',
   'saveFrameToPng',
 ]);

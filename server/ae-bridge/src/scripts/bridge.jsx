@@ -457,7 +457,7 @@ var READ_ONLY_COMMANDS = {
     getSelectedLayers: 1, getSelectionDetails: 1, listProjectItems: 1,
     getLayerProperty: 1, getLayerProperties: 1,
     listMarkers: 1, getCurrentTime: 1, getProjectPath: 1,
-    getCompositionInfo: 1, listFonts: 1
+    getCompositionInfo: 1, listFonts: 1, checkFileAccess: 1
 };
 
 // Routes a command name + args to the correct handler function.
@@ -558,6 +558,7 @@ function _dispatchSwitch(command, args) {
         case "removeMarker":             return removeMarker(args);
         // project.jsx
         case "getProjectPath":           return getProjectPath();
+        case "checkFileAccess":          return checkFileAccess();
         case "saveProject":              return saveProject(args);
         case "backupProject":            return backupProject(args);
         case "restoreProject":           return restoreProject(args);
