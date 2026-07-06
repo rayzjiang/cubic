@@ -145,6 +145,10 @@ Deferred improvements (roughly in priority order):
   "typing" feel, most like Claude Code. WHY NOT: must rebuild `stream()` to pass tools + accumulate tool_use JSON deltas
   + reconcile with the loop — meaningfully more code and edge cases. v1 already shows text per agent-iteration, which
   feels responsive enough; this is polish you can add without changing the loop's shape.
+  **When this lands, also fix metering (P5W2 audit L5):** `proxy/src/usage-parse.ts` buffers the whole response before
+  parsing usage, so a client abort mid-stream would record ZERO usage (`message_delta` never arrives). Parse
+  incrementally as chunks arrive (reuse `parseSse`'s running `output_tokens` accumulator) so an aborted stream still
+  meters what was generated. Latent today (the non-streaming path always completes) — a code comment flags it at the site.
 - [ ] **Context-usage meter** — show `Session.lastContextTokens` vs the model's `contextWindow` (e.g. a subtle
   "context 60% full" gauge). Nice-to-have; `context_full` handling already covers the failure case. _(was TODO-phase4-later §C)_
 - [ ] **Haiku auto-titles** — after turn 1, fire a tiny `claude-haiku-4-5` call (via `getLLM()`) to generate a clean
@@ -189,6 +193,13 @@ Deferred improvements (roughly in priority order):
   `server/ae-bridge/src/bridge/wsBridge.ts` — a **no-op on Windows/NTFS** (ACL-based, not POSIX modes). When
   Windows support lands, lock it with `icacls` (or a native ACL call) so a second local account can't read the
   token that grants arbitrary ExtendScript execution in the open AE project. Mac/Linux are already protected.
+
+- [ ] **Preload exposes the raw Supabase JWT to the renderer.** _(surfaced during P5W2 audit — Plan 4 L, accepted)_
+  `app/src/preload/index.ts` exposes `getAccessToken()` so the renderer can put the token in its WS auth frame
+  (`ws.ts`). The JWT thus lives in renderer memory — reachable only by XSS, which is already heavily contained (sandbox
+  + contextIsolation + `nodeIntegration:false` + strict CSP + no `rehype-raw`). Full fix: move token ownership into
+  Electron main (main brokers the WS auth / injects the Bearer) so the renderer never holds it — a real re-plumb of the
+  WS handshake, deferred as a well-contained low.
 
 ---
 

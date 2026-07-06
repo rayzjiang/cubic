@@ -113,6 +113,34 @@ The app launches a native window, spawns the backend, and connects to After Effe
 | `CUBIC_MODEL` | `sonnet` (default), `haiku`, or `opus` — switch models without rebuild. |
 | `CUBIC_ENV` | `local` (default, direct Anthropic calls) or `prod` (routes through hosted proxy). |
 
+### Run modes (direct vs. proxied)
+
+`CUBIC_ENV` forks where Claude calls go. All three modes share the same code path — only the URLs change.
+
+**direct-local** (default) — the agent loop calls Anthropic directly with your `ANTHROPIC_API_KEY`. No proxy, auth, or billing; fastest inner loop.
+```bash
+npm run dev
+```
+
+**full-stack-local** — routes through a *local* Cloudflare Worker (`wrangler dev`) that verifies the Supabase JWT → checks entitlement → injects the system prompt → meters usage, against local emulators (`supabase start` + Stripe test mode). Add `MOCK_UPSTREAM=1` on the wrangler side for zero Anthropic spend.
+```bash
+# prereqs, in separate terminals: (cd proxy && npx wrangler dev)  +  supabase start
+CUBIC_ENV=prod \
+CUBIC_PROXY_URL=http://localhost:8787 \
+SUPABASE_URL=http://127.0.0.1:54321 \
+SUPABASE_ANON_KEY=<anon key from `supabase status`> \
+npm run dev
+```
+
+**real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. (Baking these in as the shipped default so a signed app needs no env vars is **§A-8**, still pending.)
+```bash
+CUBIC_ENV=prod \
+CUBIC_PROXY_URL=https://<your-worker>.workers.dev \
+SUPABASE_URL=https://igdbwihwvksraoqghswr.supabase.co \
+SUPABASE_ANON_KEY=<prod anon key> \
+npm run dev
+```
+
 ### Production build
 
 ```bash

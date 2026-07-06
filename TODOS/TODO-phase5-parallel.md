@@ -55,7 +55,7 @@
 - [x] §A-6 usage metering — write usage + deduct allowance + reject over cap (needs WT-BILLING + locked numbers) — `metering.ts`/`usage-parse.ts`, tee + async `waitUntil` → new `record_usage` RPC
 - [x] §C-6 cap/trial enforcement at the proxy → emits the "out of allowance / trial ended" signal — over-cap → 402; client maps 401/402/429 (interim copy; §D screens = Wave 3)
 - [x] §A-7 per-user rate-limit + abuse guard — Cloudflare native `RATE_LIMITER` (per user) + `IP_RATE_LIMITER` (per IP) + free edge DDoS
-- [ ] §A-8 flip the Phase-4 §B env-switch → prod proxy URL (deploy fr, cloudflare) — **the real-deploy E2E capstone (also lands the pulled-forward §G-3 cloud-Supabase deploy); keep direct-local the default**
+- [ ] §A-8 wire the client to prod-by-default + real-deploy E2E capstone. The Worker + cloud Supabase are already deployed; what's left client-side: **bake the prod proxy URL + Supabase URL/anon-key into the prod build** so a signed app auto-routes through the proxy with no env vars (today `app/src/main/config.ts` reads `CUBIC_PROXY_URL`/`SUPABASE_*` from the shell with no baked default → the app can't reach the deployed Worker unless you pass them manually); **refresh the stale "stub" comments** that still claim the proxy doesn't exist yet (`config.ts:29` + `:37`, and `app/README.md`'s §B7 line); then run the **full clean-machine E2E** (also lands the pulled-forward §G-3 cloud-Supabase check). Keep direct-local the dev default.
 
 ---
 
@@ -97,6 +97,7 @@
 - [ ] §E-2 harden Electron — asar + asar-integrity + fuses
 - [ ] §E-3 code-sign + notarize (Apple Developer account)
 - [ ] §E-4 DMG drag-to-Applications installer
+- [ ] §E-5 prod-harden the AE-bridge install (P5W2 audit L1) — today `installBridge.ts` flips Adobe `PlayerDebugMode=1` (permanent, machine-wide, never reverted) + copies an UNSIGNED CEP panel on **every** launch, ungated (`index.ts:104`). It can't just be `!app.isPackaged`-gated (packaged builds would then have no working bridge). **Decision needed:** gate/scope the debug-mode flip to dev + accept the tradeoff, **vs** adopt a signed ZXP. ⚠️ **PRD tension** — `docs/PRD.md:35` deliberately chose *no ZXP* ("enables debug mode… No separate plugin installer, no ZXP"), so the signed-ZXP fix reverses a stated design goal; resolve here, not by default.
 
 **7. WT-AUTO-UPDATE** — §F (strictly after WT-PACKAGING — reuses its signing identity)
 - [ ] §F-1 update feed on Cloudflare R2 (release script uploads signed artifacts + `latest.yml`)
