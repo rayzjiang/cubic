@@ -16,7 +16,7 @@ export function UserPrompt({ text, turnId }: { text: string; turnId?: string }) 
       {turnId && !running && (
         <button
           onClick={() => requestRestore(turnId)}
-          className="absolute right-1.5 top-1.5 hidden rounded-md bg-neutral-800/80 px-2 py-1 text-[11px] text-white/45 hover:bg-white/10 hover:text-white/80 group-hover:block"
+          className="absolute right-1.5 top-1.5 hidden rounded-md border border-white/10 bg-neutral-800 px-2 py-1 text-[11px] text-white/60 shadow-sm hover:bg-neutral-700 hover:text-white/90 group-hover:block"
           title="Restore the project to before this request"
         >
           Restore
