@@ -6,9 +6,9 @@ import { useChatStore } from '../store'
  * One conversation in the home list / sidebar. Click opens it. A hover-revealed kebab (⋯) opens a small
  * menu with Rename + Delete. Rename edits the title in place (ChatGPT-style): Enter/blur saves, Esc
  * cancels, an empty result reverts — the store updates the row optimistically + persists (no ack). Delete
- * raises the confirm MODAL (permanent; optimistic-remove + rollback-on-refusal + success toast). Optional badge.
+ * raises the confirm MODAL (permanent; optimistic-remove + rollback-on-refusal + success toast).
  */
-export function ConversationRow({ conv, active, badge }: { conv: ConversationMeta; active?: boolean; badge?: string }) {
+export function ConversationRow({ conv, active }: { conv: ConversationMeta; active?: boolean }) {
   const openChat = useChatStore((s) => s.openChat)
   const requestDelete = useChatStore((s) => s.requestDelete)
   const renameConversation = useChatStore((s) => s.renameConversation)
@@ -59,7 +59,6 @@ export function ConversationRow({ conv, active, badge }: { conv: ConversationMet
     <div className={`group relative flex items-center rounded-md ${active ? 'bg-white/10' : 'hover:bg-white/[0.06]'}`}>
       <button onClick={() => openChat(conv.id)} className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] text-white/80">
         {conv.title}
-        {badge && <span className="ml-2 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/45">{badge}</span>}
       </button>
       <button
         onClick={() => setMenuOpen((v) => !v)}

@@ -57,9 +57,9 @@ export function HomeView() {
                 {/* Rows stagger-fade in on each home enter (HomeView remounts via App's AnimatePresence).
                     The stagger lives here, not in ConversationRow, so the sidebar's rows never stagger. */}
                 <motion.ul className="space-y-0.5" variants={listStagger} initial="initial" animate={runList ? 'animate' : 'initial'}>
-                  {conversations.map((c, i) => (
+                  {conversations.map((c) => (
                     <motion.li key={c.id} variants={listRow}>
-                      <ConversationRow conv={c} badge={i === 0 ? 'most recent' : undefined} />
+                      <ConversationRow conv={c} />
                     </motion.li>
                   ))}
                 </motion.ul>
