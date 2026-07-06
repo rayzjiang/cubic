@@ -1,4 +1,5 @@
 import type { Env } from './index.js';
+import { fetchWithTimeout, RPC_TIMEOUT_MS } from './http.js';
 
 /**
  * §A-5 — is this user paid + under cap? Reads the `get_entitlement(user_id)` RPC (the billing SSOT)
@@ -65,15 +66,19 @@ export async function getEntitlement(userId: string, env: Env): Promise<Entitlem
     throw new Error('proxy misconfigured: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY unset');
   }
 
-  const res = await fetch(new URL('/rest/v1/rpc/get_entitlement', env.SUPABASE_URL), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const res = await fetchWithTimeout(
+    new URL('/rest/v1/rpc/get_entitlement', env.SUPABASE_URL),
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ p_user_id: userId }),
     },
-    body: JSON.stringify({ p_user_id: userId }),
-  });
+    RPC_TIMEOUT_MS,
+  );
   if (!res.ok) {
     throw new Error(`get_entitlement failed: ${res.status}`);
   }

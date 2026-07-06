@@ -17,11 +17,11 @@ describe('costCentsForUsage', () => {
     expect(costCentsForUsage('claude-sonnet-4-6', { input_tokens: 1_000_000, output_tokens: 1_000_000 })).toBeCloseTo(1800, 4);
   });
 
-  it('applies the discounted cache tiers (read 0.1x, write 1.25x)', () => {
+  it('applies the cache tiers (read 0.1x, write 2x — the 1-hour tier the proxy pins)', () => {
     // 1M cache-read @ 0.1×$3 = $0.30 → 30 cost-cents
     expect(costCentsForUsage('claude-sonnet-4-6', { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 1_000_000 })).toBeCloseTo(30, 4);
-    // 1M cache-write @ 1.25×$3 = $3.75 → 375 cost-cents
-    expect(costCentsForUsage('claude-sonnet-4-6', { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 })).toBeCloseTo(375, 4);
+    // 1M cache-write @ 2×$3 = $6.00 → 600 cost-cents (1-hour write tier)
+    expect(costCentsForUsage('claude-sonnet-4-6', { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 })).toBeCloseTo(600, 4);
   });
 
   it('prices Haiku on its own row', () => {

@@ -65,6 +65,34 @@ function upstreamHeaders(env: Env): Record<string, string> {
 }
 
 /**
+ * Force every client-supplied `cache_control` breakpoint to the 1-hour tier (`ttl:'1h'`), so the cache
+ * lifespan is 100% server-controlled and always matches metering's 2× cache-write rate — a tampered
+ * client can't select a cheaper 5-minute tier we'd over-bill (or an unpriced tier). PRESERVES the
+ * breakpoint (does NOT strip it) so the client's rolling conversation cache keeps working. Returns a
+ * shallow-cloned body with normalized `messages`/`system`; the input is not mutated. Pure + exported
+ * for unit tests.
+ */
+export function normalizeCacheControlTo1h(body: Record<string, unknown>): Record<string, unknown> {
+  const pin = (block: unknown): unknown => {
+    if (!block || typeof block !== 'object' || !('cache_control' in block)) return block;
+    const cc = (block as { cache_control?: unknown }).cache_control;
+    if (!cc || typeof cc !== 'object' || (cc as { type?: unknown }).type !== 'ephemeral') return block;
+    return { ...(block as object), cache_control: { ...(cc as object), ttl: '1h' } };
+  };
+  const pinContent = (content: unknown): unknown => (Array.isArray(content) ? content.map(pin) : content);
+  const out: Record<string, unknown> = { ...body };
+  if (Array.isArray(body.messages)) {
+    out.messages = (body.messages as unknown[]).map((m) =>
+      m && typeof m === 'object'
+        ? { ...(m as object), content: pinContent((m as { content?: unknown }).content) }
+        : m,
+    );
+  }
+  if (Array.isArray(body.system)) out.system = (body.system as unknown[]).map(pin);
+  return out;
+}
+
+/**
  * Build the upstream request for an AGENT call: inject system + tools + tool_choice (overwriting
  * anything the client sent) and set the auth + version headers. Pure + exported so unit tests can
  * assert injection with no network and no API spend.
@@ -74,7 +102,7 @@ export function prepareUpstream(
   env: Env,
 ): { url: string; body: Record<string, unknown>; headers: Record<string, string> } {
   const injected: Record<string, unknown> = {
-    ...body,
+    ...normalizeCacheControlTo1h(body), // pin the client's rolling conversation breakpoint to 1h
     system: injectedSystem(),
     tools: injectedTools(),
     tool_choice: { type: 'auto' },
@@ -93,7 +121,8 @@ export function prepareBareUpstream(
   body: Record<string, unknown>,
   env: Env,
 ): { url: string; body: Record<string, unknown>; headers: Record<string, string> } {
-  return { url: ANTHROPIC_URL, body, headers: upstreamHeaders(env) };
+  // Still pin any client cache_control to 1h so a utility call can't select a tier we'd mis-meter.
+  return { url: ANTHROPIC_URL, body: normalizeCacheControlTo1h(body), headers: upstreamHeaders(env) };
 }
 
 /** A minimal Anthropic Messages-shaped response for MOCK_UPSTREAM (no real call). */

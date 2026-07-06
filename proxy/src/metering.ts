@@ -1,5 +1,6 @@
 import type { Env } from './index.js';
 import { parseUsageFromResponse } from './usage-parse.js';
+import { fetchWithTimeout, RPC_TIMEOUT_MS } from './http.js';
 
 /**
  * §A-6 — after each response, convert Anthropic's token counts to cost-cents and ADD them to the
@@ -9,7 +10,8 @@ import { parseUsageFromResponse } from './usage-parse.js';
  * strict fail-closed lives at the gate, not here.
  *
  * `MODEL_PRICING` mirrors `server/ai/src/llm/anthropic.ts` (USD per 1M tokens; cache reads ~0.1×, cache
- * writes ~1.25× input). Kept as its own copy because the Worker is the metering authority now and can't
+ * writes ~2× input — the 1-hour tier, which the Worker pins for every write via inject.ts +
+ * normalizeCacheControlTo1h, so the flat 2× is exact). Kept as its own copy because the Worker is the metering authority now and can't
  * import the client package. cost-cents = USD × 100 (the denomination of allowance_cents / spent_cents).
  */
 
@@ -43,7 +45,7 @@ export function costCentsForUsage(model: string | undefined, u: AnthropicUsage):
   const cacheRead = u.cache_read_input_tokens ?? 0;
   const usd =
     (u.input_tokens * p.inPerM +
-      cacheWrite * p.inPerM * 1.25 +
+      cacheWrite * p.inPerM * 2.0 + // 1-hour cache-write tier (proxy pins ttl:'1h' on every breakpoint)
       cacheRead * p.inPerM * 0.1 +
       u.output_tokens * p.outPerM) /
     1_000_000;
@@ -74,7 +76,7 @@ export async function recordUsage(
   // once more. Never throws: a metering write must not surface to the user.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const res = await fetch(url, init);
+      const res = await fetchWithTimeout(url, init, RPC_TIMEOUT_MS);
       if (res.ok) return;
       const detail = await res.text().catch(() => '');
       console.error(`record_usage HTTP ${res.status} (attempt ${attempt}/2): ${detail}`);
