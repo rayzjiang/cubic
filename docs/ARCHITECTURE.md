@@ -501,6 +501,12 @@ Same walkthrough style as Part I §8. Each is new in Phase 5.
   `cubic://` back; "Manage subscription" opens the Stripe Customer Portal. The **Stripe
   webhook is the only writer** of the `subscriptions` table — the client can never grant
   itself access.
+- **Changing prices / limits (operator, §C).** `supabase/scripts/change-plan.ts` *versions* a
+  tier: it creates a new Stripe Price, flips the active `plans` row (`set_active_plan_version`),
+  and schedules existing subscribers via Stripe **Subscription Schedules** to migrate at their
+  own next renewal — price + allowance flip together, no mid-cycle recharge, a ≥30-day notice
+  guard on increases. New signups get the new price immediately; the same webhook absorbs the
+  scheduled flip (no webhook change). Emits a JSON roster of who's migrated + when. `--dry-run` first.
 - **An AI turn in prod (§A).** The brain sends `messages` + live `<live_ae_state>` to the
   proxy with the sign-in token. The proxy: verifies the token → checks entitlement (cached
   ~30-60s, so a cancel revokes access in seconds) → rate-limits → injects the system prompt

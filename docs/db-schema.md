@@ -72,16 +72,18 @@ Everything else (entitlement, payment, usage) hangs off `auth.users.id`.
 
 Read-only reference data. Maps each Stripe `price_id` to the plan name and the monthly usage allowance. **Single source of truth** for the allowance numbers so they are never mirrored in both TypeScript and SQL.
 
-Two rows at launch (Pro, Max). Seeded by migration; never written at runtime.
+Two tiers at launch (Pro, Max). Seeded by migration; at runtime written **only** by the admin `change-plan` tool (`supabase/scripts/change-plan.ts`), never by the app request path.
 
 | Column | Type | Represents |
 |---|---|---|
 | `price_id` | text (PK) | The Stripe Price ID (e.g. `price_123...`). Primary key. |
-| `plan` | text | Human label: `'pro'` \| `'max'`. |
+| `plan` | text | Human label: `'pro'` \| `'max'` (the stable tier; **not** unique — a tier can have many price versions). |
 | `allowance_cents` | numeric(14,4) | Monthly usage allowance in cost-cents (the cycle's spend cap; sub-cent precision so tiny calls don't floor to 0). |
-| `active` | boolean | Whether this price is currently offered (lets us retire/replace a price without deleting history). |
+| `active` | boolean | The price new checkouts get. Exactly **one active row per tier** — enforced by the partial unique index `plans_one_active_per_plan`. Retired rows (`active=false`) are kept and still serve their allowance to existing subscribers. |
 
-> Numbers are placeholders until locked at launch gate **§G-1**. Changing them = a one-line seed migration, no app code change.
+**Price / allowance versioning (`20260706000002`).** A tier holds **multiple** price rows — one active plus any retired ones. To change a tier's price and/or allowance, `change-plan` creates a new Stripe Price + a new `plans` row, flips it active (`set_active_plan_version`), and schedules existing subscribers to migrate at their **own next renewal** via Stripe Subscription Schedules — so old + new prices coexist during the ~1-month drain. `get_entitlement` resolves allowance by `price_id` and **ignores `active`**, so a not-yet-migrated customer keeps the old row's allowance until their schedule flips (at which point the webhook rewrites their `price_id`).
+
+> Numbers are placeholders until locked at launch gate **§G-1**. For a not-yet-live tier that's a seed edit; for a **live** tier, price/allowance changes go through the `change-plan` tool (versioned + staggered), never an in-place edit (which would 0-out not-yet-renewed customers).
 
 ---
 
@@ -97,7 +99,7 @@ One row per user. The row is **upserted, never deleted** — on cancel we set `s
 | `stripe_subscription_id` | text | The current Stripe subscription object ID. |
 | `stripe_customer_id` | text | The user's stable Stripe customer ID. Created once at first checkout, reused forever (incl. resubscribe). |
 | `status` | enum `subscription_status` | Stripe's status: `active`, `trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused`. **Drives the entitlement decision.** |
-| `price_id` | text (FK → plans) | Which tier → joins `plans` for the allowance. |
+| `price_id` | text | Which tier → joins `plans` for the allowance. (The FK to `plans` was dropped in billing-hardening so a rotated/mid-migration price can't FK-break the webhook.) |
 | `plan` | text | Denormalized label (`'pro'`/`'max'`) copied from `plans`. |
 | `current_period_start` | timestamptz | Start of the current billing cycle (the `usage` reset anchor). |
 | `current_period_end` | timestamptz | End of the current billing cycle. |

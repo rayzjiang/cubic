@@ -123,6 +123,42 @@ offline() {
   assert "unknown price -> allowance 0" "select allowance_cents = 0 from public.get_entitlement('$UID_TEST');"
   assert "unknown price -> blocked" "select not entitled from public.get_entitlement('$UID_TEST');"
 
+  # ── plan VERSIONING (20260706000002): many rows per tier, one active; retired
+  #    rows keep serving their allowance to subs not yet migrated off them ──
+  say "VERSIONING: partial-unique rejects a SECOND active row for the same tier"
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -qtAX <<SQL
+do \$\$
+begin
+  begin
+    insert into public.plans (price_id, plan, allowance_cents, active)
+      values ('price_pro_v2_test', 'pro', 80000, true);
+    raise exception 'PARTIAL-UNIQUE HOLE: a second active pro row was allowed';
+  exception when unique_violation then null;  -- expected: plans_one_active_per_plan
+  end;
+end \$\$;
+SQL
+  printf '  \033[32mPASS\033[0m second active pro row rejected\n'
+
+  say "VERSIONING: set_active_plan_version swaps active + keeps the old row"
+  psql_do "select public.set_active_plan_version('pro','price_pro_v2_test', 80000);"
+  assert "new price is the sole active 'pro'"     "select price_id='price_pro_v2_test' from public.plans where plan='pro' and active;"
+  assert "exactly one active 'pro'"               "select count(*)=1 from public.plans where plan='pro' and active;"
+  assert "old pro row retained (inactive)"        "select not active from public.plans where price_id='price_pro_PLACEHOLDER';"
+  assert "old pro allowance unchanged (50000)"    "select allowance_cents=50000 from public.plans where price_id='price_pro_PLACEHOLDER';"
+  assert "new pro allowance = 80000"              "select allowance_cents=80000 from public.plans where price_id='price_pro_v2_test';"
+
+  say "VERSIONING: a NOT-yet-migrated sub still resolves the OLD (retired) allowance"
+  psql_do "delete from public.usage where user_id='$UID_TEST';
+           select public.apply_subscription('$UID_TEST','sub_test','cus_test','active','price_pro_PLACEHOLDER','pro',
+            now() - interval '5 days', now() + interval '25 days', false, to_timestamp(9000));"
+  assert "old-price sub -> allowance 50000"       "select allowance_cents=50000 from public.get_entitlement('$UID_TEST');"
+  assert "old-price sub still entitled"           "select entitled from public.get_entitlement('$UID_TEST');"
+
+  say "VERSIONING: a MIGRATED sub (on the new price) resolves the NEW allowance"
+  psql_do "select public.apply_subscription('$UID_TEST','sub_test','cus_test','active','price_pro_v2_test','pro',
+            now() - interval '5 days', now() + interval '25 days', false, to_timestamp(10000));"
+  assert "new-price sub -> allowance 80000"       "select allowance_cents=80000 from public.get_entitlement('$UID_TEST');"
+
   say "F1 IDOR: a logged-in user CANNOT read another user's entitlement"
   psql "$DB_URL" -v ON_ERROR_STOP=1 -qtAX <<SQL
 do \$\$

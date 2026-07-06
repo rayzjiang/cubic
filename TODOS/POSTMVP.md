@@ -233,6 +233,19 @@ Deferred improvements (roughly in priority order):
   MVP handles refunds manually in the Stripe dashboard (cancel-anytime is the live control,
   Radar covers disputes); automate access-revoke on these events once volume warrants. The
   webhook switch + `apply_subscription` already make adding a case trivial. _(see §G-4)_
+- [ ] **Auto-send price-change notices** — `supabase/scripts/change-plan.ts` already emits a
+  JSON **roster** (`{user_id, email, tier, old_price, new_price, effective_date, change_type}`)
+  and schedules increases ≥30 days out (card-network notice). Wiring an email provider (Resend /
+  Postmark / Loops) to send the advance-notice emails just consumes that roster — same shape, no
+  rework. Manual send until then. _(surfaced during price-versioning build)_
+- [ ] **`price_change_notifications` tracking table** — only if/when the auto-send above is built
+  AND we want sent/unsent tracking. Optional even then (an email job can read the roster file). No
+  table today. _(surfaced during price-versioning build)_
+- [ ] **General email / contactability infra** — welcome emails at signup + ad-hoc mass email.
+  Separate from price notices. Reaching users today = read `auth.users.email` (dashboard or a
+  service-role query). Caveat for later: Apple "Sign in with Apple" Hide-My-Email stores a
+  `@privaterelay.appleid.com` relay in Supabase (not the real inbox) — emailing it requires
+  registering the sending domain in Apple's Private Email Relay service. _(surfaced during price-versioning build)_
 
 ---
 
