@@ -5,6 +5,7 @@
 // .d.ts types (npm run build:types) are for editor/tsc consumers and aren't needed at runtime.
 
 import * as esbuild from 'esbuild';
+import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,6 +21,11 @@ const prod = process.env.CUBIC_BUILD === 'prod';
 const secretsPath = prod
   ? path.join(root, 'src', 'secrets', 'stub.ts')
   : path.resolve(root, '..', '..', 'proxy', 'src', 'secrets', 'index.ts');
+
+// L2: on a prod packaging build, wipe any stale direct-local bundle first (it bundled the REAL
+// secrets) so the shipped build/ can only contain stub-resolved output — belt with the prod-build
+// leak-guard test's suspenders. Skipped for dev/watch so incremental rebuilds stay fast.
+if (prod) fs.rmSync(path.join(root, 'build'), { recursive: true, force: true });
 
 const options = {
   entryPoints: [path.join(root, 'src', 'index.ts')],

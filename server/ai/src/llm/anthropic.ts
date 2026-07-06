@@ -32,7 +32,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   // add Opus / future models here as they are wired up
 };
 
-/** USD per 1M tokens. cache reads bill at ~0.1× input; cache writes at ~1.25× input. */
+/** USD per 1M tokens. cache reads bill at ~0.1× input; cache writes at ~2× input (1-hour tier). */
 const MODEL_PRICING: Record<string, { inPerM: number; outPerM: number }> = {
   'claude-sonnet-4-6': { inPerM: 3, outPerM: 15 },
   'claude-haiku-4-5': { inPerM: 1, outPerM: 5 },
@@ -46,7 +46,7 @@ export function estimateCost(model: string | undefined, usage: ChatResponse['usa
   const cacheRead = usage.cacheReadInputTokens ?? 0;
   return (
     (usage.inputTokens * p.inPerM +
-      cacheWrite * p.inPerM * 1.25 +
+      cacheWrite * p.inPerM * 2.0 + // 1-hour cache-write tier (proxy pins ttl:'1h'); keep in sync with proxy metering
       cacheRead * p.inPerM * 0.1 +
       usage.outputTokens * p.outPerM) /
     1_000_000
@@ -110,6 +110,12 @@ function logCall(
   _debugTally.costUsd += estimateCost(model, u);
 }
 
+// The 1-hour cache tier (ttl:'1h') is accepted by the Anthropic API but not yet in this SDK's
+// CacheControlEphemeral type (@anthropic-ai/sdk 0.55) — cast past the stale type. In proxy mode the
+// Worker re-pins every breakpoint to 1h server-side anyway (normalizeCacheControlTo1h); this keeps
+// direct-local dev on the same tier so the cost estimate + caching behavior match prod.
+const CACHE_1H = { type: 'ephemeral', ttl: '1h' } as unknown as Anthropic.CacheControlEphemeral;
+
 /**
  * Converts our SystemPromptInput into the Anthropic `system` param. The `cached`
  * prefix carries a `cache_control: ephemeral` breakpoint, so it — plus the tools
@@ -120,7 +126,9 @@ function logCall(
  */
 function toSystemParam(sp: SystemPromptInput): Anthropic.MessageCreateParams['system'] {
   if (typeof sp === 'string') return sp;
-  return [{ type: 'text', text: sp.cached, cache_control: { type: 'ephemeral' } }];
+  // 1-hour cache tier: editors pause 5–60 min between asks, so a single 1h write beats re-writing the
+  // prefix at the 5-min rate every turn (proxy mode enforces the same ttl:'1h' server-side + meters 2×).
+  return [{ type: 'text', text: sp.cached, cache_control: CACHE_1H }];
 }
 
 /**
@@ -149,9 +157,9 @@ export function appendLiveStateAndCacheBreakpoint(
       ? [{ type: 'text', text: last.content }]
       : [...last.content];
   if (blocks.length === 0) return;
-  // Rolling breakpoint on the newest real block — caches everything up to and including it.
+  // Rolling breakpoint on the newest real block — caches everything up to and including it (1h tier).
   const lastBlock = blocks[blocks.length - 1];
-  blocks[blocks.length - 1] = { ...lastBlock, cache_control: { type: 'ephemeral' } } as Anthropic.ContentBlockParam;
+  blocks[blocks.length - 1] = { ...lastBlock, cache_control: CACHE_1H } as Anthropic.ContentBlockParam;
   // Uncached live-state tail (after the breakpoint).
   if (liveState && liveState.length > 0) {
     blocks.push({ type: 'text', text: liveState });
@@ -203,7 +211,9 @@ export class AnthropicProvider implements LLMProvider {
     // The SDK still requires a non-empty apiKey string, so pass a placeholder in proxy mode —
     // baseURL (ANTHROPIC_BASE_URL, set by app config from CUBIC_PROXY_URL) routes to the Worker,
     // which overwrites x-api-key with the real key before forwarding to Anthropic.
-    const apiKey = process.env.ANTHROPIC_API_KEY ?? (proxyMode ? 'cubic-proxy-placeholder' : undefined);
+    // Proxy mode is FIRST in the ternary (not `env ?? placeholder`) so a user's locally-set
+    // ANTHROPIC_API_KEY is never read — and therefore never transits to the Worker — in proxy mode.
+    const apiKey = proxyMode ? 'cubic-proxy-placeholder' : (process.env.ANTHROPIC_API_KEY ?? undefined);
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
     // Auth (Wave 2 / WT-PROXY-GATING): the Supabase JWT is now attached PER REQUEST in chat()/stream()
     // (opts.authToken), not baked once here — a session's token refreshes ~hourly, so a fixed

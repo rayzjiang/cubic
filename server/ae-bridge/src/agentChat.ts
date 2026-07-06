@@ -140,6 +140,9 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
   const capture = (e: AgentEvent): void => {
     if (e.type === "snapshot" && e.turnId) turnId = e.turnId;
     if (e.type === "cancelled" && e.discarded) discarded = true;
+    // A gate error that produced nothing is discarded too (loop popped the prompt) → persist nothing,
+    // so a retry doesn't stack a duplicate of the failed prompt in history.
+    if (e.type === "error" && e.discarded) discarded = true;
     if (e.type === "compaction" && e.status === "done" && e.summary && e.keptTurns)
       compaction = { summary: e.summary, keptTurns: e.keptTurns };
     emit(e);

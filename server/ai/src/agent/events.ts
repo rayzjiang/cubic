@@ -36,7 +36,9 @@ export type AgentEvent =
   // `status` (when present) is the HTTP status the proxy returned (401 signed-out / 402 not-paid-or-over-cap
   // / 429 rate-limited); `reason` is the machine-readable 402 sub-state ('no_plan' | 'over_cap') the client
   // + §D paywall route on. Surfaced so the renderer can map to a specific message (WT-PROXY-GATING §C-6).
-  | { type: 'error'; message: string; status?: number; reason?: string }
+  // `discarded` = the error landed before any output was produced (same as the cancelled/discarded case)
+  // → the host throws the turn away (pops the prompt, persists nothing) so a retry doesn't stack a dup.
+  | { type: 'error'; message: string; status?: number; reason?: string; discarded?: boolean }
   | { type: 'done'; stopReason: string };
 
 export type EmitFn = (event: AgentEvent) => void;

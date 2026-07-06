@@ -188,6 +188,49 @@ describe('runAgentTurn', () => {
     expect(session.running).toBe(false);
   });
 
+  it('discards a gate error that produced nothing (pops the prompt, flags discarded) so a retry does not dup', async () => {
+    const session = new Session();
+    // Proxy gate rejects on the FIRST model call (e.g. 429 busy) before anything rendered — NOT a cancel.
+    const provider: LLMProvider = {
+      chat: async () => { throw Object.assign(new Error('rate limited'), { status: 429 }); },
+      // eslint-disable-next-line require-yield
+      stream: async function* () { yield { type: 'done' as const }; },
+      contextWindow: () => 200_000,
+    };
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'add a layer', (e) => events.push(e), baseDeps(provider));
+
+    const err = events.find((e) => e.type === 'error') as { type: 'error'; status?: number; discarded?: boolean };
+    expect(err).toMatchObject({ type: 'error', status: 429, discarded: true });
+    // Prompt rolled back → history empty (the host skips persistence on `discarded`; a retry re-sends once).
+    expect(session.messages).toHaveLength(0);
+    expect(session.running).toBe(false);
+  });
+
+  it('keeps a partial turn on a gate error AFTER output was rendered (not discarded)', async () => {
+    const session = new Session();
+    let call = 0;
+    const provider: LLMProvider = {
+      chat: async () => {
+        call += 1;
+        if (call === 1) return toolResponse([runScriptCall('t1', 'createLayer')]); // output rendered
+        throw Object.assign(new Error('rate limited'), { status: 429 });            // 2nd call gate-rejects
+      },
+      // eslint-disable-next-line require-yield
+      stream: async function* () { yield { type: 'done' as const }; },
+      contextWindow: () => 200_000,
+    };
+    const events: AgentEvent[] = [];
+
+    await runAgentTurn(session, 'go', (e) => events.push(e), baseDeps(provider));
+
+    const err = events.find((e) => e.type === 'error') as { type: 'error'; discarded?: boolean };
+    expect(err.discarded).toBeFalsy();                                     // partial work shown → keep the turn
+    expect(session.messages[0]).toEqual({ role: 'user', content: 'go' }); // prompt retained
+    expect(session.running).toBe(false);
+  });
+
   it('synthesizes interrupted tool_results for the rest of a batch when cancelled mid-batch', async () => {
     // One assistant turn requests two tools; the cancel arrives while the first is executing.
     const { provider } = mockLLM([toolResponse([runScriptCall('t1', 'createLayer'), runScriptCall('t2', 'createLayer')])]);

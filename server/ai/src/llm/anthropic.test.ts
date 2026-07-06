@@ -19,7 +19,7 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     expect(blocks).toHaveLength(2);
     // [0] = the real user text, carries the cache breakpoint
     expect(blocks[0]).toMatchObject({ type: 'text', text: 'make the logo pop' });
-    expect(cc(blocks[0])).toEqual({ type: 'ephemeral' });
+    expect(cc(blocks[0])).toEqual({ type: 'ephemeral', ttl: '1h' });
     // [1] = the live-state tail, NO cache_control (it changes every turn)
     expect(blocks[1]).toMatchObject({ type: 'text', text: '<live_ae_state>{}</live_ae_state>' });
     expect(cc(blocks[1])).toBeUndefined();
@@ -34,7 +34,7 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     const blocks = blocksOf(msgs[1]);
     // tool_result stays first (API requires it); breakpoint on it; live state appended last, uncached.
     expect(blocks[0]).toMatchObject({ type: 'tool_result', tool_use_id: 't1' });
-    expect(cc(blocks[0])).toEqual({ type: 'ephemeral' });
+    expect(cc(blocks[0])).toEqual({ type: 'ephemeral', ttl: '1h' });
     expect(blocks[1]).toMatchObject({ type: 'text', text: '<live_ae_state>{"playhead":0}</live_ae_state>' });
     expect(cc(blocks[1])).toBeUndefined();
   });
@@ -44,7 +44,7 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     appendLiveStateAndCacheBreakpoint(msgs, undefined);
     const blocks = blocksOf(msgs[0]);
     expect(blocks).toHaveLength(1);
-    expect(cc(blocks[0])).toEqual({ type: 'ephemeral' });
+    expect(cc(blocks[0])).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('does not mutate earlier messages (only the last one gets the breakpoint)', () => {
@@ -56,7 +56,7 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     appendLiveStateAndCacheBreakpoint(msgs, '<live_ae_state>{}</live_ae_state>');
     expect(msgs[0].content).toBe('first'); // untouched plain string
     expect(msgs[1].content).toBe('reply');
-    expect(cc(blocksOf(msgs[2])[0])).toEqual({ type: 'ephemeral' });
+    expect(cc(blocksOf(msgs[2])[0])).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('is a no-op on an empty message list', () => {

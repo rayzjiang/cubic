@@ -107,3 +107,33 @@ describe('delete', () => {
     await turn;
   });
 });
+
+describe('gate-error discard persistence', () => {
+  it('persists NOTHING when a gate error is flagged discarded (retry must not stack a dup)', async () => {
+    // The loop committed the prompt (onCommit fired) but the turn produced no output → it pops the
+    // prompt and emits `error` with discarded:true. runTurnAndPersist must skip appendTurn entirely.
+    h.runAgentTurn.mockImplementation(async (_s: any, text: string, emit: (e: any) => void, opts: any) => {
+      opts.onCommit?.({ role: 'user', content: text }); // committed at turn start…
+      emit({ type: 'error', message: 'rate limited', status: 429, discarded: true }); // …then discarded
+    });
+
+    const { ws, sent } = fakeWs();
+    await h.handler.fn!(ws, { type: 'userChat', sessionId: 's1', text: 'go' });
+
+    expect(h.appendTurn).not.toHaveBeenCalled(); // nothing persisted → a retry re-sends exactly once
+    expect(sent.some((m) => m.type === 'agentEvent' && (m.event as { type: string }).type === 'error')).toBe(true);
+  });
+
+  it('still persists a NON-discarded error with committed output (partial turn is kept)', async () => {
+    h.runAgentTurn.mockImplementation(async (_s: any, text: string, emit: (e: any) => void, opts: any) => {
+      opts.onCommit?.({ role: 'user', content: text });
+      opts.onCommit?.({ role: 'assistant', content: 'partial work' }); // output rendered
+      emit({ type: 'error', message: 'boom', status: 429 }); // no discarded flag
+    });
+
+    const { ws } = fakeWs();
+    await h.handler.fn!(ws, { type: 'userChat', sessionId: 's1', text: 'go' });
+
+    expect(h.appendTurn).toHaveBeenCalled(); // partial turn stays in history
+  });
+});

@@ -296,7 +296,12 @@ export async function runAgentTurn(
       // On a 402 the proxy also carries a machine-readable `reason` ('no_plan' | 'over_cap') in the body;
       // the SDK exposes the parsed body on `.error`. Forward it so the renderer (+ §D paywall) can route.
       const reason = (e as { error?: { error?: { reason?: unknown } } })?.error?.error?.reason;
-      emit({ type: 'error', message, ...(status !== undefined ? { status } : {}), ...(typeof reason === 'string' ? { reason } : {}) });
+      // Nothing was produced before the throw (e.g. a gate rejection on the first call) → discard the
+      // turn like a cancelled/discarded stop: pop the user prompt committed at turn start so a retry
+      // re-sends it exactly once (no dup in history/context), and flag `discarded` so the host persists
+      // nothing. A turn that already rendered partial work keeps it (mirrors cancelTurn's !rendered path).
+      if (!rendered) session.messages.pop();
+      emit({ type: 'error', message, ...(status !== undefined ? { status } : {}), ...(typeof reason === 'string' ? { reason } : {}), ...(!rendered ? { discarded: true } : {}) });
     }
   } finally {
     session.running = false;
