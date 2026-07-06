@@ -46,7 +46,7 @@ npm run serve          # Run the backend standalone (bridge + agent loop, no MCP
 ## When to restart what
 | What changed | What to run | What to reload |
 |---|---|---|
-| Any `src/scripts/*.jsx` | `npm run build:plugin` + `npm run install-plugin` | Close + reopen the Cubic panel in AE |
+| Any `src/scripts/*.jsx` | `npm run build:plugin` + `npm run install-plugin` | Reload the invisible panel (dev preflight auto-reloads; else restart AE) |
 | `src/index.ts` or `wsBridge.ts` | `npm run build:server` | Restart Claude Code |
 | Both | `npm run build` + `npm run install-plugin` | Both of the above |
 
@@ -90,7 +90,7 @@ bridge.jsx       ← NOT a handler: JSON polyfill, ERROR_CODES/_err, comp/layer/
 2. Add a `case` in `_dispatchSwitch()` in `bridge.jsx`
 3. If read-only (getter), add to `READ_ONLY_COMMANDS` in `bridge.jsx`
 4. Add name to the `COMMANDS` array in `src/commands.ts` (the allowlist `index.ts` validates against)
-5. `npm run build:plugin` + `npm run install-plugin` + reopen panel (+ `npm run build:server` + restart CC if `index.ts` changed)
+5. `npm run build:plugin` + `npm run install-plugin` + reload panel (dev preflight, or restart AE) (+ `npm run build:server` + restart CC if `index.ts` changed)
 
 Note: typed MCP tools (`server.registerTool`) are reserved for the bridge/diagnostic surface — exactly four: `runScript`, `getHelp`, `runBridgeTest`, `createComposition`. All handler commands are called via `runScript` — no per-command typed tool needed. (Separate surface: the `server/ai` agent brain (AKA what the users interact with) exposes its own 3 tools to the model — `runScript`, `batch`, `createComposition` — where `batch` IS a dedicated tool, not a `runScript` command. A raw MCP caller, lacking that tool, only has access to the above 4 tools instead and would reach batch via `runScript({script:"batch"})`.)
 
@@ -139,8 +139,10 @@ All handler `catch` blocks now return `{ status:"error", errorCode, message, lin
 ## Troubleshooting (full reset)
 If commands hang or tests time out — the WS chain is broken. Full reset:
 1. `npm run build` + `npm run install-plugin`
-2. Restart AE → open **Window → Extensions → Cubic** → wait for "Connected"
+2. **Restart AE** — the panel is a headless/**invisible** extension (`<Type>Custom</Type>` + `<AutoVisible>false` + `<StartOn>`), so it auto-loads on launch and connects. There is NO Window→Extensions entry and nothing visible in AE.
 3. `npm start` in one terminal, run tests in another
+
+**Debugging the invisible panel:** it has no UI, so attach Chrome **DevTools at `http://localhost:8088`** (the port in `cep-extension/.debug`; needs `PlayerDebugMode=1`, which `install-plugin` sets). That is the ONLY way to see the panel's console/logs, inspect `main.js`, or confirm Node (`--enable-nodejs`) loaded and `fs.watch` is armed.
 
 **macOS CEP install path:** `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/`
 Enable AE scripting: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**

@@ -20,15 +20,28 @@
       <DispatchInfo>
         <Resources>
           <MainPath>./index.html</MainPath>
+          <!-- Enable Node.js so the panel can fs.watch ~/.cubic/conn.json (event-driven wake,
+               zero idle polling) and read it directly. Standard CEP flag (Adobe's samples use it). -->
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+          </CEFCommandLine>
         </Resources>
         <Lifecycle>
-          <AutoVisible>true</AutoVisible>
+          <!-- Invisible background worker (Adobe's CEP_HTML_Invisible_Extension recipe):
+               Custom UI type = never docked/shown, no workspace persistence, no Window menu.
+               AutoVisible=false + StartOn = loads when AE activates, then runs invisibly and
+               stays connected. AE's StartOn event support is version-specific — verify live. -->
+          <AutoVisible>false</AutoVisible>
+          <StartOn>
+            <Event>com.adobe.csxs.events.ApplicationInitialized</Event>
+            <Event>com.adobe.csxs.events.ApplicationActivate</Event>
+            <Event>applicationActivate</Event>
+          </StartOn>
         </Lifecycle>
         <UI>
-          <Type>Panel</Type>
-          <Menu>Cubic</Menu>
+          <Type>Custom</Type>
           <Geometry>
-            <Size><Height>200</Height><Width>260</Width></Size>
+            <Size><Height>100</Height><Width>100</Width></Size>
           </Geometry>
         </UI>
       </DispatchInfo>

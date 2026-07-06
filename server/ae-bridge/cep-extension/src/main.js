@@ -1,23 +1,44 @@
 // CEP panel main — WebSocket client + ExtendScript dispatch via CSInterface
 // Built by build-cep-extension.mjs: HANDLERS_BUNDLE is injected at build time.
 
-/* global HANDLERS_BUNDLE, CSInterface */
+/* global HANDLERS_BUNDLE, CSInterface, cep_node */
 
 (function () {
   "use strict";
 
   // The backend OS-assigns its WS port and mints a per-launch session token, publishing both to
-  // ~/.cubic/conn.json. This headless worker reads that file (via ExtendScript, which resolves ~)
-  // on every connect attempt and echoes the token in its `hello` — the backend drops any socket whose
-  // first frame lacks it. Re-reading each attempt means a backend restart (new port/token) is picked up.
+  // ~/.cubic/conn.json. This headless worker reads that file and — via Node's fs.watch — wakes the
+  // instant the backend (re)writes it, so it connects with no idle polling. It echoes the token in its
+  // `hello`; the backend drops any socket whose first frame lacks it.
   const statusEl = document.getElementById("status");
   const errorEl = document.getElementById("error-box");
 
   const cs = (typeof CSInterface !== "undefined") ? new CSInterface() : null;
 
+  // Node.js is enabled for this extension (manifest CEFCommandLine --enable-nodejs) so the panel can
+  // read ~/.cubic/conn.json directly AND fs.watch it — it wakes the instant Cubic writes the file,
+  // with zero idle polling. If node is somehow unavailable we fall back to the ExtendScript read + a
+  // bounded backoff poll, so the panel still works.
+  const nodeRequire = (function () {
+    try { if (typeof require === "function") return require; } catch (e) {}
+    try { if (typeof cep_node !== "undefined" && cep_node.require) return cep_node.require; } catch (e) {}
+    try { if (typeof window !== "undefined" && window.cep_node && window.cep_node.require) return window.cep_node.require; } catch (e) {}
+    return null;
+  })();
+  let nodeFs = null, nodeOs = null, nodePath = null;
+  try {
+    if (nodeRequire) { nodeFs = nodeRequire("fs"); nodeOs = nodeRequire("os"); nodePath = nodeRequire("path"); }
+  } catch (e) { nodeFs = null; }
+
+  function cubicDir() { return nodePath.join(nodeOs.homedir(), ".cubic"); }
+  function cubicConnPath() { return nodePath.join(cubicDir(), "conn.json"); }
+
   let ws = null;
   let backoffMs = 1000;
   let backoffTimer = null;
+  let connWatcher = null;
+  let quickRetries = 0;
+  let quickTimer = null;
 
   function setStatus(text, cls) {
     statusEl.textContent = text;
@@ -50,9 +71,18 @@
     });
   }
 
-  // Read ~/.cubic/conn.json through ExtendScript (resolves ~ on both platforms; the panel has no Node
-  // fs). Calls back with {port, token} or null if the file is missing/unreadable (backend not up yet).
+  // Read {port, token} from ~/.cubic/conn.json. Prefer Node fs (sync, no evalScript round-trip);
+  // fall back to ExtendScript (which resolves ~) if node isn't available. Calls back with the conn
+  // object or null if the file is missing/unreadable (backend not up yet).
   function readConn(cb) {
+    if (nodeFs) {
+      try {
+        const raw = nodeFs.readFileSync(cubicConnPath(), "utf8");
+        const conn = JSON.parse(raw);
+        cb((conn && typeof conn.port === "number" && typeof conn.token === "string") ? conn : null);
+      } catch (e) { cb(null); }
+      return;
+    }
     if (!cs) { cb(null); return; }
     const es =
       "(function(){" +
@@ -72,6 +102,41 @@
     });
   }
 
+  // Event-driven wake: watch ~/.cubic and reconnect the instant the backend (re)writes conn.json.
+  // Zero polling — while Cubic is closed the panel sits dormant on this watcher. Idempotent.
+  function armWatch() {
+    if (!nodeFs || connWatcher) return;
+    try {
+      const dir = cubicDir();
+      if (!nodeFs.existsSync(dir)) { nodeFs.mkdirSync(dir, { recursive: true }); }
+      connWatcher = nodeFs.watch(dir, function (evt, filename) {
+        if (!filename || filename === "conn.json") { quickRetries = 0; connect(); }
+      });
+    } catch (e) { connWatcher = null; }
+  }
+
+  // Bounded quick retries recover a TRANSIENT socket drop while the backend is still alive
+  // (conn.json unchanged, so the watch won't fire). After these fail (backend truly gone) we stop and
+  // stay dormant — the fs.watch wakes us when Cubic next writes conn.json.
+  function scheduleQuickRetry() {
+    if (quickTimer || quickRetries >= 4) return;
+    quickRetries++;
+    quickTimer = setTimeout(function () { quickTimer = null; connect(); }, 750);
+  }
+
+  // On any failure: with node, arm the fs.watch (dormant wake, no poll) and — for a transient drop
+  // where conn.json is unchanged — do a few bounded quick retries. Without node, fall back to the
+  // exponential backoff poll.
+  function onConnectFailure(errMsg, hadConn) {
+    if (nodeFs) {
+      armWatch();
+      if (hadConn) { scheduleQuickRetry(); }
+      if (errMsg) { showError(errMsg); }
+    } else {
+      scheduleReconnect(errMsg);
+    }
+  }
+
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -80,19 +145,21 @@
     setStatus("Connecting…", "connecting");
     readConn(function (conn) {
       if (!conn) {
-        scheduleReconnect("Waiting for Cubic backend (no ~/.cubic/conn.json yet)…");
+        // No backend yet — dormant wait on the watch (node) or backoff poll (fallback).
+        onConnectFailure("Waiting for Cubic backend (no ~/.cubic/conn.json yet)…", false);
         return;
       }
       const url = "ws://127.0.0.1:" + conn.port;
       try {
         ws = new WebSocket(url);
       } catch (e) {
-        scheduleReconnect("Failed to create WebSocket: " + e);
+        onConnectFailure("Failed to create WebSocket: " + e, true);
         return;
       }
 
       ws.onopen = function () {
         backoffMs = 1000;
+        quickRetries = 0;
         clearError();
         setStatus("Connected", "connected");
         // Authenticate as the worker (token) + report the baked-in bundle id (stale-panel preflight).
@@ -121,11 +188,14 @@
       ws.onclose = function () {
         ws = null;
         setStatus("Disconnected", "disconnected");
-        scheduleReconnect();
+        // Transient drop (backend alive, conn.json unchanged) → bounded quick retries; backend gone →
+        // those fail and we go dormant on the watch until Cubic rewrites conn.json.
+        onConnectFailure(null, true);
       };
     });
   }
 
+  // Fallback-only (node unavailable): exponential backoff poll, capped at 10s.
   function scheduleReconnect(errMsg) {
     if (errMsg) showError(errMsg);
     if (backoffTimer) clearTimeout(backoffTimer);
@@ -169,5 +239,7 @@
     ws.send(JSON.stringify(msg));
   }
 
+  // Arm the watch up front so no conn.json write is missed during the first connect, then attempt.
+  if (nodeFs) { armWatch(); }
   connect();
 })();
