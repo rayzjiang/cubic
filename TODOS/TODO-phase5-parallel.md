@@ -113,7 +113,9 @@
 - [ ] §G-2 ToS + Privacy Policy published — *start drafting early (legal lead time)*
 - [ ] §G-3 full paid flow tested E2E on a clean machine (install → sign in → trial → cap → pay → use → cancel → revoked)
 - [ ] §G-4 refund + support process — real inbox + refund SOP
-
+- [ ] §G-5 dev/ops runbook (`docs/RUNBOOK.md`) — the maintainer's index of every operational surface so post-ship "where do I change/fix X" has one home. **Do this LAST** (rescan the finished codebase first, so procedures reflect final prod state). Structure: Tier-1 items get full inline procedures (they have no other home) — change a plan's price/allowance (`supabase/scripts/change-plan.ts`, `--dry-run` first, Subscription-Schedules staggered migration), prod deploy (Worker + Supabase functions/migrations + Stripe webhook endpoint), secrets registry + rotation, Stripe manual ops/refund/dispute SOP (folds in §G-4), incident/rollback. Tiers 2–3 = thin pointers to the per-package source-of-truth docs (`app/README.md`, `proxy/CLAUDE.md`, `supabase/README.md`, `server/*/CLAUDE.md`, `docs/ARCHITECTURE.md`, `migrations/`) — index, don't restate. Tier 4 = stub the not-yet-built ops (§E/§F/§H) to fill on completion. Mirrors how `ARCHITECTURE.md` defers to its sources rather than duplicating.
+    - claude --resume 91773af0-93fc-4396-aeec-2f7e81af3d18
+    - i want to document somewhere (either a new md file or to my root readme.md) all the dev stuff for my product (so ik where to do/fix/change certani things after i ship). do a thorough scan of my codebase for things like this to lmk what could go here. eg: one thing for certain i want to add is the new price migration script for changing price plans or allowance for users on certain plans (since its not documented anywhere rn, id probably forget i have this functionality, so i want somewhere easy for me to find all the stuff like this). Give me a bucketed list into tiers of highest to lowest priority of stuff that should go into a doc like this (think of it as dev documentation so that future develoeprs can help out/maintani my entire cubic software/customers/applicatoin) do u understand?
 ---
 
 ## Order / dependencies
