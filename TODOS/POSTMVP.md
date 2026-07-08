@@ -215,18 +215,12 @@ Deferred improvements (roughly in priority order):
 
 ## Billing / payments ops (Stripe)
 
-- [ ] **Enable Stripe dunning emails** — Dashboard → Settings → Billing → failed-payment
-  + retry emails, with the retry schedule matching the ~24h fail-fast `past_due` grace.
-  Zero code; pairs with the proxy entitlement gate so a customer is told their renewal
-  failed instead of silently losing access. _(surfaced during WT-BILLING fix pass)_
-- [ ] **Account-deletion must cancel Stripe first** — the `subscriptions` row is only an
-  entitlement cache (`ON DELETE CASCADE` clears it when a user is deleted); the real
-  customer/payment record lives in Stripe. A "delete my account" flow must cancel the
-  Stripe subscription BEFORE deleting the user, else it keeps billing a deleted user.
 - [ ] **Usage-meter write at scale** — the Wave-2 proxy should write the usage counter
   **async / non-blocking** (serve the LLM response first, record out-of-band) and **batch**
   if load demands; entitlement reads are already cached ~30–60s (§A-5). The current counter
-  schema supports this unchanged — no schema work, noted so it isn't lost.
+  schema supports this unchanged — no schema work, noted so it isn't lost. **Shares the
+  `record_usage` write path with the durable/dead-letter item under Metering / usage-tracking
+  accuracy below — design the async/batch/durable write once, together.**
 - [ ] **Refund / dispute auto-revoke webhooks** — the webhook currently handles only
   `customer.subscription.*`; it IGNORES `charge.refunded`, `charge.dispute.created`, and
   `customer.subscription.paused`, so a refunded/disputed user keeps access until period end.
@@ -246,6 +240,61 @@ Deferred improvements (roughly in priority order):
   service-role query). Caveat for later: Apple "Sign in with Apple" Hide-My-Email stores a
   `@privaterelay.appleid.com` relay in Supabase (not the real inbox) — emailing it requires
   registering the sending domain in Apple's Private Email Relay service. _(surfaced during price-versioning build)_
+
+---
+
+## Metering / usage-tracking accuracy & durability
+
+> Proxy-side API-cost accounting (Phase 5 §A-6 `record_usage` pipeline) — keeping every cent of Anthropic
+> spend accurately tracked. Distinct from **Billing / payments ops (Stripe)** above (that's the Stripe
+> charge/subscription side); this is the internal usage counter that both bills against the allowance and
+> gates entitlement. Pricing is correct today (base rates + cache multipliers verified against current
+> Anthropic pricing; the 2× cache-write tier is exact only because the Worker pins every breakpoint to
+> `ttl:'1h'` in `normalizeCacheControlTo1h` — keep that pin), and the quit/freeze case is already safe
+> (metering is server-side, post-response, decoupled from the client save-to-history). **MVP interim
+> (ship-time, not deferred, so not filed as items here):** Anthropic **auto-reload OFF** (already set —
+> prepaid-balance depletion is the hard dollar cap that survives a total metering outage; a Console spend
+> limit is the alternative), plus a weekly manual reconciliation (`sum(spent_cents)` for the period vs the
+> Console's actual spend). The
+> items below automate that and close the durability gap. _(surfaced during the P5W3 pre-flight
+> metering-robustness review, 7/7/26)_
+
+- [ ] **Automated reconciliation + drift alerting** — a scheduled job that compares `sum(spent_cents)` per
+  billing period against Anthropic's actual usage/cost (Admin/Cost API or Console export) and alerts when they
+  diverge past a threshold. This single check catches all three silent-drift classes at once: a pricing-map
+  error, a mass write failure (metered total < actual), and a new billable token type the parser doesn't
+  capture (`MODEL_PRICING` / `AnthropicUsage` in `proxy/src/metering.ts` are a hand-maintained mirror with no
+  self-check). Ground truth is Anthropic's bill; internal metering is an estimate that should be reconciled
+  against it. Replaces the manual weekly eyeball once volume warrants.
+
+- [ ] **Durable persistence of failed usage writes (queue / dead-letter / replay)** — today `recordUsage`
+  retries twice inline then logs-and-drops (`proxy/src/metering.ts:77-86`), and `meterResponse` runs in
+  `ctx.waitUntil` (`proxy/src/index.ts:289`) with no durable backing — so a Supabase outage, rotated
+  service-role key, or worker eviction loses that increment **permanently**. Worse: the entitlement gate reads
+  the same `spent_cents` (`get_entitlement` → the gate at `proxy/src/index.ts:203`), so a *mass* write outage
+  silently disables the cap (spent never rises → always "under cap" → unbounded spend on the key) — which is
+  why the Console hard spend limit is the ship-time backstop. Fix: persist the token counts durably the instant
+  the proxy has them — a Cloudflare Queue producer in the request path, or an append-only `usage_events`
+  insert — with a retry consumer that records into Supabase; at minimum, dead-letter a failed increment for
+  later replay. **Shares the `record_usage` write path with "Usage-meter write at scale" under Billing /
+  payments ops above — build the async/batch/durable write once, together.**
+
+- [ ] **Alarm silent metering drops** — `meterResponse` returns silently on a 2xx that yields no parseable
+  usage or a null `periodStart` (`proxy/src/metering.ts:104-106`); only the throw path logs. If Anthropic ever
+  changes the success-response shape, you'd spend and record nothing, invisibly. Emit a log/metric/counter when
+  a 2xx yields no usage (or an entitled caller has a null period) so a systematic parse break surfaces in
+  observability instead of zeroing usage undetected. Small (a couple of lines) — could be pulled forward
+  pre-ship.
+
+- [ ] **Idempotency to prevent double-metering on SDK retry** — the over-billing direction. The Anthropic SDK
+  auto-retries on 429/5xx/timeout; a request Anthropic actually completed but that timed out client-side gets
+  re-sent, forwarded again, and metered twice (Anthropic bills you twice too). No idempotency key today. Key the
+  meter on the request/response id so a retried-but-already-served call isn't counted twice. Lower priority than
+  the under-billing leaks above (it protects the user's fairness + your real cost, not your revenue).
+
+> Related: the **streaming-abort zero-usage fix** (parse usage incrementally so a client abort mid-stream still
+> meters what was generated) is already tracked with the `chat()`→`stream()` swap under **Chat UX polish**
+> above — not duplicated here.
 
 ---
 
