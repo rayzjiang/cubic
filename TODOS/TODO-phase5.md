@@ -46,6 +46,7 @@
 
 ## §D. Onboarding & paywall UX
 > First-run flow for a non-technical user. **Paywall comes LAST** — let them feel the product before asking for a card.
+> **Build split:** Wave 3 is broken into 3 sequential sub-plans (P1 billing/account surfaces → P2 account deletion → P3 onboarding/polish) — see `TODO-phase5-parallel.md` Wave 3 for scope + order. Item detail below.
 - [ ] **§D-1** **First-run sequence** — sign in (§B) → connect to After Effects (Phase 4 auto-provision) → try it (trial cap) → **paywall last**.
     - **Enrich the signed-out `AuthScreen` (pre-launch)** — it's the **first + only** surface a logged-out / never-signed-in user ever sees (the prod gate blocks home/chat until sign-in), so it has to sell the product, not just hold a Google button. Today it's a minimal "Welcome to Cubic / Sign in with Google." Make it engaging: e.g. a carousel of ways to use Cubic / sample before→after motion outputs. Consumer tone (§D-4). Distinct from the signed-IN `HomeView` ("Welcome back").
 - [ ] **§D-2** **Paywall + limit states** — "trial ended" / "out of allowance this month" screens with a clear upgrade/renew CTA → Stripe Checkout.
