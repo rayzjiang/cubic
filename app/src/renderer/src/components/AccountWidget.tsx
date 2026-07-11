@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { EASE_OUT } from '../motion'
+import { planPillText, paywallReason } from '../billing/entitlement'
 
 /**
  * §B account-menu shell — a Claude-style account widget pinned bottom-left, persistent across Home +
@@ -18,8 +19,15 @@ import { EASE_OUT } from '../motion'
  */
 export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
   const user = useChatStore((s) => s.auth.user)
+  const billing = useChatStore((s) => s.billing)
+  const setSettingsOpen = useChatStore((s) => s.setSettingsOpen)
+  const setPickerOpen = useChatStore((s) => s.setPickerOpen)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ left: number; bottom: number } | null>(null)
+  const pill = planPillText(billing)
+  // Contextual dropdown action (§D-5): a fast "Upgrade" only when the user has no active sub (→ picker →
+  // Checkout). An active sub shows nothing here — plan changes live in Settings → Manage subscription.
+  const canSubscribe = billing.status === 'ready' && paywallReason(billing.entitlement) === 'no_plan'
 
   // Position the popover above the trigger, opening upward from its top edge.
   const openMenu = (): void => {
@@ -33,8 +41,15 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') closeMenu()
     }
+    // The popover is position:fixed at coords derived from the trigger's rect at open-time. A window
+    // resize moves the trigger, so re-anchor to it instead of leaving the menu floating at stale coords.
+    const reposition = (): void => openMenu()
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', reposition)
+    }
   }, [menu])
 
   // Signed out (local dev only): a direct sign-in affordance, no popover.
@@ -80,8 +95,8 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
         <span className="truncate text-[13px] font-medium leading-tight text-white/90">
           {user.name || user.email}
         </span>
-        {/* TODO §D-5: replace with real plan/entitlement (placeholder only — no tier claimed). */}
-        <span className="truncate text-[11px] leading-tight text-white/40">Plan</span>
+        {/* Real plan/entitlement tag (§D-5); hidden while billing is loading/unavailable. */}
+        {pill && <span className="truncate text-[11px] leading-tight text-white/40">{pill}</span>}
       </span>
       <UpDownIcon />
     </button>
@@ -90,19 +105,46 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <>
       {trigger}
-      {menu &&
-        createPortal(
-          <>
-            {/* Click-away backdrop. */}
-            <div className="fixed inset-0 z-40" onMouseDown={closeMenu} />
-            <motion.div
-              className="fixed z-50 w-60 overflow-hidden rounded-xl border border-white/10 bg-neutral-800/95 py-1.5 shadow-2xl backdrop-blur"
-              style={{ left: menu.left, bottom: menu.bottom }}
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.15, ease: EASE_OUT }}
-            >
+      {createPortal(
+        <>
+          {/* Click-away backdrop (no exit anim — its instant removal is invisible). */}
+          {menu && <div className="fixed inset-0 z-40" onMouseDown={closeMenu} />}
+          {/* AnimatePresence so the popover animates BOTH open and close (mirrors AeStatus). */}
+          <AnimatePresence>
+            {menu && (
+              <motion.div
+                key="account-menu"
+                className="fixed z-50 w-60 overflow-hidden rounded-xl border border-white/10 bg-neutral-800/95 py-1.5 shadow-2xl backdrop-blur"
+                style={{ left: menu.left, bottom: menu.bottom }}
+                initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: EASE_OUT }}
+              >
               <div className="truncate px-3 py-1.5 text-[12px] text-white/45">{user.email}</div>
+              <div className="my-1 h-px bg-white/10" />
+              {canSubscribe && (
+                <button
+                  onClick={() => {
+                    closeMenu()
+                    setPickerOpen(true)
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
+                >
+                  <SparkleIcon />
+                  Upgrade
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  closeMenu()
+                  setSettingsOpen(true)
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
+              >
+                <SettingsIcon />
+                Settings
+              </button>
               <div className="my-1 h-px bg-white/10" />
               <button
                 onClick={() => {
@@ -114,10 +156,12 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
                 <LogOutIcon />
                 Log out
               </button>
-            </motion.div>
-          </>,
-          document.body,
-        )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>,
+        document.body,
+      )}
     </>
   )
 }
@@ -173,6 +217,23 @@ function LogOutIcon() {
       <path d="M6 2.5 H3.5 A1 1 0 0 0 2.5 3.5 V12.5 A1 1 0 0 0 3.5 13.5 H6" />
       <path d="M10 11 L13 8 L10 5" />
       <path d="M13 8 H6" />
+    </svg>
+  )
+}
+
+function SparkleIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
+      <path d="M8 2 L9.2 6.2 L13.5 7.5 L9.2 8.8 L8 13 L6.8 8.8 L2.5 7.5 L6.8 6.2 Z" />
+    </svg>
+  )
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
+      <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.281Z" />
+      <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
     </svg>
   )
 }

@@ -41,9 +41,11 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Collapsed account avatar — pinned to the bottom of the icon rail, cross-fades with the rail. */}
+      {/* Collapsed account avatar — pinned to the bottom of the icon rail, cross-fades with the rail. The
+          pb-1.5 matches the expanded widget's extra vertical padding (m-2 + py-1.5 vs the collapsed
+          avatar's mb-2 only), so the avatar stays at the SAME Y across collapsed/expanded. */}
       <div
-        className={`absolute inset-x-0 bottom-0 flex justify-center transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`absolute inset-x-0 bottom-0 flex justify-center pb-1.5 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <AccountWidget collapsed />
       </div>
