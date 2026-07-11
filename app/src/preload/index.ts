@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CHANNELS, type AuthState, type BackendStatus, type CubicApi } from '../shared/ipc.js'
+import { CHANNELS, type AuthState, type BackendStatus, type BillingState, type CubicApi } from '../shared/ipc.js'
 
 // Sandbox-safe bridge: with sandbox:true the preload may use contextBridge + ipcRenderer
 // but NOT fs/ws/arbitrary node — exactly the intent. The renderer touches main only
@@ -23,6 +23,15 @@ const api: CubicApi = {
     const listener = (_e: unknown, state: AuthState): void => cb(state)
     ipcRenderer.on(CHANNELS.authChanged, listener)
     return () => ipcRenderer.removeListener(CHANNELS.authChanged, listener)
+  },
+  getBilling: () => ipcRenderer.invoke(CHANNELS.billingGetState),
+  refreshBilling: () => ipcRenderer.invoke(CHANNELS.billingRefresh),
+  openCheckout: (plan) => ipcRenderer.invoke(CHANNELS.billingOpenCheckout, plan),
+  openPortal: () => ipcRenderer.invoke(CHANNELS.billingOpenPortal),
+  onBillingChanged: (cb) => {
+    const listener = (_e: unknown, state: BillingState): void => cb(state)
+    ipcRenderer.on(CHANNELS.billingChanged, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.billingChanged, listener)
   },
 }
 

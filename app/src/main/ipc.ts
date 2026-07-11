@@ -1,8 +1,9 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus } from '../shared/ipc.js'
+import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus, type BillingState, type PlanId } from '../shared/ipc.js'
 import type { BackendConfig } from './config.js'
 import type { BackendSupervisor } from './backend.js'
 import type { AuthManager } from './auth.js'
+import type { BillingManager } from './billing.js'
 
 /**
  * §0 + §B6 + §B + §??? — main↔renderer IPC. `getBackendPort` is the one connection-discovery call: it
@@ -13,7 +14,7 @@ import type { AuthManager } from './auth.js'
  * backend crash + reconnect). The auth surface mirrors that shape exactly: snapshot getters + a `change`
  * broadcast. No filesystem access; the renderer stays sandboxed.
  */
-export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager): void {
+export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager): void {
   ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
   backend.on('status', (status: BackendStatus) => {
@@ -31,6 +32,18 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   auth.on('change', (state: AuthState) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.authChanged, state)
+    }
+  })
+
+  // §D billing/entitlement DISPLAY. Same shape as auth: snapshot getter + a `change` broadcast; the
+  // renderer reads state + triggers Checkout/Portal, main owns the Supabase/Stripe calls.
+  ipcMain.handle(CHANNELS.billingGetState, () => billing.snapshot)
+  ipcMain.handle(CHANNELS.billingRefresh, () => billing.refresh())
+  ipcMain.handle(CHANNELS.billingOpenCheckout, (_e, plan: PlanId) => billing.openCheckout(plan))
+  ipcMain.handle(CHANNELS.billingOpenPortal, () => billing.openPortal())
+  billing.on('change', (state: BillingState) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(CHANNELS.billingChanged, state)
     }
   })
 }
