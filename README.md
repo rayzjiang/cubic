@@ -133,6 +133,7 @@ npm run dev
 ```
 
 **real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. (Baking these in as the shipped default so a signed app needs no env vars is **§A-8**, still pending.)
+- Note: No proxy URL set means it goes to anthropic directly
 ```bash
 CUBIC_ENV=prod \
 CUBIC_PROXY_URL=https://<your-worker>.workers.dev \
