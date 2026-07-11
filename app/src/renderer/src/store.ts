@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AuthState, BackendStatus, CubicEnvName } from '@shared/ipc'
+import type { AuthState, BackendStatus, BillingState, CubicEnvName } from '@shared/ipc'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
@@ -98,6 +98,10 @@ interface ChatState {
   // §B auth state (status + user), pushed by main over IPC. Distinct from billing/entitlement — there
   // is no plan here (that lands with WT-BILLING). The renderer is presentational; main owns the session.
   auth: AuthState
+  // §D billing/entitlement DISPLAY state (plan + usage + status), pushed by main over IPC. Drives the
+  // account pill, the Settings usage bar, and the paywall/limit states. The enforcement GATE is the
+  // proxy (a 402 on a blocked send) — this is the display side. Main owns every Supabase/Stripe call.
+  billing: BillingState
   // Which deployment we run as — gates sign-in (prod blocks until signed in; local never blocks).
   cubicEnv: CubicEnvName
   view: 'home' | 'chat'
@@ -141,6 +145,10 @@ interface ChatState {
   queuedSteers: { id: string; text: string }[]
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
   pendingDeletes: Set<string>
+  // §D billing UI overlays (root-mounted, store-driven like the confirm modals): the account Settings
+  // modal + the plan-picker (Checkout) modal opened from the account menu / Settings / paywalls.
+  settingsOpen: boolean
+  pickerOpen: boolean
   // transient UI: confirm-delete modal target + auto-dismissing toasts
   pendingDeleteConfirm: ConversationMeta | null
   // confirm-restore modal target ("restore to before this request" — irreversible)
@@ -153,10 +161,13 @@ interface ChatState {
   setConnection: (c: Connection) => void
   setBackendStatus: (s: BackendStatus) => void
   setAuth: (s: AuthState) => void
+  setBilling: (s: BillingState) => void
   setCubicEnv: (e: CubicEnvName) => void
   toggleSidebar: () => void
   setMobileDrawerOpen: (open: boolean) => void
   toggleMobileDrawer: () => void
+  setSettingsOpen: (open: boolean) => void
+  setPickerOpen: (open: boolean) => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -203,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   aeConnected: false,
   backendStatus: { phase: 'starting', install: 'ok' },
   auth: { status: 'loading', user: null },
+  billing: { status: 'loading', entitlement: null, activating: false },
   cubicEnv: 'local',
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
@@ -214,6 +226,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   liveProjectPath: null,
   pendingNewChats: [],
   ...blankConversation(),
+  settingsOpen: false,
+  pickerOpen: false,
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
   pendingRestoreConfirm: null,
@@ -223,10 +237,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setConnection: (c) => set({ connection: c }),
   setBackendStatus: (s) => set({ backendStatus: s }),
   setAuth: (s) => set({ auth: s }),
+  setBilling: (s) => set({ billing: s }),
   setCubicEnv: (e) => set({ cubicEnv: e }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setMobileDrawerOpen: (open) => set({ mobileDrawerOpen: open }),
   toggleMobileDrawer: () => set((s) => ({ mobileDrawerOpen: !s.mobileDrawerOpen })),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setPickerOpen: (open) => set({ pickerOpen: open }),
 
   handleServerMessage: (msg) => {
     const s = get()
@@ -420,8 +437,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           track('turn_error')
           break
         }
-        const retryable = event.status !== 402
-        set({ error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message, retryable }, running: false, cancelling: false, progressWord: null })
+        // 402 backstop: the proxy just authoritatively rejected the send (blocked/over-cap/past-due). The
+        // paywall (banner/takeover, driven by entitlement) is the real surface, so refetch entitlement to
+        // flip it — and SUPPRESS the transient error notice (it would double up with the banner). This is
+        // the reconciling half of "proactive state + 402 backstop"; the fresh state arrives via onBillingChanged.
+        if (event.status === 402) {
+          void window.cubic.refreshBilling()
+          set({ running: false, cancelling: false, progressWord: null })
+          track('turn_error')
+          break
+        }
+        set({ error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message, retryable: true }, running: false, cancelling: false, progressWord: null })
         track('turn_error')
         break
       }

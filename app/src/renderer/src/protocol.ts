@@ -26,8 +26,9 @@ export type AgentEvent =
   | { type: 'compaction'; status: 'start' | 'done' | 'failed'; reason?: string; summary?: string; keptTurns?: number }
   | { type: 'context_full'; message: string }
   // `status` = the proxy's HTTP status (401 signed-out / 402 not-paid-or-over-cap / 429 rate-limited);
-  // `reason` = the machine-readable 402 sub-state ('no_plan' | 'over_cap') the paywall routes on (§C-6/§D).
-  | { type: 'error'; message: string; status?: number; reason?: string }
+  // `reason` = the machine-readable 402 sub-state ('no_plan' | 'over_cap' | 'past_due') the paywall
+  // routes on (§C-6/§D).
+  | { type: 'error'; message: string; status?: number; reason?: 'no_plan' | 'over_cap' | 'past_due' | string }
   | { type: 'done'; stopReason: string }
 
 // ── Display model (one shape for history + live turn) ──
