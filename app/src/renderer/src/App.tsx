@@ -12,8 +12,11 @@ import { LoadingScreen } from './components/LoadingScreen'
 import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { AuthScreen } from './components/AuthScreen'
 import { ConfirmModal } from './components/ConfirmModal'
+import { SettingsModal } from './components/SettingsModal'
+import { PaywallTakeover, PaywallBanner, PlanPickerModal } from './components/Paywall'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
+import { isBlocked } from './billing/entitlement'
 
 /**
  * Root: wires the WS transport to the store and routes between the home landing view and the active
@@ -27,6 +30,8 @@ export function App() {
   const backendPhase = useChatStore((s) => s.backendStatus.phase)
   const authStatus = useChatStore((s) => s.auth.status)
   const cubicEnv = useChatStore((s) => s.cubicEnv)
+  const billing = useChatStore((s) => s.billing)
+  const hasChats = useChatStore((s) => s.conversations.length > 0)
   const isNarrow = useIsNarrow()
   const { crossfade } = useMotion()
 
@@ -40,11 +45,15 @@ export function App() {
     // §B auth + which env we run as (gates sign-in): snapshot first, then subscribe to live auth pushes.
     void window.cubic.getCubicEnv().then(store.setCubicEnv).catch(() => {})
     void window.cubic.getAuthState().then(store.setAuth).catch(() => {})
+    // §D billing/entitlement DISPLAY: same snapshot-then-subscribe shape (main owns the fetch).
+    void window.cubic.getBilling().then(store.setBilling).catch(() => {})
     const offBackend = window.cubic.onBackendStatus(store.setBackendStatus)
     const offAuth = window.cubic.onAuthChanged(store.setAuth)
+    const offBilling = window.cubic.onBillingChanged(store.setBilling)
     return () => {
       offBackend()
       offAuth()
+      offBilling()
     }
   }, [])
 
@@ -69,7 +78,12 @@ export function App() {
   // project (preserving Home/chat view) and raises the project-switch bar. Event-driven (no polling — a
   // repo rule).
   useEffect(() => {
-    const onFocus = (): void => sendList()
+    const onFocus = (): void => {
+      sendList()
+      // §D — also re-sync entitlement on focus: catches out-of-band changes (a cancel/upgrade from
+      // another device, or a Portal change) with no idle polling. Cheap self-read; main owns it.
+      void window.cubic.refreshBilling()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
@@ -85,6 +99,11 @@ export function App() {
     body = <AuthScreen />
   } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
+  } else if (isBlocked(billing) && !hasChats) {
+    // §D cold-start paywall — a blocked user with zero chats has nothing to browse, so the whole app
+    // becomes the paywall (the money path). A blocked user WITH chats falls through to the in-context
+    // banner below (they keep their history; only the composer is gated).
+    body = <PaywallTakeover />
   } else {
     // Home + chat share the global top bar; only the region below it differs. The two views
     // overlapping-crossfade (+subtle rise) into each other: both are absolutely positioned inside the
@@ -94,6 +113,10 @@ export function App() {
     body = (
       <div className="flex h-full flex-col">
         <TopBar />
+        {/* §D in-context limit state — blocked but the user has chats to browse (reached only when the
+            cold-start takeover above didn't fire). Persistent bar on both Home + Chat; the composer is
+            separately gated in InputBar. */}
+        {isBlocked(billing) && <PaywallBanner />}
         {/* An AE project switch surfaces as a toast (see store `conversations` handler); the now-open
             project name shows in the TopBar. The slim ProjectSwitchBar component is kept (unmounted) for
             possible future reuse. */}
@@ -140,6 +163,8 @@ export function App() {
     <div className="h-full text-white/90">
       {body}
       <ConfirmModal />
+      <SettingsModal />
+      <PlanPickerModal />
       <Toasts />
     </div>
   )
