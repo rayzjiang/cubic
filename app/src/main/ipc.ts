@@ -27,6 +27,7 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   ipcMain.handle(CHANNELS.getCubicEnv, () => config.cubicEnv)
   ipcMain.handle(CHANNELS.authSignIn, (_e, provider: AuthProvider) => auth.signIn(provider))
   ipcMain.handle(CHANNELS.authSignOut, () => auth.signOut())
+  ipcMain.handle(CHANNELS.authDeleteAccount, () => auth.deleteAccount())
   ipcMain.handle(CHANNELS.authGetState, () => auth.state)
   ipcMain.handle(CHANNELS.authGetAccessToken, () => auth.getAccessToken())
   auth.on('change', (state: AuthState) => {
@@ -40,7 +41,7 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   ipcMain.handle(CHANNELS.billingGetState, () => billing.snapshot)
   ipcMain.handle(CHANNELS.billingRefresh, () => billing.refresh())
   ipcMain.handle(CHANNELS.billingOpenCheckout, (_e, plan: PlanId) => billing.openCheckout(plan))
-  ipcMain.handle(CHANNELS.billingOpenPortal, () => billing.openPortal())
+  ipcMain.handle(CHANNELS.billingOpenPortal, (_e, flow?: 'cancel') => billing.openPortal(flow))
   billing.on('change', (state: BillingState) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.billingChanged, state)

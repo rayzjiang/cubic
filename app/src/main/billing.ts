@@ -34,6 +34,7 @@ function toEntitlement(row: Record<string, unknown>): Entitlement {
     periodStart: str(row.period_start),
     periodEnd: str(row.period_end),
     status: str(row.status) as SubscriptionStatus | null,
+    cancelAtPeriodEnd: row.cancel_at_period_end === true,
   }
 }
 
@@ -93,9 +94,10 @@ export class BillingManager extends EventEmitter {
     return this.openBrowserFlow('create-checkout', { plan })
   }
 
-  /** Open the Stripe Customer Portal (manage / switch plan / cancel / update card). */
-  async openPortal(): Promise<BillingActionResult> {
-    return this.openBrowserFlow('create-portal', {})
+  /** Open the Stripe Customer Portal (manage / switch plan / cancel / update card). `flow: 'cancel'`
+   *  deep-links straight to the cancel confirmation (P2 delete gate) instead of the Portal home. */
+  async openPortal(flow?: 'cancel'): Promise<BillingActionResult> {
+    return this.openBrowserFlow('create-portal', flow ? { flow } : {})
   }
 
   /** Clear entitlement on sign-out (the row belongs to a now-signed-out user). Keeps 'unavailable'. */

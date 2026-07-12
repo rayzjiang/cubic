@@ -11,6 +11,7 @@ export const CHANNELS = {
   authSignOut: 'cubic:auth:signOut',
   authGetState: 'cubic:auth:getState',
   authGetAccessToken: 'cubic:auth:getAccessToken',
+  authDeleteAccount: 'cubic:auth:deleteAccount',
   authChanged: 'cubic:auth:changed',
   // §D — billing/entitlement DISPLAY (main owns every Supabase/Stripe call; the renderer only reads
   // state + triggers). Distinct from the proxy GATE (Wave-2, 402). Same snapshot + `change` broadcast
@@ -111,6 +112,9 @@ export interface Entitlement {
   periodStart: string | null
   periodEnd: string | null
   status: SubscriptionStatus | null
+  /** True once cancellation is scheduled (Stripe `cancel_at_period_end`) — the row is still `active`
+   *  but won't renew. Drives the account-delete gate (P2): a scheduled cancel unlocks Delete same-day. */
+  cancelAtPeriodEnd: boolean
 }
 export interface BillingState {
   /** 'loading' — before the first fetch; 'ready' — a fetch has resolved (entitlement may be null when
@@ -142,6 +146,10 @@ export interface CubicApi {
   authSignIn(provider: AuthProvider): Promise<void>
   /** Sign out — clears the persisted session and returns to signed-out. */
   authSignOut(): Promise<void>
+  /** Permanently delete the account (P2): cancels the Stripe sub + deletes the Supabase user server-side,
+   *  then clears the local session (→ AuthScreen). `ok:false` leaves the session intact so the user can
+   *  retry. Only reachable after the client-side gate (sub must be cancelled first). */
+  deleteAccount(): Promise<BillingActionResult>
   /** Current auth state (snapshot) — for a renderer that mounts/reloads mid-run. */
   getAuthState(): Promise<AuthState>
   /** The current (fresh) Supabase access token, or null when signed out. Wave-2 proxy seam — not yet
@@ -156,8 +164,9 @@ export interface CubicApi {
   refreshBilling(): Promise<void>
   /** Open Stripe Checkout for a plan in the system browser (first paid conversion). */
   openCheckout(plan: PlanId): Promise<BillingActionResult>
-  /** Open the Stripe Customer Portal in the system browser (manage / switch plan / cancel / card). */
-  openPortal(): Promise<BillingActionResult>
+  /** Open the Stripe Customer Portal in the system browser. Default = Portal home (manage / switch plan /
+   *  cancel / card / invoices); `flow: 'cancel'` deep-links straight to the cancel confirmation. */
+  openPortal(flow?: 'cancel'): Promise<BillingActionResult>
   /** Subscribe to billing-state pushes. Returns an unsubscribe fn. */
   onBillingChanged(cb: (state: BillingState) => void): () => void
 }

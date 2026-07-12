@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { app, safeStorage, shell } from 'electron'
 import { createClient, isAuthRetryableFetchError, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import type { BackendConfig } from './config.js'
-import type { AuthProvider, AuthState, AuthStatus, AuthUser } from '../shared/ipc.js'
+import type { AuthProvider, AuthState, AuthStatus, AuthUser, BillingActionResult } from '../shared/ipc.js'
 
 // The deep link the OAuth flow returns to. Must match the redirect allow-list in the Supabase
 // dashboard (and the scheme registered via setAsDefaultProtocolClient in index.ts).
@@ -77,6 +77,8 @@ function memoryStorage(): { getItem(k: string): string | null; setItem(k: string
 
 export class AuthManager extends EventEmitter {
   private readonly client: SupabaseClient | null
+  private readonly supabaseUrl: string
+  private readonly anonKey: string
   private session: Session | null = null
   private status: AuthStatus = 'loading'
   private errorMsg: string | undefined
@@ -84,6 +86,8 @@ export class AuthManager extends EventEmitter {
 
   constructor(config: BackendConfig) {
     super()
+    this.supabaseUrl = config.supabaseUrl
+    this.anonKey = config.supabaseAnonKey
     // No Supabase configured (e.g. a local-dev machine without SUPABASE_URL) → auth is simply
     // unavailable: the app stays usable signed-out, signIn() reports a friendly error, no throw.
     this.client = config.supabaseUrl && config.supabaseAnonKey
@@ -191,6 +195,33 @@ export class AuthManager extends EventEmitter {
       }
     }
     this.clearSession('signedOut')
+  }
+
+  /** Permanently delete the account (P2). Calls the service-role `delete-account` edge function (which
+   *  cancels the Stripe subscription FIRST, then deletes the Supabase user — cascading billing rows),
+   *  then clears the local session → the renderer flips to the signed-out AuthScreen. On any failure the
+   *  session is LEFT intact (nothing was deleted, or only billing was stopped) so the user can retry. */
+  async deleteAccount(): Promise<BillingActionResult> {
+    if (!this.client) return { ok: false, error: 'unavailable' }
+    const token = await this.getAccessToken()
+    if (!token) return { ok: false, error: 'signed_out' }
+    try {
+      const res = await fetch(new URL('/functions/v1/delete-account', this.supabaseUrl), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: this.anonKey, authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      })
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (res.ok && data?.ok) {
+        this.clearSession('signedOut') // account is gone server-side → drop the local session
+        return { ok: true }
+      }
+      // Surface the edge fn's machine code (e.g. 502 cancel_failed / 500 delete_failed) so the renderer
+      // can toast the right copy; fall back to the HTTP status.
+      return { ok: false, error: data?.error ?? `http_${res.status}` }
+    } catch {
+      return { ok: false, error: 'failed' }
+    }
   }
 
   /** Cancel the refresh timer (call on app quit so no interval keeps the process busy). */

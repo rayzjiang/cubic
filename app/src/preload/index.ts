@@ -17,6 +17,7 @@ const api: CubicApi = {
   getCubicEnv: () => ipcRenderer.invoke(CHANNELS.getCubicEnv),
   authSignIn: (provider) => ipcRenderer.invoke(CHANNELS.authSignIn, provider),
   authSignOut: () => ipcRenderer.invoke(CHANNELS.authSignOut),
+  deleteAccount: () => ipcRenderer.invoke(CHANNELS.authDeleteAccount),
   getAuthState: () => ipcRenderer.invoke(CHANNELS.authGetState),
   getAccessToken: () => ipcRenderer.invoke(CHANNELS.authGetAccessToken),
   onAuthChanged: (cb) => {
@@ -27,7 +28,7 @@ const api: CubicApi = {
   getBilling: () => ipcRenderer.invoke(CHANNELS.billingGetState),
   refreshBilling: () => ipcRenderer.invoke(CHANNELS.billingRefresh),
   openCheckout: (plan) => ipcRenderer.invoke(CHANNELS.billingOpenCheckout, plan),
-  openPortal: () => ipcRenderer.invoke(CHANNELS.billingOpenPortal),
+  openPortal: (flow) => ipcRenderer.invoke(CHANNELS.billingOpenPortal, flow),
   onBillingChanged: (cb) => {
     const listener = (_e: unknown, state: BillingState): void => cb(state)
     ipcRenderer.on(CHANNELS.billingChanged, listener)
