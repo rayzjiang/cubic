@@ -5,6 +5,9 @@ import { useMotion } from '../motion'
 import { useScrollFade } from '../useScrollFade'
 import { ConversationRow } from './ConversationRow'
 import { AccountWidget } from './AccountWidget'
+import { firstName } from '../ui'
+import { homeGreeting } from '../greetings'
+import cubicLogoUrl from '../assets/cubic-logo.svg'
 
 /**
  * The landing screen (main pane on launch): a centered "Welcome back" greeting + New chat, then the
@@ -18,6 +21,7 @@ import { AccountWidget } from './AccountWidget'
 export function HomeView() {
   const conversations = useChatStore((s) => s.conversations)
   const newChat = useChatStore((s) => s.newChat)
+  const user = useChatStore((s) => s.auth.user)
   const fadeRef = useScrollFade<HTMLDivElement>()
   const { listStagger, listRow } = useMotion()
 
@@ -31,13 +35,18 @@ export function HomeView() {
     setRunList(true)
   }, [])
 
+  const fn = firstName(user)
+
   return (
     <div className="flex h-full flex-col bg-neutral-900">
       <div ref={fadeRef} className="scroll-fade min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-lg px-6 pb-8 pt-12">
-          {/* Centered welcome + primary action. */}
+          {/* Centered logo + welcome + primary action. */}
           <div className="flex flex-col items-center text-center">
-            <h1 className="text-[28px] font-semibold tracking-tight text-white/90">Welcome back</h1>
+            <img src={cubicLogoUrl} alt="" className="mb-3 h-14 w-14" />
+            <h1 className="text-[28px] font-semibold tracking-tight text-white/90">
+              {homeGreeting(fn)}
+            </h1>
             <p className="mt-1 text-sm text-white/45">Pick up a conversation or start something new.</p>
             <button
               onClick={newChat}
