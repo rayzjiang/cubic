@@ -23,7 +23,11 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
   const setSettingsOpen = useChatStore((s) => s.setSettingsOpen)
   const setPickerOpen = useChatStore((s) => s.setPickerOpen)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const learnRef = useRef<HTMLButtonElement>(null)
+  const flyoutRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ left: number; bottom: number } | null>(null)
+  // "Learn more" side-flyout (Claude-style). Contents are placeholders until §G-2/§G-4 land.
+  const [sub, setSub] = useState<{ left: number; top: number } | null>(null)
   const pill = planPillText(billing)
   // Contextual dropdown action (§D-5): a fast "Upgrade" only when the user has no active sub (→ picker →
   // Checkout). An active sub shows nothing here — plan changes live in Settings → Manage subscription.
@@ -34,7 +38,22 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
     const r = triggerRef.current?.getBoundingClientRect()
     if (r) setMenu({ left: r.left, bottom: window.innerHeight - r.top + 8 })
   }
-  const closeMenu = (): void => setMenu(null)
+  const closeMenu = (): void => {
+    setMenu(null)
+    setSub(null)
+  }
+  // Open the "Learn more" flyout to the right of its row (position from the row's own rect). Positioned
+  // flush against the row (no gap) so hovering from the row onto the flyout doesn't cross dead space.
+  const openSub = (): void => {
+    const r = learnRef.current?.getBoundingClientRect()
+    if (r) setSub({ left: r.right - 1, top: r.top })
+  }
+  // Close the flyout unless the pointer is moving between the row and the flyout (no timeout needed —
+  // relatedTarget tells us where it's headed).
+  const leaveSub = (e: { relatedTarget: EventTarget | null }): void => {
+    const to = e.relatedTarget as Node | null
+    if (!learnRef.current?.contains(to) && !flyoutRef.current?.contains(to)) setSub(null)
+  }
 
   useEffect(() => {
     if (!menu) return
@@ -42,8 +61,12 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
       if (e.key === 'Escape') closeMenu()
     }
     // The popover is position:fixed at coords derived from the trigger's rect at open-time. A window
-    // resize moves the trigger, so re-anchor to it instead of leaving the menu floating at stale coords.
-    const reposition = (): void => openMenu()
+    // resize moves the trigger, so re-anchor to it instead of leaving the menu floating at stale coords
+    // (and drop the flyout, whose coords also go stale).
+    const reposition = (): void => {
+      openMenu()
+      setSub(null)
+    }
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', reposition)
     return () => {
@@ -145,6 +168,17 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
                 <SettingsIcon />
                 Settings
               </button>
+              <button
+                ref={learnRef}
+                onClick={() => (sub ? setSub(null) : openSub())}
+                onMouseEnter={openSub}
+                onMouseLeave={leaveSub}
+                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
+              >
+                <InfoIcon />
+                Learn more
+                <ChevronRightIcon />
+              </button>
               <div className="my-1 h-px bg-white/10" />
               <button
                 onClick={() => {
@@ -156,6 +190,24 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
                 <LogOutIcon />
                 Log out
               </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {/* "Learn more" side-flyout — placeholder until §G-2/§G-4 wire the real Privacy/Terms/Help links. */}
+          <AnimatePresence>
+            {menu && sub && (
+              <motion.div
+                key="account-learn"
+                ref={flyoutRef}
+                onMouseLeave={leaveSub}
+                className="fixed z-50 w-52 rounded-xl border border-white/10 bg-neutral-800/95 py-1.5 shadow-2xl backdrop-blur"
+                style={{ left: sub.left, top: sub.top }}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.12, ease: EASE_OUT }}
+              >
+                <div className="px-3 py-2 text-[12px] text-white/40">More resources coming soon.</div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -225,6 +277,24 @@ function SparkleIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
       <path d="M8 2 L9.2 6.2 L13.5 7.5 L9.2 8.8 L8 13 L6.8 8.8 L2.5 7.5 L6.8 6.2 Z" />
+    </svg>
+  )
+}
+
+function InfoIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 7.3 V11" />
+      <circle cx="8" cy="5.2" r="0.55" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ml-auto shrink-0 text-white/40">
+      <path d="M6 3.5 L10.5 8 L6 12.5" />
     </svg>
   )
 }

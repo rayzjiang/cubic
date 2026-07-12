@@ -13,6 +13,7 @@ import { BackendBlockedScreen } from './components/BackendBlockedScreen'
 import { AuthScreen } from './components/AuthScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { SettingsModal } from './components/SettingsModal'
+import { DeleteAccountModal } from './components/DeleteAccountModal'
 import { PaywallTakeover, PaywallBanner, PlanPickerModal } from './components/Paywall'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
@@ -164,6 +165,7 @@ export function App() {
       {body}
       <ConfirmModal />
       <SettingsModal />
+      <DeleteAccountModal />
       <PlanPickerModal />
       <Toasts />
     </div>

@@ -149,6 +149,8 @@ interface ChatState {
   // modal + the plan-picker (Checkout) modal opened from the account menu / Settings / paywalls.
   settingsOpen: boolean
   pickerOpen: boolean
+  // P2 destructive account-deletion confirm modal (type-to-confirm), opened from Settings→Account.
+  deleteAccountOpen: boolean
   // transient UI: confirm-delete modal target + auto-dismissing toasts
   pendingDeleteConfirm: ConversationMeta | null
   // confirm-restore modal target ("restore to before this request" — irreversible)
@@ -168,6 +170,7 @@ interface ChatState {
   toggleMobileDrawer: () => void
   setSettingsOpen: (open: boolean) => void
   setPickerOpen: (open: boolean) => void
+  setDeleteAccountOpen: (open: boolean) => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -228,6 +231,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...blankConversation(),
   settingsOpen: false,
   pickerOpen: false,
+  deleteAccountOpen: false,
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
   pendingRestoreConfirm: null,
@@ -244,6 +248,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toggleMobileDrawer: () => set((s) => ({ mobileDrawerOpen: !s.mobileDrawerOpen })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setPickerOpen: (open) => set({ pickerOpen: open }),
+  setDeleteAccountOpen: (open) => set({ deleteAccountOpen: open }),
 
   handleServerMessage: (msg) => {
     const s = get()

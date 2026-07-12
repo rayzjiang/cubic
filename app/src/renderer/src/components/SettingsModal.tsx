@@ -4,27 +4,28 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Entitlement } from '@shared/ipc'
 import { useChatStore } from '../store'
 import { EASE_OUT } from '../motion'
-import { planPillText, usagePercent, friendlyReset, billingActionErrorCopy } from '../billing/entitlement'
+import { planPillText, usagePercent, friendlyReset, billingActionErrorCopy, canDeleteAccount } from '../billing/entitlement'
+import { planDisplayName } from '../billing/plans'
+import { DANGER_BTN, DANGER_BTN_DISABLED } from '../danger'
 
 /**
- * §D Settings — a centered modal with a left tab sidebar (General / Account / Billing / Usage / Learn
- * more), same Shell animation vocabulary as the other modals. P1 scope is a REORG of the existing
- * content into tabs (no new functionality): Account = email; Billing = plan + Manage subscription →
- * Portal + a display-only "Renews <date>"; Usage = the %-bar. General + Learn more are placeholders for
- * now (theme settings / §G-2 legal). The renderer never talks to Supabase — main owns openPortal.
+ * §D Settings — a centered modal with a left tab sidebar (General / Account / Billing / Usage), same
+ * Shell animation vocabulary as the other modals. Account = email + Delete account (P2); Billing = plan +
+ * Manage subscription → Portal + Cancel plan (direct Stripe cancel) + a display-only renew/cancel date;
+ * Usage = the %-bar. General is a placeholder. ("Learn more" moved to the account dropdown, Claude-style;
+ * its links land with §G-2/§G-4.) The renderer never talks to Supabase — main owns openPortal.
  */
 
 // Statuses whose Stripe customer can be managed in the Portal (live/recoverable sub). Everything else
 // (canceled/incomplete/null) has no manageable sub → the "Subscribe"/"Resubscribe" picker path instead.
 const PORTAL_MANAGEABLE = new Set(['active', 'trialing', 'past_due', 'unpaid', 'paused'])
 
-type TabId = 'general' | 'account' | 'billing' | 'usage' | 'learn'
+type TabId = 'general' | 'account' | 'billing' | 'usage'
 const TABS: Array<{ id: TabId; label: string; Icon: () => ReactNode }> = [
   { id: 'general', label: 'General', Icon: GearIcon },
   { id: 'account', label: 'Account', Icon: PersonIcon },
   { id: 'billing', label: 'Billing', Icon: CardIcon },
   { id: 'usage', label: 'Usage', Icon: ChartIcon },
-  { id: 'learn', label: 'Learn more', Icon: DocIcon },
 ]
 
 function Shell({ onClose, children }: { onClose: () => void; children: ReactNode }) {
@@ -38,7 +39,7 @@ function Shell({ onClose, children }: { onClose: () => void; children: ReactNode
       transition={{ duration: 0.12, ease: EASE_OUT }}
     >
       <motion.div
-        className="w-[620px] max-w-[95vw] overflow-hidden rounded-xl border border-white/10 bg-neutral-800 shadow-2xl"
+        className="w-[90vw] max-w-[1040px] overflow-hidden rounded-xl border border-white/10 bg-neutral-800 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -55,21 +56,35 @@ export function SettingsModal() {
   const open = useChatStore((s) => s.settingsOpen)
   const setOpen = useChatStore((s) => s.setSettingsOpen)
   const setPickerOpen = useChatStore((s) => s.setPickerOpen)
+  const setDeleteAccountOpen = useChatStore((s) => s.setDeleteAccountOpen)
+  const deleteAccountOpen = useChatStore((s) => s.deleteAccountOpen)
   const user = useChatStore((s) => s.auth.user)
   const billing = useChatStore((s) => s.billing)
   const addToast = useChatStore((s) => s.addToast)
   const [tab, setTab] = useState<TabId>('general')
+  const [cancelConfirm, setCancelConfirm] = useState(false)
 
-  // Land on General each time it opens (its default tab), and close on Escape.
+  // Land on General + clear the cancel confirm each time Settings opens.
+  useEffect(() => {
+    if (open) {
+      setTab('general')
+      setCancelConfirm(false)
+    }
+  }, [open])
+
+  // Escape closes the TOP-most overlay: the cancel confirm if it's up; if the Delete modal is up, let it
+  // handle its own Escape (don't also close Settings underneath); otherwise close Settings.
   useEffect(() => {
     if (!open) return
-    setTab('general')
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'Escape') return
+      if (cancelConfirm) return void setCancelConfirm(false)
+      if (deleteAccountOpen) return
+      setOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, setOpen])
+  }, [open, setOpen, cancelConfirm, deleteAccountOpen])
 
   const close = (): void => setOpen(false)
   const ent = billing.entitlement
@@ -78,6 +93,13 @@ export function SettingsModal() {
   const hasUsage = billing.status === 'ready' && !!ent && ent.allowanceCents > 0
   // Renewal-date only (display, no backend): the next-renewal date for a live/active sub.
   const renews = ent && ent.status === 'active' ? friendlyReset(ent.periodEnd) : ''
+  // A sub already scheduled to cancel at period-end shows "Cancels <date>" instead of "Renews", and its
+  // Cancel-plan button is hidden (nothing left to cancel). A live, non-cancelling sub gets the button.
+  const cancelScheduled = !!ent && ent.cancelAtPeriodEnd && (ent.status === 'active' || ent.status === 'trialing')
+  const showCancelBtn = manageable && !!ent && !ent.cancelAtPeriodEnd
+  const canDelete = canDeleteAccount(billing)
+  const cancelDate = friendlyReset(ent?.periodEnd ?? null)
+  const planName = planDisplayName(ent?.plan ?? null)
 
   // Manageable sub → Portal (manage / switch / cancel / update card). Otherwise → the plan picker
   // (Checkout) for a first/again subscribe.
@@ -91,15 +113,29 @@ export function SettingsModal() {
     setPickerOpen(true)
   }
 
+  // Deep-link straight to Stripe's cancel confirmation (no Portal-home hunting). Shared by the Billing
+  // tab's Cancel-plan button and the Account tab's delete-blocked CTA.
+  const onCancelPlan = async (): Promise<void> => {
+    const r = await window.cubic.openPortal('cancel')
+    if (!r.ok) addToast(billingActionErrorCopy(r.error))
+  }
+
+  // Open the destructive type-to-confirm modal — it renders OVER the Settings modal (z-60), Settings
+  // stays behind (it closes itself only on a successful delete → AuthScreen).
+  const onDeleteAccount = (): void => {
+    setDeleteAccountOpen(true)
+  }
+
   const active = TABS.find((t) => t.id === tab) ?? TABS[0]
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <Shell key="settings" onClose={close}>
-          <div className="flex h-[420px]">
+          <div className="flex h-[86vh] max-h-[720px]">
             {/* Tab rail */}
-            <nav className="w-44 shrink-0 space-y-0.5 border-r border-white/10 p-3">
+            <nav className="w-52 shrink-0 space-y-0.5 border-r border-white/10 p-3">
               <h2 className="px-2 pb-2 text-[13px] font-semibold text-white/90">Settings</h2>
               {TABS.map((t) => (
                 <button
@@ -116,7 +152,7 @@ export function SettingsModal() {
             </nav>
 
             {/* Content pane */}
-            <div className="relative flex-1 overflow-y-auto p-5">
+            <div className="relative flex-1 overflow-y-auto p-8">
               <button
                 onClick={close}
                 aria-label="Close"
@@ -124,11 +160,37 @@ export function SettingsModal() {
               >
                 <CloseIcon />
               </button>
+              {/* Cap the content column so rows don't stretch across the wide modal (Claude-style). */}
+              <div className="max-w-xl">
               <h3 className="mb-4 text-[15px] font-semibold text-white/90">{active.label}</h3>
 
               {tab === 'general' && <Placeholder>General settings will live here.</Placeholder>}
 
-              {tab === 'account' && <Field label="Email" value={user?.email ?? '—'} />}
+              {tab === 'account' && (
+                <div>
+                  <Field label="Email" value={user?.email ?? '—'} />
+                  {/* Delete account (P2). The button is ALWAYS visible; grayed + unclickable until any live
+                      subscription is cancelled first (flow: read this → Billing tab → Cancel plan → return
+                      here → it unlocks). */}
+                  <div className="mt-6 border-t border-white/10 pt-4">
+                    <p className="text-[13px] font-medium text-white/85">Delete account</p>
+                    <p className="mt-1 text-[12px] text-white/45">
+                      {canDelete
+                        ? 'Permanently deletes your account and everything in it. This can’t be undone.'
+                        : 'Please cancel your subscription first — you can cancel it in the Billing tab.'}
+                    </p>
+                    {canDelete ? (
+                      <button onClick={onDeleteAccount} className={`mt-3 ${DANGER_BTN}`}>
+                        Delete account
+                      </button>
+                    ) : (
+                      <button disabled aria-disabled className={`mt-3 ${DANGER_BTN_DISABLED}`}>
+                        Delete account
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {tab === 'billing' &&
                 (billing.status === 'unavailable' ? (
@@ -136,25 +198,83 @@ export function SettingsModal() {
                 ) : (
                   <div>
                     <Field label="Plan" value={pill || '—'} />
-                    {renews && <Field label="Renews" value={renews} />}
-                    <button
-                      onClick={() => void onManagePlan()}
-                      className="mt-4 rounded-md bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/15"
-                    >
-                      {manageable ? 'Manage subscription' : 'Subscribe'}
-                    </button>
+                    {cancelScheduled
+                      ? friendlyReset(ent?.periodEnd ?? null) && (
+                          <Field label="Cancels" value={friendlyReset(ent?.periodEnd ?? null)} />
+                        )
+                      : renews && <Field label="Renews" value={renews} />}
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => void onManagePlan()}
+                        className="rounded-md bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/15"
+                      >
+                        {manageable ? 'Manage subscription' : 'Subscribe'}
+                      </button>
+                      {showCancelBtn && (
+                        <button onClick={() => setCancelConfirm(true)} className={DANGER_BTN}>
+                          Cancel plan
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
 
               {tab === 'usage' &&
                 (hasUsage && ent ? <UsageBar ent={ent} /> : <Placeholder>Usage appears here once you’re on a plan.</Placeholder>)}
-
-              {tab === 'learn' && <Placeholder>Privacy Policy and Terms of Service will be available here.</Placeholder>}
+              </div>
             </div>
           </div>
         </Shell>
       )}
     </AnimatePresence>
+
+    {/* Light in-app confirm before Cancel plan opens Stripe (Stripe re-confirms on its own page). Sits
+        ABOVE the Settings modal (z-60); NOT a type-to-confirm — cancel is reversible. */}
+    <AnimatePresence>
+      {open && cancelConfirm && (
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={() => setCancelConfirm(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12, ease: EASE_OUT }}
+        >
+          <motion.div
+            className="w-96 max-w-[95vw] rounded-xl border border-white/10 bg-neutral-800 p-5 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: EASE_OUT }}
+          >
+            <h2 className="text-[15px] font-semibold text-white/90">Cancel your plan?</h2>
+            <p className="mt-2 text-[13px] text-white/55">
+              You’ll keep access until {cancelDate || 'the end of your billing period'}, then your plan
+              ends. You’ll finish the cancellation on Stripe.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setCancelConfirm(false)}
+                className="rounded-md px-3 py-1.5 text-[13px] text-white/70 hover:bg-white/10"
+              >
+                Keep your {planName} plan
+              </button>
+              <button
+                onClick={() => {
+                  setCancelConfirm(false)
+                  void onCancelPlan()
+                }}
+                className={DANGER_BTN}
+              >
+                Cancel plan
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   )
 }
 
@@ -227,17 +347,6 @@ function ChartIcon() {
       <line x1="3.5" y1="13" x2="3.5" y2="9.5" />
       <line x1="8" y1="13" x2="8" y2="5" />
       <line x1="12.5" y1="13" x2="12.5" y2="7.5" />
-    </svg>
-  )
-}
-
-function DocIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-      <path d="M4 2.5 H9.5 L12.5 5.5 V13 A0.5 0.5 0 0 1 12 13.5 H4 A0.5 0.5 0 0 1 3.5 13 V3 A0.5 0.5 0 0 1 4 2.5 Z" />
-      <path d="M9.5 2.5 V5.5 H12.5" />
-      <line x1="5.5" y1="8.5" x2="10.5" y2="8.5" />
-      <line x1="5.5" y1="11" x2="10.5" y2="11" />
     </svg>
   )
 }
