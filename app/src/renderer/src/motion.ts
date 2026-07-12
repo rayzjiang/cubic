@@ -118,5 +118,10 @@ export function useMotion() {
       : toast,
     // Send/stop morph transition: spring normally, instant snap when reduced.
     morphTransition: (reduce ? { duration: 0 } : SPRING) as Transition,
+    // Composer glide: on the first message of a new chat the composer moves from centered to
+    // pinned-bottom (ChatPane drops its flex spacers). A layout="position" on the InputBar root animates
+    // that move with EASE_EXPO — fast-then-settle, NO bounce (overshoot stays reserved for the morph).
+    // Slightly longer than DURATION.slow since the travel is large. Reduced motion snaps instantly.
+    composerGlide: (reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_EXPO }) as Transition,
   }
 }

@@ -20,7 +20,7 @@ export function InputBar() {
   const cancelSteer = useChatStore((s) => s.cancelSteer)
   const restoreDraft = useChatStore((s) => s.restoreDraft)
   const clearRestoreDraft = useChatStore((s) => s.clearRestoreDraft)
-  const { morphTransition } = useMotion()
+  const { morphTransition, composerGlide } = useMotion()
   const [draft, setDraft] = useState('')
 
   // A discarded turn (stopped before any output) returns its text to the composer — as if never sent.
@@ -67,7 +67,9 @@ export function InputBar() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-5 pb-5">
+    // layout="position" animates ONLY the center→bottom glide when ChatPane drops its spacers on the
+    // first message (size changes — textarea growth, chips — stay instant). See motion.ts composerGlide.
+    <motion.div layout="position" transition={{ layout: composerGlide }} className="mx-auto w-full max-w-2xl px-5 pb-5">
       {queuedSteers.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1.5">
           {queuedSteers.map((q) => (
@@ -125,6 +127,6 @@ export function InputBar() {
           />
         </button>
       </div>
-    </div>
+    </motion.div>
   )
 }
