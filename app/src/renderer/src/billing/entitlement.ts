@@ -1,4 +1,4 @@
-import type { BillingState, Entitlement } from '@shared/ipc'
+import type { BillingState, Entitlement, SubscriptionStatus } from '@shared/ipc'
 import { higherPlan, planDisplayName } from './plans'
 
 /**
@@ -26,6 +26,27 @@ export function paywallReason(ent: Entitlement | null): PaywallReason | null {
   if (ent.status === 'past_due') return 'past_due'
   if (ent.status === 'active' || ent.status === 'trialing') return 'over_cap'
   return 'no_plan'
+}
+
+/** Live subscription statuses that must be cancelled before the account can be deleted (P2 gate). A sub
+ *  that is already scheduled to cancel (`cancel_at_period_end`) is NOT blocking — Cubic unlocks delete
+ *  the same day (see `canDeleteAccount`). */
+const DELETE_BLOCKING_STATUSES: ReadonlySet<SubscriptionStatus> = new Set<SubscriptionStatus>([
+  'active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete',
+])
+
+/** P2 account-delete gate (Claude-style "cancel before delete"): may the signed-in user delete their
+ *  account right now? FALSE while a live sub is still running and NOT yet scheduled to cancel — they must
+ *  cancel it first. TRUE once cancellation is scheduled (`cancelAtPeriodEnd`), the sub is terminal
+ *  (canceled / incomplete_expired), there was never a sub, or billing is unavailable on this build.
+ *  (Loading → false: don't offer delete until we actually know the sub state.) */
+export function canDeleteAccount(billing: BillingState): boolean {
+  if (billing.status === 'unavailable') return true // no billing on this build → nothing to cancel
+  if (billing.status !== 'ready') return false // still loading → hold until we know
+  const ent = billing.entitlement
+  if (!ent || !ent.status) return true // never subscribed (no row / all-null)
+  if (ent.cancelAtPeriodEnd) return true // cancellation already scheduled → unlock same-day
+  return !DELETE_BLOCKING_STATUSES.has(ent.status)
 }
 
 /** Usage as a whole-number percent of the monthly allowance, rounded UP so any non-zero spend shows ≥1%

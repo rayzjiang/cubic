@@ -7,6 +7,7 @@ import {
   friendlyReset,
   planPillText,
   paywallCopy,
+  canDeleteAccount,
 } from './entitlement'
 import { higherPlan } from './plans'
 
@@ -21,6 +22,7 @@ function ent(over: Partial<Entitlement> = {}): Entitlement {
     periodStart: null,
     periodEnd: null,
     status: null,
+    cancelAtPeriodEnd: false,
     ...over,
   }
 }
@@ -115,6 +117,28 @@ describe('paywallCopy (CTA routing, decision #7)', () => {
   it('past_due → portal (update card)', () => {
     const c = paywallCopy(ent({ status: 'past_due' }))
     expect(c.cta?.action).toBe('portal')
+  })
+})
+
+describe('canDeleteAccount (P2 cancel-before-delete gate)', () => {
+  it('blocks a live, still-renewing sub → must cancel first', () => {
+    for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete'] as const) {
+      expect(canDeleteAccount(ready(ent({ status, cancelAtPeriodEnd: false })))).toBe(false)
+    }
+  })
+  it('unlocks the moment cancellation is scheduled (cancel_at_period_end)', () => {
+    expect(canDeleteAccount(ready(ent({ status: 'active', cancelAtPeriodEnd: true })))).toBe(true)
+    expect(canDeleteAccount(ready(ent({ status: 'trialing', cancelAtPeriodEnd: true })))).toBe(true)
+  })
+  it('unlocks for a terminal sub or a never-subscribed user', () => {
+    expect(canDeleteAccount(ready(ent({ status: 'canceled' })))).toBe(true)
+    expect(canDeleteAccount(ready(ent({ status: 'incomplete_expired' })))).toBe(true)
+    expect(canDeleteAccount(ready(ent({ status: null })))).toBe(true)
+    expect(canDeleteAccount(ready(null))).toBe(true)
+  })
+  it('unavailable build → allowed (no billing to cancel); loading → held', () => {
+    expect(canDeleteAccount({ status: 'unavailable', entitlement: null, activating: false })).toBe(true)
+    expect(canDeleteAccount({ status: 'loading', entitlement: null, activating: false })).toBe(false)
   })
 })
 
