@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { Entitlement } from '@shared/ipc'
@@ -7,15 +7,25 @@ import { EASE_OUT } from '../motion'
 import { planPillText, usagePercent, friendlyReset, billingActionErrorCopy } from '../billing/entitlement'
 
 /**
- * §D Settings — a centered modal (same Shell vocabulary as ConfirmModal), root-mounted and driven by the
- * `settingsOpen` store flag. P1 scope: Account (email, current plan, Manage subscription → Portal / or
- * Subscribe → picker) + the usage %-bar. Delete-account (P2) and legal/support links (§G-2/§G-4) land
- * later. The renderer never talks to Supabase — main owns openPortal/openCheckout over IPC.
+ * §D Settings — a centered modal with a left tab sidebar (General / Account / Billing / Usage / Learn
+ * more), same Shell animation vocabulary as the other modals. P1 scope is a REORG of the existing
+ * content into tabs (no new functionality): Account = email; Billing = plan + Manage subscription →
+ * Portal + a display-only "Renews <date>"; Usage = the %-bar. General + Learn more are placeholders for
+ * now (theme settings / §G-2 legal). The renderer never talks to Supabase — main owns openPortal.
  */
 
 // Statuses whose Stripe customer can be managed in the Portal (live/recoverable sub). Everything else
 // (canceled/incomplete/null) has no manageable sub → the "Subscribe"/"Resubscribe" picker path instead.
 const PORTAL_MANAGEABLE = new Set(['active', 'trialing', 'past_due', 'unpaid', 'paused'])
+
+type TabId = 'general' | 'account' | 'billing' | 'usage' | 'learn'
+const TABS: Array<{ id: TabId; label: string; Icon: () => ReactNode }> = [
+  { id: 'general', label: 'General', Icon: GearIcon },
+  { id: 'account', label: 'Account', Icon: PersonIcon },
+  { id: 'billing', label: 'Billing', Icon: CardIcon },
+  { id: 'usage', label: 'Usage', Icon: ChartIcon },
+  { id: 'learn', label: 'Learn more', Icon: DocIcon },
+]
 
 function Shell({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return (
@@ -28,7 +38,7 @@ function Shell({ onClose, children }: { onClose: () => void; children: ReactNode
       transition={{ duration: 0.12, ease: EASE_OUT }}
     >
       <motion.div
-        className="w-[440px] max-w-[92vw] rounded-xl border border-white/10 bg-neutral-800 p-5 shadow-2xl"
+        className="w-[620px] max-w-[95vw] overflow-hidden rounded-xl border border-white/10 bg-neutral-800 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -48,9 +58,12 @@ export function SettingsModal() {
   const user = useChatStore((s) => s.auth.user)
   const billing = useChatStore((s) => s.billing)
   const addToast = useChatStore((s) => s.addToast)
+  const [tab, setTab] = useState<TabId>('general')
 
+  // Land on General each time it opens (its default tab), and close on Escape.
   useEffect(() => {
     if (!open) return
+    setTab('general')
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false)
     }
@@ -63,6 +76,8 @@ export function SettingsModal() {
   const pill = planPillText(billing)
   const manageable = !!ent?.status && PORTAL_MANAGEABLE.has(ent.status)
   const hasUsage = billing.status === 'ready' && !!ent && ent.allowanceCents > 0
+  // Renewal-date only (display, no backend): the next-renewal date for a live/active sub.
+  const renews = ent && ent.status === 'active' ? friendlyReset(ent.periodEnd) : ''
 
   // Manageable sub → Portal (manage / switch / cancel / update card). Otherwise → the plan picker
   // (Checkout) for a first/again subscribe.
@@ -76,65 +91,84 @@ export function SettingsModal() {
     setPickerOpen(true)
   }
 
+  const active = TABS.find((t) => t.id === tab) ?? TABS[0]
+
   return (
     <AnimatePresence>
       {open && (
         <Shell key="settings" onClose={close}>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-white/90">Settings</h2>
-            <button onClick={close} aria-label="Close" className="rounded-md p-1 text-white/45 hover:bg-white/10 hover:text-white/80">
-              <CloseIcon />
-            </button>
+          <div className="flex h-[420px]">
+            {/* Tab rail */}
+            <nav className="w-44 shrink-0 space-y-0.5 border-r border-white/10 p-3">
+              <h2 className="px-2 pb-2 text-[13px] font-semibold text-white/90">Settings</h2>
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] ${
+                    t.id === tab ? 'bg-white/10 text-white/90' : 'text-white/55 hover:bg-white/5 hover:text-white/80'
+                  }`}
+                >
+                  <t.Icon />
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+
+            {/* Content pane */}
+            <div className="relative flex-1 overflow-y-auto p-5">
+              <button
+                onClick={close}
+                aria-label="Close"
+                className="absolute right-4 top-4 rounded-md p-1 text-white/45 hover:bg-white/10 hover:text-white/80"
+              >
+                <CloseIcon />
+              </button>
+              <h3 className="mb-4 text-[15px] font-semibold text-white/90">{active.label}</h3>
+
+              {tab === 'general' && <Placeholder>General settings will live here.</Placeholder>}
+
+              {tab === 'account' && <Field label="Email" value={user?.email ?? '—'} />}
+
+              {tab === 'billing' &&
+                (billing.status === 'unavailable' ? (
+                  <Placeholder>Billing isn’t available on this build.</Placeholder>
+                ) : (
+                  <div>
+                    <Field label="Plan" value={pill || '—'} />
+                    {renews && <Field label="Renews" value={renews} />}
+                    <button
+                      onClick={() => void onManagePlan()}
+                      className="mt-4 rounded-md bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/15"
+                    >
+                      {manageable ? 'Manage subscription' : 'Subscribe'}
+                    </button>
+                  </div>
+                ))}
+
+              {tab === 'usage' &&
+                (hasUsage && ent ? <UsageBar ent={ent} /> : <Placeholder>Usage appears here once you’re on a plan.</Placeholder>)}
+
+              {tab === 'learn' && <Placeholder>Privacy Policy and Terms of Service will be available here.</Placeholder>}
+            </div>
           </div>
-
-          {/* Account */}
-          <Section title="Account">
-            <Row label="Email" value={user?.email ?? '—'} />
-            {billing.status !== 'unavailable' && (
-              <Row
-                label="Plan"
-                value={pill || '—'}
-                action={{ label: manageable ? 'Manage subscription' : 'Subscribe', onClick: () => void onManagePlan() }}
-              />
-            )}
-          </Section>
-
-          {/* Usage */}
-          {hasUsage && ent && (
-            <Section title="Usage">
-              <UsageBar ent={ent} />
-            </Section>
-          )}
         </Shell>
       )}
     </AnimatePresence>
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mt-4 first:mt-0">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-white/35">{title}</h3>
-      <div className="rounded-lg border border-white/10 bg-white/[0.03]">{children}</div>
+    <div className="flex items-center gap-3 border-b border-white/10 py-2.5 last:border-0">
+      <span className="text-[13px] text-white/45">{label}</span>
+      <span className="ml-auto truncate text-[13px] text-white/85">{value}</span>
     </div>
   )
 }
 
-function Row({ label, value, action }: { label: string; value: string; action?: { label: string; onClick: () => void } }) {
-  return (
-    <div className="flex items-center gap-3 px-3 py-2.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-white/10">
-      <span className="text-[13px] text-white/45">{label}</span>
-      <span className="ml-auto truncate text-[13px] text-white/85">{value}</span>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="shrink-0 rounded-md bg-white/10 px-2.5 py-1 text-[12px] font-medium text-white/85 hover:bg-white/15"
-        >
-          {action.label}
-        </button>
-      )}
-    </div>
-  )
+function Placeholder({ children }: { children: ReactNode }) {
+  return <p className="text-[13px] text-white/40">{children}</p>
 }
 
 /** The billing model's headline meter: percent of the monthly allowance used + the reset date. Never
@@ -144,7 +178,7 @@ function UsageBar({ ent }: { ent: Entitlement }) {
   const reset = friendlyReset(ent.periodEnd)
   const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-white/70'
   return (
-    <div className="px-3 py-3">
+    <div>
       <div className="flex items-center justify-between text-[12px] text-white/55">
         <span>Usage this month</span>
         <span className="tabular-nums text-white/80">{pct}%</span>
@@ -154,6 +188,57 @@ function UsageBar({ ent }: { ent: Entitlement }) {
       </div>
       {reset && <p className="mt-1.5 text-[11px] text-white/40">Resets {reset}</p>}
     </div>
+  )
+}
+
+// ── Tab icons (stroke style, ~15px) ──
+
+function GearIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.281Z" />
+      <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    </svg>
+  )
+}
+
+function PersonIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <circle cx="8" cy="5.5" r="2.5" />
+      <path d="M3.5 13 C3.5 10.5 5.5 9.5 8 9.5 C10.5 9.5 12.5 10.5 12.5 13" />
+    </svg>
+  )
+}
+
+function CardIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+      <line x1="2" y1="6.5" x2="14" y2="6.5" />
+      <line x1="4.5" y1="10" x2="7.5" y2="10" />
+    </svg>
+  )
+}
+
+function ChartIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <line x1="3.5" y1="13" x2="3.5" y2="9.5" />
+      <line x1="8" y1="13" x2="8" y2="5" />
+      <line x1="12.5" y1="13" x2="12.5" y2="7.5" />
+    </svg>
+  )
+}
+
+function DocIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <path d="M4 2.5 H9.5 L12.5 5.5 V13 A0.5 0.5 0 0 1 12 13.5 H4 A0.5 0.5 0 0 1 3.5 13 V3 A0.5 0.5 0 0 1 4 2.5 Z" />
+      <path d="M9.5 2.5 V5.5 H12.5" />
+      <line x1="5.5" y1="8.5" x2="10.5" y2="8.5" />
+      <line x1="5.5" y1="11" x2="10.5" y2="11" />
+    </svg>
   )
 }
 
