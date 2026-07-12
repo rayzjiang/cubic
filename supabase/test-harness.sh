@@ -175,6 +175,40 @@ end \$\$;
 SQL
   printf '  \033[32mPASS\033[0m cross-user read denied\n'
 
+  # ── P2 (account deletion): cancel_at_period_end surfaced + delete cascade + webhook hardening ──
+  # These run LAST because the final step deletes the seed auth user (db reset restores it next run).
+  say "P2 get_entitlement now returns cancel_at_period_end (drives the delete gate)"
+  psql_do "select public.apply_subscription('$UID_TEST','sub_test','cus_test','active','price_pro_v2_test','pro',
+            now() - interval '5 days', now() + interval '25 days', TRUE, to_timestamp(11000));"
+  assert "cancel_at_period_end=true surfaced"  "select cancel_at_period_end from public.get_entitlement('$UID_TEST');"
+  psql_do "select public.apply_subscription('$UID_TEST','sub_test','cus_test','active','price_pro_v2_test','pro',
+            now() - interval '5 days', now() + interval '25 days', FALSE, to_timestamp(12000));"
+  assert "cancel_at_period_end=false surfaced" "select not cancel_at_period_end from public.get_entitlement('$UID_TEST');"
+
+  say "P2 delete-account CASCADE: deleting the auth user clears subscriptions + usage"
+  psql_do "insert into public.usage (user_id, period_start, spent_cents)
+           values ('$UID_TEST', now() - interval '1 day', 123)
+           on conflict (user_id,period_start) do update set spent_cents=excluded.spent_cents;"
+  assert "sub row exists pre-delete"    "select count(*)=1 from public.subscriptions where user_id='$UID_TEST';"
+  assert "usage row exists pre-delete"  "select count(*)=1 from public.usage where user_id='$UID_TEST';"
+  psql_do "delete from auth.users where id='$UID_TEST';"
+  assert "subscriptions cascaded to 0"  "select count(*)=0 from public.subscriptions where user_id='$UID_TEST';"
+  assert "usage cascaded to 0"          "select count(*)=0 from public.usage where user_id='$UID_TEST';"
+
+  say "P2 webhook hardening: apply_subscription for a DELETED user raises FK 23503 (the case the webhook no-ops on)"
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -qtAX <<SQL
+do \$\$
+begin
+  begin
+    perform public.apply_subscription('$UID_TEST','sub_test','cus_test','canceled','price_pro_v2_test','pro',
+      now() - interval '5 days', now() + interval '25 days', false, to_timestamp(13000));
+    raise exception 'HARDENING HOLE: apply_subscription for a deleted user did NOT raise';
+  exception when foreign_key_violation then null;  -- expected 23503 -> stripe-webhook catches this and no-ops (200)
+  end;
+end \$\$;
+SQL
+  printf '  \033[32mPASS\033[0m deleted-user apply raises 23503 (webhook no-ops on this)\n'
+
   printf '\n\033[32mALL OFFLINE CHECKS PASSED.\033[0m\n'
 }
 
@@ -242,6 +276,19 @@ After paying (or `stripe trigger customer.subscription.created`), assert the syn
 
 Then test the portal:
   curl -s -X POST localhost:54321/functions/v1/create-portal -H "Authorization: Bearer $JWT" | jq .
+
+P2 direct "Cancel plan" deep link (flow_data) — the URL should open the cancel flow, not the Portal home:
+  curl -s -X POST localhost:54321/functions/v1/create-portal -H "Authorization: Bearer $JWT" \
+       -H "Content-Type: application/json" -d '{"flow":"cancel"}' | jq .
+
+P2 account deletion (with a real sub synced, rows present):
+  curl -s -X POST localhost:54321/functions/v1/delete-account -H "Authorization: Bearer $JWT" | jq .
+  # expect {"ok":true}. Then the billing rows are gone (cascade) and the user can't be fetched:
+  psql "$SUPABASE_DB_URL" -c "select count(*) from public.subscriptions where user_id='00000000-0000-0000-0000-0000000b1111';"  # 0
+  psql "$SUPABASE_DB_URL" -c "select count(*) from public.usage         where user_id='00000000-0000-0000-0000-0000000b1111';"  # 0
+  # Deleting cancels the Stripe sub, which fires a real customer.subscription.deleted webhook AFTER the
+  # user is gone: the stripe listen (B) terminal must show 200 (NOT 500), and functions-serve (A) logs
+  #   "subscription event for deleted user ... acknowledging without applying".
 EOF
 }
 
