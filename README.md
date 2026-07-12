@@ -136,9 +136,9 @@ npm run dev
 - Note: No proxy URL set means it goes to anthropic directly
 ```bash
 CUBIC_ENV=prod \
-CUBIC_PROXY_URL=https://<your-worker>.workers.dev \
+CUBIC_PROXY_URL=https://cubic-proxy.raymondj.workers.dev \
 SUPABASE_URL=https://igdbwihwvksraoqghswr.supabase.co \
-SUPABASE_ANON_KEY=<prod anon key> \
+SUPABASE_ANON_KEY=<anon_key> \
 npm run dev
 ```
 
