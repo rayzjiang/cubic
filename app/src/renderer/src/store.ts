@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AuthState, BackendStatus, CubicEnvName } from '@shared/ipc'
+import type { AuthState, BackendStatus, BillingState, CubicEnvName } from '@shared/ipc'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
@@ -98,6 +98,10 @@ interface ChatState {
   // §B auth state (status + user), pushed by main over IPC. Distinct from billing/entitlement — there
   // is no plan here (that lands with WT-BILLING). The renderer is presentational; main owns the session.
   auth: AuthState
+  // §D billing/entitlement DISPLAY state (plan + usage + status), pushed by main over IPC. Drives the
+  // account pill, the Settings usage bar, and the paywall/limit states. The enforcement GATE is the
+  // proxy (a 402 on a blocked send) — this is the display side. Main owns every Supabase/Stripe call.
+  billing: BillingState
   // Which deployment we run as — gates sign-in (prod blocks until signed in; local never blocks).
   cubicEnv: CubicEnvName
   view: 'home' | 'chat'
@@ -134,13 +138,20 @@ interface ChatState {
   progressWord: string | null
   compacting: boolean
   contextFull: { message: string } | null
-  // `retryable` = false for 401/402 (signing in / subscribing is the fix, not resending) → ErrorNotice
-  // hides "Try again". Everything else (busy/network/timeout/upstream) stays retryable.
-  error: { friendly: string; raw: string; retryable: boolean } | null
+  // A failed turn's notice: the plain-English message + raw detail for the "Details" expander. Recovery
+  // is the composer — the failed message's text is returned to the input box (restoreDraft) — so there
+  // is no "Try again" button and no retryable flag.
+  error: { friendly: string; raw: string } | null
   lastUserText: string | null
   queuedSteers: { id: string; text: string }[]
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
   pendingDeletes: Set<string>
+  // §D billing UI overlays (root-mounted, store-driven like the confirm modals): the account Settings
+  // modal + the plan-picker (Checkout) modal opened from the account menu / Settings / paywalls.
+  settingsOpen: boolean
+  pickerOpen: boolean
+  // P2 destructive account-deletion confirm modal (type-to-confirm), opened from Settings→Account.
+  deleteAccountOpen: boolean
   // transient UI: confirm-delete modal target + auto-dismissing toasts
   pendingDeleteConfirm: ConversationMeta | null
   // confirm-restore modal target ("restore to before this request" — irreversible)
@@ -153,10 +164,14 @@ interface ChatState {
   setConnection: (c: Connection) => void
   setBackendStatus: (s: BackendStatus) => void
   setAuth: (s: AuthState) => void
+  setBilling: (s: BillingState) => void
   setCubicEnv: (e: CubicEnvName) => void
   toggleSidebar: () => void
   setMobileDrawerOpen: (open: boolean) => void
   toggleMobileDrawer: () => void
+  setSettingsOpen: (open: boolean) => void
+  setPickerOpen: (open: boolean) => void
+  setDeleteAccountOpen: (open: boolean) => void
   handleServerMessage: (msg: ServerMessage) => void
   foldEvent: (event: AgentEvent) => void
   reattachActive: () => void
@@ -177,7 +192,6 @@ interface ChatState {
   addToast: (text: string) => void
   dismissToast: (id: string) => void
   clearRestoreDraft: () => void
-  retry: () => void
   dismissError: () => void
 }
 
@@ -198,11 +212,30 @@ const blankConversation = (): Pick<
   queuedSteers: [],
 })
 
+/**
+ * A turn that ended WITHOUT committing (a generic/401/402 error, a context_full, or a discarded stop)
+ * persisted nothing, so treat it as never-sent: pull the optimistic user bubble back out of the
+ * transcript, return its text to the composer (restoreDraft), drop the client-owned pending sidebar
+ * row, and clear run state. Mirrors Claude/ChatGPT — a failed message goes back to the input box
+ * instead of leaving a stuck bubble or an undeletable "ghost" row. No sendList(): nothing to refresh.
+ */
+function discardUncommittedTurn(s: ChatState): Partial<ChatState> {
+  return {
+    items: s.items[s.items.length - 1]?.kind === 'user' ? s.items.slice(0, -1) : s.items,
+    restoreDraft: s.lastUserText,
+    running: false,
+    cancelling: false,
+    progressWord: null,
+    pendingNewChats: s.pendingNewChats.filter((p) => p.id !== s.sessionId),
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
   aeConnected: false,
   backendStatus: { phase: 'starting', install: 'ok' },
   auth: { status: 'loading', user: null },
+  billing: { status: 'loading', entitlement: null, activating: false },
   cubicEnv: 'local',
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
@@ -214,6 +247,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   liveProjectPath: null,
   pendingNewChats: [],
   ...blankConversation(),
+  settingsOpen: false,
+  pickerOpen: false,
+  deleteAccountOpen: false,
   pendingDeletes: new Set(),
   pendingDeleteConfirm: null,
   pendingRestoreConfirm: null,
@@ -223,10 +259,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setConnection: (c) => set({ connection: c }),
   setBackendStatus: (s) => set({ backendStatus: s }),
   setAuth: (s) => set({ auth: s }),
+  setBilling: (s) => set({ billing: s }),
   setCubicEnv: (e) => set({ cubicEnv: e }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setMobileDrawerOpen: (open) => set({ mobileDrawerOpen: open }),
   toggleMobileDrawer: () => set((s) => ({ mobileDrawerOpen: !s.mobileDrawerOpen })),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setPickerOpen: (open) => set({ pickerOpen: open }),
+  setDeleteAccountOpen: (open) => set({ deleteAccountOpen: open }),
 
   handleServerMessage: (msg) => {
     const s = get()
@@ -397,49 +437,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break
       }
       case 'context_full':
-        set({ contextFull: { message: event.message }, running: false, cancelling: false, progressWord: null })
+        // Context is full — surface the card, and (like any non-commit outcome) return the message to
+        // the composer + drop the pending row so a first-message context_full never strands a chat.
+        set({ contextFull: { message: event.message }, ...discardUncommittedTurn(s) })
         break
       case 'error': {
+        // Every error path discards the uncommitted turn: the failed message's text returns to the
+        // composer and its client-owned pending sidebar row is dropped (see discardUncommittedTurn), so
+        // a failed message never strands a "ghost" chat — you retry by editing + re-sending in the box.
         // A 401 DURING a turn is usually just a mid-turn token expiry (#4B), not a real sign-out. Ask
-        // main for a token: a refresh that still yields one means the session is valid → this was
-        // recoverable, so make it retryable ("try again" resumes with the fresh token, completed steps
-        // already saved). Only a definitive sign-out (refresh returns nothing) keeps "please sign in
-        // again". Other statuses: 402 (subscribe/upgrade) isn't fixable by resending; everything else is.
+        // main for a token: a refresh that still yields one means the session is valid (recoverable);
+        // only a definitive sign-out (refresh returns nothing) keeps the "please sign in again" copy.
         if (event.status === 401) {
-          set({ running: false, cancelling: false, progressWord: null })
+          set({ ...discardUncommittedTurn(s) })
           void window.cubic.getAccessToken().catch(() => null).then((token) => {
             const recovered = !!token
             set({
               error: {
-                friendly: recovered ? 'That got interrupted — try again.' : mapError(event.message, 401, event.reason),
+                friendly: recovered ? 'That got interrupted — your message is back in the box.' : mapError(event.message, 401, event.reason),
                 raw: event.message,
-                retryable: recovered,
               },
             })
           })
           track('turn_error')
           break
         }
-        const retryable = event.status !== 402
-        set({ error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message, retryable }, running: false, cancelling: false, progressWord: null })
+        // 402 backstop: the proxy just authoritatively rejected the send (blocked/over-cap/past-due). The
+        // paywall (banner/takeover, driven by entitlement) is the real surface, so refetch entitlement to
+        // flip it — and SUPPRESS the transient error notice (it would double up with the banner). The
+        // discard still runs, so the message returns to the composer, ready to send after they subscribe.
+        if (event.status === 402) {
+          void window.cubic.refreshBilling()
+          set({ ...discardUncommittedTurn(s) })
+          track('turn_error')
+          break
+        }
+        set({ ...discardUncommittedTurn(s), error: { friendly: mapError(event.message, event.status, event.reason), raw: event.message } })
         track('turn_error')
         break
       }
       case 'cancelled':
         if (event.discarded) {
-          // Stopped before any output → throw the turn away: pull the optimistic user prompt back out
-          // of the transcript and return its text to the composer (as if never sent). No divider, and
-          // nothing was persisted so the sidebar doesn't need a refresh.
-          set({
-            items: s.items[s.items.length - 1]?.kind === 'user' ? s.items.slice(0, -1) : s.items,
-            restoreDraft: s.lastUserText,
-            running: false,
-            cancelling: false,
-            progressWord: null,
-            // Stopped before any output on a brand-new chat → the message is un-sent, so drop its
-            // client-owned sidebar row (nothing ran or persisted).
-            pendingNewChats: s.pendingNewChats.filter((p) => p.id !== s.sessionId),
-          })
+          // Stopped before any output → throw the turn away exactly like an errored turn: message text
+          // back to the composer, pending row dropped, nothing persisted (see discardUncommittedTurn).
+          set({ ...discardUncommittedTurn(s) })
           break
         }
         // The authoritative stop: drop the muted "Stopped" divider into the transcript (mirrors the
@@ -598,14 +639,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addToast: (text) => set((s) => ({ toasts: [...s.toasts, { id: crypto.randomUUID(), text }] })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   clearRestoreDraft: () => set({ restoreDraft: null }),
-
-  retry: () => {
-    const s = get()
-    if (!s.lastUserText || !s.sessionId) return
-    set({ error: null })
-    track('message_sent')
-    void sendUserChat(s.sessionId, s.lastUserText) // resend without duplicating the user bubble
-  },
 
   dismissError: () => set({ error: null }),
 }))

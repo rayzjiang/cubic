@@ -10,6 +10,9 @@ import { ToolActionRow } from './ToolActionRow'
 import { ProgressIndicator } from './ProgressIndicator'
 import { CompactionPill } from './CompactionPill'
 import { CompactionSummary } from './CompactionSummary'
+import { firstName } from '../ui'
+import { chatGreeting } from '../greetings'
+import cubicLogoUrl from '../assets/cubic-logo.svg'
 
 // Distance from the bottom (px) that still counts as "pinned" — within this, stick-to-bottom stays on.
 const PIN_THRESHOLD = 48
@@ -34,6 +37,7 @@ export function MessageList() {
   const progressWord = useChatStore((s) => s.progressWord)
   const compacting = useChatStore((s) => s.compacting)
   const sessionId = useChatStore((s) => s.sessionId)
+  const user = useChatStore((s) => s.auth.user)
   const { messageEntrance } = useMotion()
 
   const fadeRef = useScrollFade<HTMLDivElement>()
@@ -138,9 +142,16 @@ export function MessageList() {
   }
 
   if (items.length === 0 && !running && !compacting) {
+    const fn = firstName(user)
+    // Natural height (NOT flex-1): ChatPane sandwiches this greeting + the composer between equal flex
+    // spacers, so the pair centers vertically as one group (Claude-style new-chat screen). pb gives the
+    // gap down to the composer. Once a turn starts, the transcript path below takes over (flex-1 fill).
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-        <h2 className="text-xl font-medium text-white/70">What are we building today?</h2>
+      <div className="flex flex-col items-center px-6 pb-6 text-center">
+        <img src={cubicLogoUrl} alt="" className="mb-4 h-14 w-14" />
+        <h2 className="text-xl font-medium text-white/70">
+          {chatGreeting(fn)}
+        </h2>
         <p className="mt-2 max-w-sm text-sm text-white/35">Describe a look, a motion, or an edit — Cubic makes it for you in After Effects.</p>
       </div>
     )

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { useMotion } from '../motion'
+import { isBlocked } from '../billing/entitlement'
 
 /**
  * Composer. Enter or the send button (↑) submit — both call submit(). Shift+Enter newlines. Sending
@@ -11,6 +12,7 @@ import { useMotion } from '../motion'
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
+  const blocked = useChatStore((s) => isBlocked(s.billing))
   const isEmpty = useChatStore((s) => s.items.length === 0)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const cancelRun = useChatStore((s) => s.cancelRun)
@@ -18,7 +20,7 @@ export function InputBar() {
   const cancelSteer = useChatStore((s) => s.cancelSteer)
   const restoreDraft = useChatStore((s) => s.restoreDraft)
   const clearRestoreDraft = useChatStore((s) => s.clearRestoreDraft)
-  const { morphTransition } = useMotion()
+  const { morphTransition, composerGlide } = useMotion()
   const [draft, setDraft] = useState('')
 
   // A discarded turn (stopped before any output) returns its text to the composer — as if never sent.
@@ -43,13 +45,18 @@ export function InputBar() {
     return () => window.removeEventListener('keydown', onKey)
   }, [cancelRun])
 
-  const placeholder = running
-    ? 'Add a follow-up — Cubic picks it up as it works…'
-    : isEmpty
-      ? 'What are we building today?'
-      : 'Send a message…'
+  const placeholder = blocked
+    ? 'Subscribe to keep chatting with Cubic…'
+    : running
+      ? 'Add a follow-up — Cubic picks it up as it works…'
+      : isEmpty
+        ? 'What are we building today?'
+        : 'Send a message…'
 
   const submit = () => {
+    // Blocked (no plan / over cap / past due) → the paywall banner above owns the CTA; the composer is
+    // inert (the proxy would 402 the send anyway).
+    if (blocked) return
     const text = draft.trim()
     if (!text) return
     // A stop is still finalizing on the backend (sub-second). Hold the send — and keep the draft —
@@ -60,7 +67,9 @@ export function InputBar() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-5 pb-5">
+    // layout="position" animates ONLY the center→bottom glide when ChatPane drops its spacers on the
+    // first message (size changes — textarea growth, chips — stay instant). See motion.ts composerGlide.
+    <motion.div layout="position" transition={{ layout: composerGlide }} className="mx-auto w-full max-w-2xl px-5 pb-5">
       {queuedSteers.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1.5">
           {queuedSteers.map((q) => (
@@ -85,14 +94,15 @@ export function InputBar() {
             }
           }}
           rows={1}
+          disabled={blocked}
           placeholder={placeholder}
-          className="field-sizing-content max-h-[33vh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30"
+          className="field-sizing-content max-h-[33vh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-[14px] leading-relaxed text-white/90 outline-none placeholder:text-white/30 disabled:cursor-not-allowed"
         />
         {/* One persistent square shell — the icon crossfades between send (↑) and stop (■) so both
             sit in the exact same spot and the swap reads as a smooth morph (§D). */}
         <button
           onClick={running ? cancelRun : submit}
-          disabled={!running && !draft.trim()}
+          disabled={blocked || (!running && !draft.trim())}
           className="relative inline-flex h-7 w-7 shrink-0 self-end items-center justify-center rounded-lg bg-white text-neutral-900 transition-colors duration-200 hover:bg-white/90 disabled:bg-white/15 disabled:text-white/40"
           aria-label={running ? 'Stop' : 'Send'}
           title={running ? 'Stop (Esc)' : 'Send (Enter)'}
@@ -117,6 +127,6 @@ export function InputBar() {
           />
         </button>
       </div>
-    </div>
+    </motion.div>
   )
 }

@@ -11,8 +11,8 @@
 --   max -> $89/mo  price, allowance 5000 cost-cents ($50 usage cap)
 -- allowance_cents is the internal AI-cost budget (estimateCost() x 100), not the price.
 
-select public.set_active_plan_version('pro', 'price_1TmNwjLVfKmA9khSq1IZJ8VI', 1500);
-select public.set_active_plan_version('max', 'price_1TmNx0LVfKmA9khSOJJIsD7F', 5000);
+select public.set_active_plan_version('pro', 'price_1TsOlvLVfKmA9khS877OB9r8', 1500);
+select public.set_active_plan_version('max', 'price_1TsOm6LVfKmA9khS3IJ2I9io', 5000);
 
 -- Drop the now-inactive placeholder rows so `plans` holds exactly the two real rows. The
 -- subscriptions.price_id -> plans FK was dropped in 20260705000001, so no row references

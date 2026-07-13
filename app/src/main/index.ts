@@ -9,7 +9,9 @@ import { buildAppMenu } from './menu.js'
 import { registerIpc } from './ipc.js'
 import { BackendSupervisor } from './backend.js'
 import { AuthManager } from './auth.js'
+import { BillingManager } from './billing.js'
 import { provisionBridge } from './installBridge.js'
+import type { AuthState, AuthStatus } from '../shared/ipc.js'
 
 /**
  * DEV-ONLY: ensure the open AE panel AND the running Node backend match the source. The panel bakes
@@ -51,6 +53,16 @@ if (!app.requestSingleInstanceLock()) {
   const config = loadConfig()
   const backend = new BackendSupervisor(config)
   const auth = new AuthManager(config)
+  // §D billing DISPLAY — reads entitlement with the user's own JWT (via auth.getAccessToken) + opens
+  // Checkout/Portal. Refetch on the sign-in transition, clear on sign-out (mirrors how auth drives the
+  // renderer). A transition guard avoids redundant refetches on the many intermediate auth `change`s.
+  const billing = new BillingManager(config, () => auth.getAccessToken())
+  let lastAuthStatus: AuthStatus | null = null
+  auth.on('change', (state: AuthState) => {
+    if (state.status === 'signedIn' && lastAuthStatus !== 'signedIn') void billing.refresh()
+    else if (state.status === 'signedOut') billing.clear()
+    lastAuthStatus = state.status
+  })
 
   // Backend crash recovery + connection-state UX now live in the supervisor (§B6): it bounded-restarts
   // and emits `status` (broadcast to the renderer by registerIpc). Keep only spawn-error logging here.
@@ -68,6 +80,10 @@ if (!app.requestSingleInstanceLock()) {
   // macOS, where open-url fires before whenReady). Buffer it until auth is ready, then flush.
   let authReady = false
   let pendingDeepLink: string | null = null
+  // Billing returns (cubic://billing/*) can likewise arrive before the managers are ready on a cold
+  // start launched BY the deep link — buffer + flush the same way auth does.
+  let billingReady = false
+  let pendingBillingLink: string | null = null
   const focusMainWindow = (): void => {
     const [win] = BrowserWindow.getAllWindows()
     if (win) {
@@ -81,6 +97,9 @@ if (!app.requestSingleInstanceLock()) {
     if (url.startsWith('cubic://auth')) {
       if (authReady) void auth.handleCallback(url)
       else pendingDeepLink = url
+    } else if (url.startsWith('cubic://billing')) {
+      if (billingReady) void billing.handleReturn(url)
+      else pendingBillingLink = url
     }
   }
 
@@ -102,7 +121,7 @@ if (!app.requestSingleInstanceLock()) {
     // §B5 — provision the AE bridge (idempotent, content-hash gated) BEFORE the backend/UI come up.
     // Never throws; a failure only degrades AE connectivity (the status dot), never blocks launch.
     const install = await provisionBridge()
-    registerIpc(config, backend, auth) // subscribe to status/auth before markInstall/start so pushes broadcast
+    registerIpc(config, backend, auth, billing) // subscribe to status/auth/billing before markInstall/start so pushes broadcast
     backend.markInstall(install)
     buildAppMenu()
     backend.start()
@@ -122,6 +141,13 @@ if (!app.requestSingleInstanceLock()) {
       pendingDeepLink = null
       void auth.handleCallback(url)
     }
+    // §D — billing is ready as soon as the window exists (no async init); flush any buffered return.
+    billingReady = true
+    if (pendingBillingLink) {
+      const url = pendingBillingLink
+      pendingBillingLink = null
+      void billing.handleReturn(url)
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -132,6 +158,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     backend.stop()
     auth.dispose() // cancel the token-refresh timer so it doesn't keep the process busy
+    billing.dispose() // cancel any in-flight billing return poll
     preflightChild?.kill() // don't leave a dev preflight waiter polling after the app quits
   })
 

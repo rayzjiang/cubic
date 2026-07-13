@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useChatStore } from '../store'
+import { DANGER_BTN } from '../danger'
 
 /**
  * Centered confirmation modal for irreversible actions. Renders the restore-rewind confirm or the
@@ -58,7 +59,7 @@ export function ConfirmModal() {
           <button onClick={cancelDelete} className="rounded-md px-3 py-1.5 text-[13px] text-white/70 hover:bg-white/10">
             Cancel
           </button>
-          <button onClick={confirmDelete} className="rounded-md bg-red-500/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-red-500">
+          <button onClick={confirmDelete} className={DANGER_BTN}>
             Delete
           </button>
         </div>

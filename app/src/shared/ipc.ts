@@ -11,7 +11,16 @@ export const CHANNELS = {
   authSignOut: 'cubic:auth:signOut',
   authGetState: 'cubic:auth:getState',
   authGetAccessToken: 'cubic:auth:getAccessToken',
+  authDeleteAccount: 'cubic:auth:deleteAccount',
   authChanged: 'cubic:auth:changed',
+  // §D — billing/entitlement DISPLAY (main owns every Supabase/Stripe call; the renderer only reads
+  // state + triggers). Distinct from the proxy GATE (Wave-2, 402). Same snapshot + `change` broadcast
+  // shape as auth.
+  billingGetState: 'cubic:billing:getState',
+  billingRefresh: 'cubic:billing:refresh',
+  billingOpenCheckout: 'cubic:billing:openCheckout',
+  billingOpenPortal: 'cubic:billing:openPortal',
+  billingChanged: 'cubic:billing:changed',
 } as const
 
 /**
@@ -78,6 +87,50 @@ export interface AuthState {
   error?: string
 }
 
+/**
+ * Billing/entitlement (§D), owned by the main-process BillingManager and pushed to the renderer over IPC
+ * (same snapshot + broadcast shape as AuthState). This is the DISPLAY side (plan tag, usage %-bar,
+ * paywall) — the enforcement GATE lives in the Wave-2 proxy (a 402 on a blocked send). Main reads the
+ * `get_entitlement` RPC with the user's own JWT (self-read, IDOR-guarded to their row) and opens
+ * Checkout/Portal; the renderer never touches Supabase/Stripe.
+ */
+export type PlanId = 'pro' | 'max'
+/** The 8 Stripe-mirrored statuses (`public.subscription_status`); null = never subscribed (no row). */
+export type SubscriptionStatus =
+  | 'incomplete' | 'incomplete_expired' | 'trialing' | 'active'
+  | 'past_due' | 'canceled' | 'unpaid' | 'paused'
+/** The `get_entitlement` row, mapped to camelCase (mirrors proxy/src/entitlement.ts). `entitled` = the
+ *  proxy's own gate predicate (spent < allowance AND a live paid state); `status` is the REAL row status
+ *  even when blocked, so the paywall can route (past_due vs over-cap vs no-plan). */
+export interface Entitlement {
+  entitled: boolean
+  /** 'pro' | 'max' | 'unknown' (unmapped price) | null (never subscribed). */
+  plan: string | null
+  priceId: string | null
+  allowanceCents: number
+  spentCents: number
+  periodStart: string | null
+  periodEnd: string | null
+  status: SubscriptionStatus | null
+  /** True once cancellation is scheduled (Stripe `cancel_at_period_end`) — the row is still `active`
+   *  but won't renew. Drives the account-delete gate (P2): a scheduled cancel unlocks Delete same-day. */
+  cancelAtPeriodEnd: boolean
+}
+export interface BillingState {
+  /** 'loading' — before the first fetch; 'ready' — a fetch has resolved (entitlement may be null when
+   *  signed out); 'unavailable' — Supabase isn't configured on this build (billing degrades, never throws). */
+  status: 'loading' | 'ready' | 'unavailable'
+  entitlement: Entitlement | null
+  /** True while a post-Checkout/Portal-return bounded refetch is in flight (drives "Activating…"). */
+  activating: boolean
+}
+/** Result of an openCheckout/openPortal trigger. `error` is a machine code the renderer maps to copy:
+ *  'unavailable' | 'signed_out' | 'already_subscribed' | 'no_subscription' | 'failed'. */
+export interface BillingActionResult {
+  ok: boolean
+  error?: string
+}
+
 /** The API the preload bridges onto `window.cubic` in the renderer. */
 export interface CubicApi {
   /** The backend WS connection — its OS-assigned port + the per-launch session token the renderer must
@@ -93,6 +146,10 @@ export interface CubicApi {
   authSignIn(provider: AuthProvider): Promise<void>
   /** Sign out — clears the persisted session and returns to signed-out. */
   authSignOut(): Promise<void>
+  /** Permanently delete the account (P2): cancels the Stripe sub + deletes the Supabase user server-side,
+   *  then clears the local session (→ AuthScreen). `ok:false` leaves the session intact so the user can
+   *  retry. Only reachable after the client-side gate (sub must be cancelled first). */
+  deleteAccount(): Promise<BillingActionResult>
   /** Current auth state (snapshot) — for a renderer that mounts/reloads mid-run. */
   getAuthState(): Promise<AuthState>
   /** The current (fresh) Supabase access token, or null when signed out. Wave-2 proxy seam — not yet
@@ -100,4 +157,16 @@ export interface CubicApi {
   getAccessToken(): Promise<string | null>
   /** Subscribe to auth-state pushes. Returns an unsubscribe fn. */
   onAuthChanged(cb: (state: AuthState) => void): () => void
+  /** Current billing/entitlement state (snapshot) — for a renderer that mounts/reloads mid-run. */
+  getBilling(): Promise<BillingState>
+  /** Force a fresh entitlement refetch (sign-in, window-focus, and the 402 backstop). Fire-and-forget:
+   *  the resolved state arrives via onBillingChanged. */
+  refreshBilling(): Promise<void>
+  /** Open Stripe Checkout for a plan in the system browser (first paid conversion). */
+  openCheckout(plan: PlanId): Promise<BillingActionResult>
+  /** Open the Stripe Customer Portal in the system browser. Default = Portal home (manage / switch plan /
+   *  cancel / card / invoices); `flow: 'cancel'` deep-links straight to the cancel confirmation. */
+  openPortal(flow?: 'cancel'): Promise<BillingActionResult>
+  /** Subscribe to billing-state pushes. Returns an unsubscribe fn. */
+  onBillingChanged(cb: (state: BillingState) => void): () => void
 }

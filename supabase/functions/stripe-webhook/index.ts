@@ -64,6 +64,13 @@ async function applySubscription(
   eventCreated: number,
 ): Promise<void> {
   const userId = await resolveUserId(sub);
+  // Unresolvable user = a deleted account (its subscriptions row cascaded away) or a customer we never
+  // tracked. Retrying can never succeed, so acknowledge (no-op → 200) instead of 500-looping Stripe.
+  if (!userId) {
+    console.error(`stripe-webhook: no Supabase user for subscription ${sub.id} (${eventType}) — deleted ` +
+      `account or untracked customer; acknowledging without applying.`);
+    return;
+  }
   const item = sub.items.data[0];
   const priceId = item.price.id;
 
@@ -118,7 +125,19 @@ async function applySubscription(
     p_cancel_at_period_end: sub.cancel_at_period_end,
     p_event_at: new Date(eventCreated * 1000).toISOString(),
   });
-  if (error) throw new Error(`apply_subscription failed: ${error.message}`);
+  if (error) {
+    // 23503 = FK violation on subscriptions.user_id -> auth.users (the ONLY FK left on this INSERT, since
+    // the price_id FK was dropped in 20260705000001). It means the user was DELETED after this event was
+    // queued: the row cascaded away, so the INSERT arm has no auth.users row to point at. Acknowledge
+    // (no-op → 200) so Stripe stops retrying a delete that can never succeed. Any OTHER error still throws
+    // → 500 → a safe idempotent retry (the RPC is order-guarded).
+    if ((error as { code?: string }).code === '23503') {
+      console.error(`stripe-webhook: subscription event for deleted user ${userId} (sub ${sub.id}) — ` +
+        `auth.users row gone; acknowledging without applying.`);
+      return;
+    }
+    throw new Error(`apply_subscription failed: ${error.message}`);
+  }
 }
 
 // #10 backstop helper: cancel a duplicate subscription at Stripe and best-effort refund its initial
@@ -149,8 +168,10 @@ async function cancelAndRefundDuplicate(subscriptionId: string): Promise<void> {
 }
 
 // Resolve the Supabase user. We set subscription metadata at checkout, so it's
-// present for our flow; fall back to the existing row by customer id.
-async function resolveUserId(sub: Stripe.Subscription): Promise<string> {
+// present for our flow; fall back to the existing row by customer id. Returns null when the user can't
+// be resolved — e.g. a deleted account whose `subscriptions` row already cascaded away, or a customer we
+// never tracked. The caller then no-ops gracefully (200) instead of 500-looping Stripe retries forever.
+async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   const fromMeta = sub.metadata?.supabase_user_id;
   if (fromMeta) return fromMeta;
 
@@ -159,7 +180,7 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string> {
     .from('subscriptions').select('user_id').eq('stripe_customer_id', customerId).maybeSingle();
   if (data?.user_id) return data.user_id;
 
-  throw new Error(`cannot resolve supabase user for subscription ${sub.id}`);
+  return null;
 }
 
 // Billing period. In the 2025-03-31 (basil) API the period moved to the
