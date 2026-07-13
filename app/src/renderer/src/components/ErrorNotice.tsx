@@ -3,13 +3,12 @@ import { useChatStore } from '../store'
 
 /**
  * Friendly, non-blocking notice for a turn `error` event. Shows the mapped plain-English message, a
- * "Try again" that resends the last message, a "Details" expander with the raw SDK/transport text,
- * and a dismiss. (Delete-refusals surface as a toast, not here.)
+ * "Details" expander with the raw SDK/transport text, and a dismiss. Recovery is the composer — a
+ * failed turn returns its text to the input box (restoreDraft) — so there's no "Try again" here.
+ * (Delete-refusals surface as a toast, not here.)
  */
 export function ErrorNotice() {
   const error = useChatStore((s) => s.error)
-  const lastUserText = useChatStore((s) => s.lastUserText)
-  const retry = useChatStore((s) => s.retry)
   const dismissError = useChatStore((s) => s.dismissError)
   const [showDetails, setShowDetails] = useState(false)
 
@@ -23,11 +22,6 @@ export function ErrorNotice() {
           <div className="min-w-0 flex-1">
             <p className="text-white/85">{error.friendly}</p>
             <div className="mt-1.5 flex items-center gap-3 text-[12px]">
-              {lastUserText && error.retryable && (
-                <button onClick={retry} className="text-blue-300 hover:underline">
-                  Try again
-                </button>
-              )}
               <button onClick={() => setShowDetails((v) => !v)} className="text-white/40 hover:text-white/70">
                 {showDetails ? 'Hide details' : 'Details'}
               </button>
