@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus, type BillingState, type PlanId } from '../shared/ipc.js'
 import type { BackendConfig } from './config.js'
 import type { BackendSupervisor } from './backend.js'
@@ -22,6 +22,8 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
       win.webContents.send(CHANNELS.backendStatus, status)
     }
   })
+
+  ipcMain.handle(CHANNELS.getAppVersion, () => app.getVersion())
 
   // §B auth. The renderer drives sign-in/out and reads state; main owns the Supabase session.
   ipcMain.handle(CHANNELS.getCubicEnv, () => config.cubicEnv)

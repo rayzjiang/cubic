@@ -5,6 +5,8 @@ export const CHANNELS = {
   getBackendPort: 'cubic:getBackendPort',
   getBackendStatus: 'cubic:getBackendStatus',
   backendStatus: 'cubic:backendStatus',
+  // App version (for the Settings → General "About" card). Read from the packaged app in main.
+  getAppVersion: 'cubic:getAppVersion',
   // §B auth — main owns the Supabase session; the renderer drives sign-in and reads state over these.
   getCubicEnv: 'cubic:getCubicEnv',
   authSignIn: 'cubic:auth:signIn',
@@ -140,6 +142,8 @@ export interface CubicApi {
   getBackendStatus(): Promise<BackendStatus>
   /** Subscribe to backend-link status pushes. Returns an unsubscribe fn. */
   onBackendStatus(cb: (status: BackendStatus) => void): () => void
+  /** The app version (from package.json / the packaged build) for the Settings "About" card. */
+  getAppVersion(): Promise<string>
   /** Which deployment we're running as — the gate uses this to block only in prod. */
   getCubicEnv(): Promise<CubicEnvName>
   /** Start the OAuth flow for a provider (opens the system browser). Resolves once the browser opens. */
