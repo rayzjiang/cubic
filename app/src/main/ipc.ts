@@ -41,7 +41,7 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   ipcMain.handle(CHANNELS.billingGetState, () => billing.snapshot)
   ipcMain.handle(CHANNELS.billingRefresh, () => billing.refresh())
   ipcMain.handle(CHANNELS.billingOpenCheckout, (_e, plan: PlanId) => billing.openCheckout(plan))
-  ipcMain.handle(CHANNELS.billingOpenPortal, (_e, flow?: 'cancel') => billing.openPortal(flow))
+  ipcMain.handle(CHANNELS.billingOpenPortal, (_e, flow?: 'cancel' | 'update_card' | 'switch', plan?: PlanId) => billing.openPortal(flow, plan))
   billing.on('change', (state: BillingState) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.billingChanged, state)

@@ -164,9 +164,10 @@ export interface CubicApi {
   refreshBilling(): Promise<void>
   /** Open Stripe Checkout for a plan in the system browser (first paid conversion). */
   openCheckout(plan: PlanId): Promise<BillingActionResult>
-  /** Open the Stripe Customer Portal in the system browser. Default = Portal home (manage / switch plan /
-   *  cancel / card / invoices); `flow: 'cancel'` deep-links straight to the cancel confirmation. */
-  openPortal(flow?: 'cancel'): Promise<BillingActionResult>
+  /** Open the Stripe Customer Portal in the system browser. Default = Portal home; a `flow` deep-links
+   *  straight to the exact action: 'cancel' (cancel confirmation), 'update_card' (payment-method update,
+   *  past_due), or 'switch' (confirm switching to `plan` — Pro⇄Max upgrade/downgrade). */
+  openPortal(flow?: 'cancel' | 'update_card' | 'switch', plan?: PlanId): Promise<BillingActionResult>
   /** Subscribe to billing-state pushes. Returns an unsubscribe fn. */
   onBillingChanged(cb: (state: BillingState) => void): () => void
 }

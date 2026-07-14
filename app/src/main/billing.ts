@@ -94,10 +94,14 @@ export class BillingManager extends EventEmitter {
     return this.openBrowserFlow('create-checkout', { plan })
   }
 
-  /** Open the Stripe Customer Portal (manage / switch plan / cancel / update card). `flow: 'cancel'`
-   *  deep-links straight to the cancel confirmation (P2 delete gate) instead of the Portal home. */
-  async openPortal(flow?: 'cancel'): Promise<BillingActionResult> {
-    return this.openBrowserFlow('create-portal', flow ? { flow } : {})
+  /** Open the Stripe Customer Portal. A `flow` deep-links straight to the exact action instead of the
+   *  Portal home: 'cancel' (cancel confirmation), 'update_card' (payment-method update, past_due), or
+   *  'switch' (confirm switching to `plan` — Pro⇄Max). */
+  async openPortal(flow?: 'cancel' | 'update_card' | 'switch', plan?: PlanId): Promise<BillingActionResult> {
+    const body: Record<string, string> = {}
+    if (flow) body.flow = flow
+    if (plan) body.plan = plan
+    return this.openBrowserFlow('create-portal', body)
   }
 
   /** Clear entitlement on sign-out (the row belongs to a now-signed-out user). Keeps 'unavailable'. */
