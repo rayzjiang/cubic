@@ -39,11 +39,18 @@ export function AuthScreen() {
       />
 
       <div className="relative z-10 flex flex-col items-center gap-6">
-        <img
-          src={cubicLogoUrl}
-          alt="Cubic"
-          className="h-16 w-16 opacity-95 drop-shadow-[0_2px_24px_rgba(255,255,255,0.16)]"
-        />
+        {/* Brand lockup — logo + "Cubic" wordmark side by side (the logo's alt is empty so screen
+            readers don't announce "Cubic" twice; the wordmark carries the name). */}
+        <div className="flex items-center gap-2">
+          <img
+            src={cubicLogoUrl}
+            alt=""
+            className="h-14 w-14 opacity-95 drop-shadow-[0_2px_24px_rgba(255,255,255,0.16)]"
+          />
+          <span className="text-[42px] font-semibold leading-none tracking-tight text-white drop-shadow-[0_2px_24px_rgba(255,255,255,0.16)]">
+            Cubic
+          </span>
+        </div>
         <div className="flex flex-col items-center gap-2">
           <h1 className="text-[26px] font-semibold tracking-tight text-white">
             Animate in After Effects, with AI
