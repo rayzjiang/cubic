@@ -94,7 +94,7 @@
     - [x] make sure its responsive (if the width of the window gets too small, move the tabs to the top like claude code + make it horizontally scrollable with no more icons) _(DONE — below 768px (`useIsNarrow`) the left rail collapses to a top `Settings` + ✕ header bar with a horizontal, `overflow-x-auto`, text-only tab strip; shared per-tab content; instant snap.)_
     - [x] add invoice history to billing page (just like claude, i think stripe gives us the data for that) _(DONE — new `billing-details` edge fn (mirrors create-portal) returns the default card + recent invoices via `stripe.invoices.list`; plumbed as `getBillingDetails()` + `openInvoice(url)` over IPC; Billing tab rebuilt Claude-style: plan block (Adjust plan) + Payment (live card + Update→update_card) + Invoices table (Date·Due·Total·Status·View) + Cancellation. **Dropped "Manage subscription"** (every action now deep-linked). Icon/copy deferred.)_
     - [x] finalize settings page (to match claude ui i guess) _(Billing tab now matches Claude; remaining polish on the other tabs still open.)_
-- [ ] Add Cubic (company name duh) to the sign in page + home page + new chat page? (def sign in page, prob make it the BIGGEST font of the 3 and put it right below logo? - or maybe to the right of logo)
+- [x] Add Cubic (company name duh) to the sign in page + home page + new chat page? (def sign in page, prob make it the BIGGEST font of the 3 and put it right below logo? - or maybe to the right of logo)
 
 **P3b — First-run flow + AE-access gate** (flow orchestration + new transport plumbing)
 - [ ] Onboarding sequence?? (before paywall)
