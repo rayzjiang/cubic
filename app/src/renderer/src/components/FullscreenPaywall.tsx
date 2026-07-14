@@ -132,11 +132,20 @@ function PlanCards({ ent, onAfterPick }: { ent: Entitlement; onAfterPick?: () =>
   )
 }
 
-/** Cold-start takeover — the whole `body` in App.tsx when blocked with zero chats. No back; Log out escape. */
+/** Cold-start takeover — the whole `body` in App.tsx when blocked with zero chats. No back; Log out escape.
+ *  Paints its own near-black background (the app root is transparent → macOS vibrancy, which reads gray)
+ *  with a soft radial glow so it feels premium/dark rather than flat gray. No home is rendered behind — a
+ *  first-timer has nothing to browse — so this is a solid backdrop, not a blurred one. */
 export function FullscreenPaywall() {
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-8 px-8 [-webkit-app-region:drag]">
-      <div className="w-full [-webkit-app-region:no-drag]">
+    <div className="relative flex h-full flex-col items-center justify-center gap-8 overflow-hidden bg-neutral-950 px-8 [-webkit-app-region:drag]">
+      {/* Soft premium glow behind the center content (no occluding shape — just a light bloom). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{ background: 'radial-gradient(ellipse 55% 45% at 50% 40%, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0) 70%)' }}
+      />
+      <div className="relative w-full [-webkit-app-region:no-drag]">
         <div className="flex justify-center">
           <PaywallBody />
         </div>
@@ -144,7 +153,7 @@ export function FullscreenPaywall() {
       {/* Don't trap a signed-in cold-start user behind the wall. */}
       <button
         onClick={() => void window.cubic.authSignOut()}
-        className="[-webkit-app-region:no-drag] text-[12px] text-white/35 hover:text-white/60"
+        className="relative [-webkit-app-region:no-drag] text-[12px] text-white/35 hover:text-white/60"
       >
         Log out
       </button>
@@ -181,7 +190,10 @@ export function PaywallOverlay() {
       {open && (
         <motion.div
           key="paywall-overlay"
-          className="fixed inset-0 z-[55] flex flex-col bg-black/60 backdrop-blur-md"
+          // Heavier blur + darker scrim than a plain modal: the in-context PaywallBanner ("Subscribe to
+          // start using Cubic" / "Choose a plan") sits right behind this, so a light blur left it legible.
+          // blur-2xl + black/75 makes it illegible while keeping a faint sense of depth (not fully opaque).
+          className="fixed inset-0 z-[55] flex flex-col bg-black/75 backdrop-blur-2xl"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -190,7 +202,8 @@ export function PaywallOverlay() {
           <button
             onClick={() => setOpen(false)}
             aria-label="Back"
-            className="absolute left-2 top-11 z-10 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-white/60 hover:bg-white/10 hover:text-white/90"
+            // Solid, opaque chip (not a translucent hover-only button) so it reads clearly over the blur.
+            className="absolute left-3 top-11 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-neutral-800 px-3 py-1.5 text-[13px] font-medium text-white/90 shadow-sm hover:bg-neutral-700"
           >
             <BackIcon />
             Back
