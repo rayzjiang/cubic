@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { EASE_OUT } from '../motion'
-import { planPillText, paywallReason } from '../billing/entitlement'
+import { planPillText, paywallReason, hasManageableSub } from '../billing/entitlement'
 
 /**
  * §B account-menu shell — a Claude-style account widget pinned bottom-left, persistent across Home +
@@ -29,9 +29,11 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
   // "Learn more" side-flyout (Claude-style). Contents are placeholders until §G-2/§G-4 land.
   const [sub, setSub] = useState<{ left: number; top: number } | null>(null)
   const pill = planPillText(billing)
-  // Contextual dropdown action (§D-5): a fast "Upgrade" only when the user has no active sub (→ picker →
-  // Checkout). An active sub shows nothing here — plan changes live in Settings → Manage subscription.
+  // Contextual dropdown action (§D-3/§D-5): "Upgrade" when the user has no active sub (→ fullscreen
+  // paywall → Checkout), or "Change plan" when they have a manageable sub (→ paywall → Portal switch).
+  // Both open the fullscreen paywall overlay (store `pickerOpen`).
   const canSubscribe = billing.status === 'ready' && paywallReason(billing.entitlement) === 'no_plan'
+  const canManage = billing.status === 'ready' && hasManageableSub(billing.entitlement)
 
   // Position the popover above the trigger, opening upward from its top edge.
   const openMenu = (): void => {
@@ -146,7 +148,7 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
               >
               <div className="truncate px-3 py-1.5 text-[12px] text-white/45">{user.email}</div>
               <div className="my-1 h-px bg-white/10" />
-              {canSubscribe && (
+              {(canSubscribe || canManage) && (
                 <button
                   onClick={() => {
                     closeMenu()
@@ -154,8 +156,8 @@ export function AccountWidget({ collapsed = false }: { collapsed?: boolean }) {
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
                 >
-                  <SparkleIcon />
-                  Upgrade
+                  <CubeIcon />
+                  {canSubscribe ? 'Upgrade' : 'Change plan'}
                 </button>
               )}
               <button
@@ -273,10 +275,13 @@ function LogOutIcon() {
   )
 }
 
-function SparkleIcon() {
+/** Cubic's cube mark as a stroke-only glyph (hexagon silhouette + a 3-edge front corner), matching the
+ *  no-fill icon style of the gear / learn-more icons. */
+function CubeIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
-      <path d="M8 2 L9.2 6.2 L13.5 7.5 L9.2 8.8 L8 13 L6.8 8.8 L2.5 7.5 L6.8 6.2 Z" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-white/55">
+      <path d="M12 3 L19.8 7.5 L19.8 16.5 L12 21 L4.2 16.5 L4.2 7.5 Z" />
+      <path d="M12 12 L4.2 7.5 M12 12 L19.8 7.5 M12 12 L12 21" />
     </svg>
   )
 }

@@ -14,7 +14,8 @@ import { AuthScreen } from './components/AuthScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { SettingsModal } from './components/SettingsModal'
 import { DeleteAccountModal } from './components/DeleteAccountModal'
-import { PaywallTakeover, PaywallBanner, PlanPickerModal } from './components/Paywall'
+import { PaywallBanner } from './components/Paywall'
+import { FullscreenPaywall, PaywallOverlay } from './components/FullscreenPaywall'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
 import { isBlocked } from './billing/entitlement'
@@ -104,7 +105,7 @@ export function App() {
     // §D cold-start paywall — a blocked user with zero chats has nothing to browse, so the whole app
     // becomes the paywall (the money path). A blocked user WITH chats falls through to the in-context
     // banner below (they keep their history; only the composer is gated).
-    body = <PaywallTakeover />
+    body = <FullscreenPaywall />
   } else {
     // Home + chat share the global top bar; only the region below it differs. The two views
     // overlapping-crossfade (+subtle rise) into each other: both are absolutely positioned inside the
@@ -166,7 +167,7 @@ export function App() {
       <ConfirmModal />
       <SettingsModal />
       <DeleteAccountModal />
-      <PlanPickerModal />
+      <PaywallOverlay />
       <Toasts />
     </div>
   )

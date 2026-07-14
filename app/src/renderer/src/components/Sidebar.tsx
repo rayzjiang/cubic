@@ -28,10 +28,11 @@ export function Sidebar() {
       animate={{ width: collapsed ? 48 : 256 }}
       transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
     >
-      {/* Collapsed icon rail — overlaid, fades in when collapsed. Starts at the top (the TopBar above
-          owns the traffic-light zone), pt-2 to vertically align with the expanded header row. */}
+      {/* Collapsed icon rail — overlaid, fades in when collapsed. Fixed w-12 (NOT inset-x-0) so its
+          centered icons don't slide sideways as the sidebar WIDTH animates. pt-2 aligns with the expanded
+          header row; the TopBar above owns the traffic-light zone. */}
       <div
-        className={`absolute inset-x-0 top-0 flex flex-col items-center gap-1 pt-2 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`absolute left-0 top-0 flex w-12 flex-col items-center gap-1 pt-2 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <button onClick={toggleSidebar} className="rounded-md p-1.5 text-white/55 hover:bg-white/10 hover:text-white/90" aria-label="Expand sidebar">
           <SidebarToggleIcon />
@@ -41,14 +42,20 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Collapsed account avatar — pinned to the bottom of the icon rail, cross-fades with the rail. The
-          pb-1.5 matches the expanded widget's extra vertical padding (m-2 + py-1.5 vs the collapsed
-          avatar's mb-2 only), so the avatar stays at the SAME Y across collapsed/expanded. */}
-      <div
-        className={`absolute inset-x-0 bottom-0 flex justify-center pb-1.5 transition-opacity duration-150 ${collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+      {/* Collapsed account avatar — CENTERED in the icon rail (matching the top icons), pinned bottom. A
+          single motion element that slides in from the expanded avatar's position (x: 6 → 0) while fading,
+          so the collapse reads as one clean left-slide to center instead of a shaky crossfade. Fixed w-12
+          (not inset-x-0) so it never slides sideways as the sidebar WIDTH animates; pb-1.5 keeps its Y flush
+          with the expanded chat/home avatar. */}
+      <motion.div
+        className="absolute bottom-0 left-0 flex w-12 justify-center pb-1.5"
+        initial={false}
+        animate={{ opacity: collapsed ? 1 : 0, x: collapsed ? 0 : 6 }}
+        transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
+        style={{ pointerEvents: collapsed ? 'auto' : 'none' }}
       >
         <AccountWidget collapsed />
-      </div>
+      </motion.div>
 
       {/* Expanded content — fades out when collapsed. SidebarPanel is fixed-width so it never reflows
           during the width animation. */}

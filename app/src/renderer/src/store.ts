@@ -147,7 +147,8 @@ interface ChatState {
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
   pendingDeletes: Set<string>
   // §D billing UI overlays (root-mounted, store-driven like the confirm modals): the account Settings
-  // modal + the plan-picker (Checkout) modal opened from the account menu / Settings / paywalls.
+  // modal + the fullscreen paywall overlay (`pickerOpen`, opened from the account menu / Settings /
+  // paywall banner — the FullscreenPaywall PaywallOverlay).
   settingsOpen: boolean
   pickerOpen: boolean
   // P2 destructive account-deletion confirm modal (type-to-confirm), opened from Settings→Account.
