@@ -56,7 +56,7 @@ function Shell({ onClose, children }: { onClose: () => void; children: ReactNode
       transition={{ duration: 0.12, ease: EASE_OUT }}
     >
       <motion.div
-        className="w-[90vw] max-w-[1040px] overflow-hidden rounded-xl border border-white/10 bg-neutral-800 shadow-2xl"
+        className="w-[90vw] max-w-260 overflow-hidden rounded-xl border border-white/10 bg-neutral-800 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -318,7 +318,7 @@ export function SettingsModal() {
           <Shell key="settings" onClose={close}>
             {isNarrow ? (
               // Narrow — a top header bar (Settings + ✕) + a horizontal, scrollable, text-only tab strip.
-              <div className="flex h-[86vh] max-h-[720px] flex-col">
+              <div className="flex h-[86vh] max-h-180 flex-col">
                 <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                   <h2 className="text-[14px] font-semibold text-white/90">Settings</h2>
                   <button
@@ -346,7 +346,7 @@ export function SettingsModal() {
               </div>
             ) : (
               // Wide — the left icon rail + a content pane with a floating ✕.
-              <div className="flex h-[86vh] max-h-[720px]">
+              <div className="flex h-[86vh] max-h-180">
                 <nav className="w-52 shrink-0 space-y-0.5 border-r border-white/10 bg-black/20 p-3">
                   <h2 className="px-2 pb-2 text-[13px] font-semibold text-white/90">Settings</h2>
                   {TABS.map((t) => (
@@ -384,7 +384,7 @@ export function SettingsModal() {
       <AnimatePresence>
         {open && cancelConfirm && (
           <motion.div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4"
             onMouseDown={() => setCancelConfirm(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

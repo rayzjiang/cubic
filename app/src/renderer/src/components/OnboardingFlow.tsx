@@ -32,7 +32,7 @@ const SLIDES = [
  *  change (fixed 16:9). */
 function DemoMedia() {
   return (
-    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
+    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-white/10 bg-white/4">
       <span className="text-[12px] text-white/30">Demo coming soon</span>
     </div>
   )

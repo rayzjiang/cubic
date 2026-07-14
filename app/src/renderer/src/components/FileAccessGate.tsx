@@ -90,7 +90,7 @@ export function FileAccessOverlay() {
       {open && (
         <motion.div
           key="fileaccess-overlay"
-          className="fixed inset-0 z-[55] flex flex-col bg-black/75 backdrop-blur-2xl"
+          className="fixed inset-0 z-55 flex flex-col bg-black/75 backdrop-blur-2xl"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

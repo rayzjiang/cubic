@@ -98,7 +98,7 @@ function PlanCards({ ent, onAfterPick }: { ent: Entitlement; onAfterPick?: () =>
           <div
             key={p.id}
             className={`flex flex-1 flex-col rounded-2xl border p-5 ${
-              current ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.03]'
+              current ? 'border-white/20 bg-white/6' : 'border-white/10 bg-white/3'
             }`}
           >
             <div className="flex items-baseline justify-between">
@@ -197,7 +197,7 @@ export function PaywallOverlay() {
           // Heavier blur + darker scrim than a plain modal: the in-context PaywallBanner ("Subscribe to
           // start using Cubic" / "Choose a plan") sits right behind this, so a light blur left it legible.
           // blur-2xl + black/75 makes it illegible while keeping a faint sense of depth (not fully opaque).
-          className="fixed inset-0 z-[55] flex flex-col bg-black/75 backdrop-blur-2xl"
+          className="fixed inset-0 z-55 flex flex-col bg-black/75 backdrop-blur-2xl"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
