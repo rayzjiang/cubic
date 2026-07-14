@@ -132,11 +132,13 @@ function PlanCards({ ent, onAfterPick }: { ent: Entitlement; onAfterPick?: () =>
   )
 }
 
-/** Cold-start takeover — the whole `body` in App.tsx when blocked with zero chats. No back; Log out escape.
+/** Cold-start takeover — the whole `body` in App.tsx when blocked with zero chats. Back → the onboarding
+ *  slides (so a first-timer isn't stuck moving only forward); Log out escape.
  *  Paints its own near-black background (the app root is transparent → macOS vibrancy, which reads gray)
  *  with a soft radial glow so it feels premium/dark rather than flat gray. No home is rendered behind — a
  *  first-timer has nothing to browse — so this is a solid backdrop, not a blurred one. */
 export function FullscreenPaywall() {
+  const reopenOnboarding = useChatStore((s) => s.reopenOnboarding)
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-8 overflow-hidden bg-neutral-950 px-8 [-webkit-app-region:drag]">
       {/* Soft premium glow behind the center content (no occluding shape — just a light bloom). */}
@@ -145,6 +147,8 @@ export function FullscreenPaywall() {
         className="pointer-events-none absolute inset-0"
         style={{ background: 'radial-gradient(ellipse 55% 45% at 50% 40%, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0) 70%)' }}
       />
+      {/* Back → return to the onboarding slides (App.tsx re-renders them once `onboardingSeen` flips). */}
+      <BackButton onClick={reopenOnboarding} />
       <div className="relative w-full [-webkit-app-region:no-drag]">
         <div className="flex justify-center">
           <PaywallBody />
@@ -199,15 +203,7 @@ export function PaywallOverlay() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: EASE_OUT }}
         >
-          <button
-            onClick={() => setOpen(false)}
-            aria-label="Back"
-            // Solid, opaque chip (not a translucent hover-only button) so it reads clearly over the blur.
-            className="absolute left-3 top-11 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-neutral-800 px-3 py-1.5 text-[13px] font-medium text-white/90 shadow-sm hover:bg-neutral-700"
-          >
-            <BackIcon />
-            Back
-          </button>
+          <BackButton onClick={() => setOpen(false)} />
           <motion.div
             className="flex flex-1 items-center justify-center overflow-y-auto p-8"
             initial={{ opacity: 0, y: 8, scale: 0.99 }}
@@ -241,5 +237,21 @@ function BackIcon() {
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
       <path d="M10 3.5 L5.5 8 L10 12.5" />
     </svg>
+  )
+}
+
+/** The Back chip shared by the change-plan overlay + the cold-start takeover. Absolutely positioned
+ *  top-left; a solid opaque chip so it reads over the blur/backdrop, and `no-drag` so it stays clickable
+ *  over the takeover's draggable window region. */
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Back"
+      className="absolute left-3 top-11 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-neutral-800 px-3 py-1.5 text-[13px] font-medium text-white/90 shadow-sm [-webkit-app-region:no-drag] hover:bg-neutral-700"
+    >
+      <BackIcon />
+      Back
+    </button>
   )
 }

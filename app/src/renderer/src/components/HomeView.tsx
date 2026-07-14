@@ -5,6 +5,7 @@ import { useMotion } from '../motion'
 import { useScrollFade } from '../useScrollFade'
 import { ConversationRow } from './ConversationRow'
 import { AccountWidget } from './AccountWidget'
+import { TryItCoachmark } from './TryItCoachmark'
 import { firstName } from '../ui'
 import { homeGreeting } from '../greetings'
 import cubicLogoUrl from '../assets/cubic-logo.svg'
@@ -21,7 +22,14 @@ import cubicLogoUrl from '../assets/cubic-logo.svg'
 export function HomeView() {
   const conversations = useChatStore((s) => s.conversations)
   const newChat = useChatStore((s) => s.newChat)
+  const markTriedIt = useChatStore((s) => s.markTriedIt)
   const user = useChatStore((s) => s.auth.user)
+
+  // Starting the first chat dismisses the §D-1 try-it coachmark for good (idempotent + persisted).
+  const startChat = (): void => {
+    markTriedIt()
+    newChat()
+  }
   const fadeRef = useScrollFade<HTMLDivElement>()
   const { listStagger, listRow } = useMotion()
 
@@ -49,11 +57,12 @@ export function HomeView() {
             </h1>
             <p className="mt-1 text-sm text-white/45">Pick up a conversation or start something new.</p>
             <button
-              onClick={newChat}
+              onClick={startChat}
               className="mt-6 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white/90 hover:bg-white/15"
             >
               + New chat
             </button>
+            <TryItCoachmark />
           </div>
 
           {/* Recents: left-aligned rows (scannable top-to-bottom) in the tightened column. */}
