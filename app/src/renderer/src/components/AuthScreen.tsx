@@ -1,12 +1,17 @@
 import { useChatStore } from '../store'
+import { AuthBackground } from './AuthBackground'
+import cubicLogoUrl from '../assets/cubic-logo.svg'
 
 /**
- * §B — full-window sign-in gate. Shown only in prod when there is no session (App.tsx routing); local
- * dev never reaches here. A full takeover with no TopBar (mirrors BackendBlockedScreen). The actual
- * OAuth handshake + token storage all live in main — this just kicks it off and reflects the status.
+ * §B/§D-1 — full-window sign-in gate. Shown only in prod when there is no session (App.tsx routing);
+ * local dev never reaches here. A cinematic full-bleed takeover: an animated WebGL hero (`AuthBackground`)
+ * behind a centered, card-less sign-in (logo + headline + Google). The OAuth handshake + token storage
+ * all live in main — this just kicks it off and reflects the status.
  *
  * Provider-agnostic by construction: render one button per supported provider. Google ships now; Apple
- * is a config-only follow-up (add the provider in Supabase + a button here once §B-2's account exists).
+ * drops in as a sibling button here once §B-2's Supabase provider is configured.
+ *
+ * Copy (headline/subtext) is placeholder — final consumer-tone wording lands in P3c's §D-4 pass.
  */
 export function AuthScreen() {
   const status = useChatStore((s) => s.auth.status)
@@ -14,28 +19,55 @@ export function AuthScreen() {
   const signingIn = status === 'signingIn'
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-10 text-center [-webkit-app-region:drag]">
-      <div className="flex flex-col items-center gap-2">
-        <h1 className="text-[20px] font-semibold tracking-tight text-white/90">Welcome to Cubic</h1>
-        <p className="max-w-xs text-[13px] leading-relaxed text-white/55">
-          Sign in to start animating in After Effects.
-        </p>
-      </div>
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-8 text-center text-white">
+      {/* Slim top drag strip — the rest of the window is no-drag so the pointer glow + button work. */}
+      <div className="absolute inset-x-0 top-0 z-20 h-10 [-webkit-app-region:drag]" />
+      <AuthBackground />
 
-      <div className="flex flex-col items-center gap-3 [-webkit-app-region:no-drag]">
-        <button
-          onClick={() => void window.cubic.authSignIn('google')}
-          disabled={signingIn}
-          className="inline-flex items-center gap-3 rounded-lg bg-white px-5 py-2.5 text-[14px] font-medium text-neutral-800 shadow-sm transition hover:bg-white/90 disabled:cursor-default disabled:opacity-60"
-        >
-          <GoogleIcon />
-          {signingIn ? 'Waiting for sign-in…' : 'Sign in with Google'}
-        </button>
+      {/* Soft radial dimmer behind the center content — lowers the background brightness right behind the
+          text for readability, with edges faded so hard the shape itself is nearly invisible. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{
+          width: 'min(760px, 92vw)',
+          height: 'min(460px, 70vh)',
+          background:
+            'radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.4) 38%, rgba(0,0,0,0) 72%)',
+          filter: 'blur(30px)',
+        }}
+      />
 
-        {signingIn && (
-          <p className="text-[12px] text-white/45">Complete sign-in in your browser, then come back.</p>
-        )}
-        {status === 'error' && error && <p className="max-w-xs text-[12px] text-red-400">{error}</p>}
+      <div className="relative z-10 flex flex-col items-center gap-6">
+        <img
+          src={cubicLogoUrl}
+          alt="Cubic"
+          className="h-16 w-16 opacity-95 drop-shadow-[0_2px_24px_rgba(255,255,255,0.16)]"
+        />
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-[26px] font-semibold tracking-tight text-white">
+            Animate in After Effects, with AI
+          </h1>
+          <p className="max-w-sm text-[13px] leading-relaxed text-white/55">
+            Describe the motion you want — Cubic builds it right in your timeline.
+          </p>
+        </div>
+
+        <div className="mt-1 flex flex-col items-center gap-3">
+          <button
+            onClick={() => void window.cubic.authSignIn('google')}
+            disabled={signingIn}
+            className="inline-flex items-center gap-3 rounded-lg bg-white px-5 py-2.5 text-[14px] font-medium text-neutral-900 shadow-lg shadow-black/25 transition hover:bg-white/90 disabled:cursor-default disabled:opacity-60"
+          >
+            <GoogleIcon />
+            {signingIn ? 'Waiting for sign-in…' : 'Continue with Google'}
+          </button>
+
+          {signingIn && (
+            <p className="text-[12px] text-white/45">Complete sign-in in your browser, then come back.</p>
+          )}
+          {status === 'error' && error && <p className="max-w-xs text-[12px] text-red-400">{error}</p>}
+        </div>
       </div>
     </div>
   )

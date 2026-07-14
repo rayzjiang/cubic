@@ -84,18 +84,24 @@
 - [x] **Destructive confirm UI** — a "Delete account" entry (Settings, from P1) → a **deliberate, explicitly-confirmed, irreversible** flow (destructive-action warning per house rule). _(DONE: `DeleteAccountModal.tsx` — type `delete` to enable a red "this can't be undone" button; animated; inline error + session-left-intact on failure; success routes to AuthScreen via the auth `change` broadcast.)_
 - [x] make sure the ui for deleting account is under the settings -> account AND users have to cancel subscription before deleting account (same way claude does it) _(DONE: entry in Settings→Account, gated by `canDeleteAccount(billing)`; blocked state shows a direct **Cancel plan** (Stripe `flow_data`) CTA. Built + statically verified (app typecheck/26 tests/build; `deno check` all edge fns; `bash -n` harness); runtime offline-harness + full-stack-local E2E still to run.)_
 
-**5c. Plan 3 — Onboarding & polish (pre-paid wrap + capstone)** — §B-5 · §D-1 · §D-1a · §D-4 + AuthScreen
-> First-run wraps everything (ends at P1's paywall); the copy pass is the capstone (sweeps every screen incl. P2's delete copy) → runs last.
-- [ ] **Enrich the signed-out `AuthScreen`** (pre-launch) — first + only surface a logged-out user sees (prod gates home/chat behind sign-in); make it engaging (carousel of use cases / sample before→after outputs) vs today's minimal "Welcome to Cubic / Sign in with Google." Distinct from signed-in `HomeView`.
-- [ ] **§D-1 first-run sequence** — sign in → connect AE → try it → **paywall last**.
-- [ ] **Fullscreen conversion paywall (the plan-selection page)** — promote P1's functional plan-picker modal into a **full-screen, Claude-styled page with a back button** — this IS the app's paywall (the §D-1 first-run flow ends here, after onboarding). Make it **always reachable** for BOTH tiers (pill → **Upgrade**, or pill → Settings → Billing → **Adjust plan**); label each tier card contextually (**upgrade / downgrade / "your current plan"**); wire each card to the correct Stripe flow — **Checkout** for a first sub, **Portal** for an existing sub's up/down-grade (there are NO hardcoded per-user "direct links" — plan changes are per-customer Portal sessions). Polish to look good + **drive conversions** (compare vs Claude). _(P1 shipped the functional picker + takeover/in-context states; P3 makes it the polished fullscreen conversion surface, wrapped by onboarding.)_
-    - [ ] make sure the upgrade/downgrade/buttons on the page cleanly redirect to the proper checkout page (no need for users to manually find where to go from the stripe customer portal home page)
-- [ ] Finalize the settings page for mvp (rn it looks ugly after p5w3 plan 2, make it match more of how claude did it)
-- [ ] **§D-1a require AE file access** — during "connect AE", a new renderer→bridge passthrough calls the read-only `checkFileAccess` command (built in §E-6, no renderer caller today) and, if `canWriteFiles:false`, blocks with a clear step to enable AE **Settings → Scripting & Expressions → "Allow Scripts to Write Files and Access Network"** (Cubic can't write frames/backups/PNGs without it). Re-check until enabled. (The extension is headless — no panel UI — so this MUST live in the app's onboarding.)
-- [ ] **§B-5 branded OAuth "you're signed in — close this tab" page** — hosted HTTPS page fires the `cubic://auth/callback?code=…` deep link + tells the user to close the tab (replaces the current hanging browser tab). Repoint `app/src/main/auth.ts` `redirectTo` + Supabase allow-list. Host on the existing Cloudflare Worker. Not a blocker (deep link already works).
-- [ ] **§D-4 non-technical copy pass** — consumer tone across ALL Wave-3 screens (incl. P2 delete copy), no dev/terminal language → **last**.
+**5c. Plan 3 — Onboarding & polish (pre-paid wrap + capstone)** — §B-5 · §D-1 · §D-1a · §D-4 + AuthScreen + fullscreen paywall + settings-finalize
+> **Split into 3 sequential sub-plans, each its own grill+plan+execute: `P3a → P3b → P3c`.** The 7 items span 5 work-types (visual UI · greenfield flow · new renderer↔bridge plumbing · Worker infra · copy sweep) → one plan would bleed. Order forced by deps: build screens → wire them into the flow → OAuth page + copy sweep last. Full scoping rationale + per-item file notes: `~/.claude/plans/lets-start-planning-work-rosy-crayon.md`.
 
-**Order / deps:** P1 → P2 → P3. P2 needs P1's plumbing + the Settings delete-entry; P3's first-run ends at P1's paywall, and its copy pass sweeps P2's screens. Then Wave 3.5 (WT-ANALYTICS).
+**P3a — Surfaces & polish** (pure visual; first, so P3b/P3c consume finished screens)
+- [x] **Enrich the signed-out `AuthScreen`** — engaging (use-case carousel / before→after) vs today's bare "Welcome to Cubic / Sign in." Distinct from signed-in `HomeView`.
+- [ ] **§D-3 fullscreen conversion paywall** — promote P1's picker modal → full-screen Claude-styled page w/ back button; per-card **Checkout** (first sub) vs **Portal** (up/down-grade) routing + contextual upgrade/downgrade/"current plan" labels; always reachable for both tiers; drive conversions.
+- [ ] **Finalize the Settings page for MVP** — looks ugly post-P2 → match Claude.
+    - [ ] make sure its responsive (if the width of the window gets too small, move the tabs to the top like claude code + make it horizontally scrollable with no more icons)
+
+**P3b — First-run flow + AE-access gate** (flow orchestration + new transport plumbing)
+- [ ] **§D-1 first-run sequence** — sign in → connect AE → try it → **paywall last** (greenfield; ends at P3a's paywall).
+- [ ] **§D-1a require AE file access** — renderer→bridge `checkFileAccess` (backend done; needs a renderer request/response caller); on `canWriteFiles:false` block w/ the AE **Settings → Scripting & Expressions → "Allow Scripts to Write Files…"** step, re-check until enabled.
+
+**P3c — OAuth page + copy closeout** (isolated infra + final sweep)
+- [ ] **§B-5 branded OAuth success page** — hosted HTTPS page fires `cubic://auth/callback?code=…` + "close this tab"; repoint `auth.ts` `redirectTo` + Supabase allow-list; host on the Worker. Not a blocker (deep link already works).
+- [ ] **§D-4 non-technical copy pass** — consumer tone across ALL Wave-3 screens (incl. P2 delete copy) → **dead last**.
+
+**Order / deps:** P1 → P2 → P3 (**P3 = P3a → P3b → P3c**, see §5c). P2 needs P1's plumbing + the Settings delete-entry; P3's first-run ends at P3a's paywall, and its copy pass sweeps P2's screens. Then Wave 3.5 (WT-ANALYTICS).
 
 ---
 
