@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { useMotion } from '../motion'
 import { isBlocked } from '../billing/entitlement'
+import { isFileBlocked } from '../fileAccess'
 
 /**
  * Composer. Enter or the send button (↑) submit — both call submit(). Shift+Enter newlines. Sending
@@ -12,7 +13,11 @@ import { isBlocked } from '../billing/entitlement'
  */
 export function InputBar() {
   const running = useChatStore((s) => s.running)
-  const blocked = useChatStore((s) => isBlocked(s.billing))
+  const subBlocked = useChatStore((s) => isBlocked(s.billing))
+  // §D-1a — AE file access off also gates sending (Cubic can't save/back up). Combined so either reason
+  // disables the composer; the placeholder distinguishes them (subscription takes precedence).
+  const fileBlocked = useChatStore(isFileBlocked)
+  const blocked = subBlocked || fileBlocked
   const isEmpty = useChatStore((s) => s.items.length === 0)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const cancelRun = useChatStore((s) => s.cancelRun)
@@ -45,17 +50,20 @@ export function InputBar() {
     return () => window.removeEventListener('keydown', onKey)
   }, [cancelRun])
 
-  const placeholder = blocked
+  const placeholder = subBlocked
     ? 'Subscribe to keep chatting with Cubic…'
-    : running
-      ? 'Add a follow-up — Cubic picks it up as it works…'
-      : isEmpty
-        ? 'What are we building today?'
-        : 'Send a message…'
+    : fileBlocked
+      ? 'Enable file access in After Effects to continue…'
+      : running
+        ? 'Add a follow-up — Cubic picks it up as it works…'
+        : isEmpty
+          ? 'What are we building today?'
+          : 'Send a message…'
 
   const submit = () => {
-    // Blocked (no plan / over cap / past due) → the paywall banner above owns the CTA; the composer is
-    // inert (the proxy would 402 the send anyway).
+    // Blocked → the composer is inert: a subscription block (no plan / over cap / past due, where the
+    // proxy would 402 the send anyway) or AE file access off (§D-1a, Cubic can't save/back up). The
+    // paywall / file-access surfaces above own the CTA.
     if (blocked) return
     const text = draft.trim()
     if (!text) return
