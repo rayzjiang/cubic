@@ -17,6 +17,8 @@ import type { BillingManager } from './billing.js'
 export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager): void {
   ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
+  // Non-destructive AE reconnect (§D-1a companion): re-poke conn.json to wake a dormant panel.
+  ipcMain.handle(CHANNELS.reconnectAe, () => backend.repokeConn())
   backend.on('status', (status: BackendStatus) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.backendStatus, status)

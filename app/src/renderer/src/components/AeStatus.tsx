@@ -79,6 +79,37 @@ export function AeStatus() {
     return () => clearTimeout(t)
   }, [eligibleForConnecting, aeConnected])
 
+  // "Reconnect" — a non-destructive re-poke of ~/.cubic/conn.json (main) that wakes a dormant panel
+  // without dropping in-flight turns. Show it when AE is disconnected but the backend is healthy (a
+  // port-in-use/stopped/failed backend needs reopening Cubic, surfaced separately). Success is the
+  // `aeStatus` push flipping `aeConnected`; if it doesn't land within the grace, fall back to "restart AE".
+  const canReconnect = !aeConnected && (phase === 'running' || phase === 'starting') && install !== 'failed'
+  const [reconnecting, setReconnecting] = useState(false)
+  const [reconnectFailed, setReconnectFailed] = useState(false)
+  useEffect(() => {
+    // Panel landed (or backend went unhealthy) → clear the transient reconnect UI.
+    if (aeConnected || !canReconnect) {
+      setReconnecting(false)
+      setReconnectFailed(false)
+    }
+  }, [aeConnected, canReconnect])
+  const handleReconnect = async (): Promise<void> => {
+    setReconnectFailed(false)
+    setReconnecting(true)
+    const ok = await window.cubic.reconnectAe().catch(() => false)
+    if (!ok) {
+      // Backend not ready → nothing to poke with; the panel can't be woken from here.
+      setReconnecting(false)
+      setReconnectFailed(true)
+      return
+    }
+    // Give the panel a grace window to re-read conn.json + re-auth; the effect above clears this on success.
+    setTimeout(() => {
+      setReconnecting(false)
+      if (!useChatStore.getState().aeConnected) setReconnectFailed(true)
+    }, CONNECTING_GRACE_MS)
+  }
+
   // Close the dropdown on Escape.
   useEffect(() => {
     if (!open) return
@@ -163,7 +194,14 @@ export function AeStatus() {
                 transition={{ duration: 0.15, ease: EASE_OUT }}
               >
                 {/* Connected host — informational (not a switch target). */}
-                <ActiveHostRow app={activeApp} status={aeStatus} />
+                <ActiveHostRow
+                  app={activeApp}
+                  status={aeStatus}
+                  canReconnect={canReconnect}
+                  reconnecting={reconnecting}
+                  reconnectFailed={reconnectFailed}
+                  onReconnect={handleReconnect}
+                />
 
                 <div className="my-1 h-px bg-white/10" />
 
@@ -182,8 +220,25 @@ export function AeStatus() {
 }
 
 /** The currently-connected host: name left, status dot + word pinned right (in line with the other
- *  rows' "Coming soon" badges), hint on its own line below when there's an action to take. */
-function ActiveHostRow({ app, status }: { app: HostApp; status: HostStatus }) {
+ *  rows' "Coming soon" badges), hint on its own line below when there's an action to take. When AE is
+ *  disconnected but the backend is healthy, a non-destructive "Reconnect" action sits under the hint. */
+function ActiveHostRow({
+  app,
+  status,
+  canReconnect,
+  reconnecting,
+  reconnectFailed,
+  onReconnect,
+}: {
+  app: HostApp
+  status: HostStatus
+  canReconnect: boolean
+  reconnecting: boolean
+  reconnectFailed: boolean
+  onReconnect: () => void
+}) {
+  // After a failed re-poke, the honest fallback is reopening AE; otherwise show the normal hint.
+  const subline = reconnectFailed ? 'Still stuck? Restart After Effects.' : status.hint
   return (
     <div className="px-3 py-2">
       <div className="flex items-center gap-2.5">
@@ -194,7 +249,20 @@ function ActiveHostRow({ app, status }: { app: HostApp; status: HostStatus }) {
           <span className="text-[11px] leading-none text-white/45">{status.label}</span>
         </span>
       </div>
-      {status.hint && <div className="mt-1 pl-[30px] text-[11px] leading-snug text-white/40">{status.hint}</div>}
+      {canReconnect ? (
+        <div className="mt-1.5 pl-[30px]">
+          <button
+            onClick={onReconnect}
+            disabled={reconnecting}
+            className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white/80 hover:bg-white/15 disabled:opacity-50"
+          >
+            {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+          {subline && <div className="mt-1 text-[11px] leading-snug text-white/40">{subline}</div>}
+        </div>
+      ) : (
+        status.hint && <div className="mt-1 pl-[30px] text-[11px] leading-snug text-white/40">{status.hint}</div>
+      )}
     </div>
   )
 }

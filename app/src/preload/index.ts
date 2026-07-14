@@ -14,6 +14,7 @@ const api: CubicApi = {
     ipcRenderer.on(CHANNELS.backendStatus, listener)
     return () => ipcRenderer.removeListener(CHANNELS.backendStatus, listener)
   },
+  reconnectAe: () => ipcRenderer.invoke(CHANNELS.reconnectAe),
   getAppVersion: () => ipcRenderer.invoke(CHANNELS.getAppVersion),
   getCubicEnv: () => ipcRenderer.invoke(CHANNELS.getCubicEnv),
   authSignIn: (provider) => ipcRenderer.invoke(CHANNELS.authSignIn, provider),

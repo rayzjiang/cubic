@@ -5,6 +5,9 @@ export const CHANNELS = {
   getBackendPort: 'cubic:getBackendPort',
   getBackendStatus: 'cubic:getBackendStatus',
   backendStatus: 'cubic:backendStatus',
+  // Non-destructive AE reconnect: re-write ~/.cubic/conn.json so the dormant CEP panel's fs.watch fires
+  // and it reconnects — without dropping in-flight turns. Fired from the AeStatus "Reconnect" button.
+  reconnectAe: 'cubic:reconnectAe',
   // App version (for the Settings → General "About" card). Read from the packaged app in main.
   getAppVersion: 'cubic:getAppVersion',
   // §B auth — main owns the Supabase session; the renderer drives sign-in and reads state over these.
@@ -170,6 +173,11 @@ export interface CubicApi {
   getBackendStatus(): Promise<BackendStatus>
   /** Subscribe to backend-link status pushes. Returns an unsubscribe fn. */
   onBackendStatus(cb: (status: BackendStatus) => void): () => void
+  /** Non-destructively nudge a disconnected AE panel to reconnect (re-writes ~/.cubic/conn.json → the
+   *  panel's fs.watch fires → it reconnects, dropping no in-flight turn). Resolves `true` if the poke was
+   *  written, `false` if the backend isn't ready (nothing to poke with — the user must reopen Cubic/AE).
+   *  Success (the panel actually landing) is observed via the `aeStatus` push flipping `aeConnected`. */
+  reconnectAe(): Promise<boolean>
   /** The app version (from package.json / the packaged build) for the Settings "About" card. */
   getAppVersion(): Promise<string>
   /** Which deployment we're running as — the gate uses this to block only in prod. */

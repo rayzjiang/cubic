@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
@@ -49,6 +50,25 @@ export class BackendSupervisor extends EventEmitter {
   /** The current backend connection ({port, token}) or null if the child hasn't reported yet. */
   getConn(): BackendConn | null {
     return this.conn
+  }
+
+  /**
+   * Non-destructive AE reconnect: re-write ~/.cubic/conn.json with the CURRENT {port, token} the child
+   * already reported. Re-writing bumps the file's mtime, so the panel's `fs.watch` on ~/.cubic fires and
+   * a dormant-but-alive panel reconnects (it re-reads conn.json + re-auths against the still-running
+   * backend) — WITHOUT dropping in-flight turns or the renderer's WS. Same content + mode as the child's
+   * own writer (wsBridge.ts). Returns false when the backend hasn't reported ready (nothing to poke with
+   * → the user must reopen Cubic/AE); the panel-actually-landing signal is the `aeStatus` push.
+   */
+  repokeConn(): boolean {
+    if (!this.conn) return false
+    try {
+      writeFileSync(join(homedir(), '.cubic', 'conn.json'), JSON.stringify(this.conn), { mode: 0o600 })
+      return true
+    } catch (err) {
+      console.error('[backend] reconnect re-poke failed:', err)
+      return false
+    }
   }
 
   /** Resolve with {port, token} once the backend reports ready (immediately if already reported).
