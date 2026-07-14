@@ -4,21 +4,30 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Entitlement } from '@shared/ipc'
 import { useChatStore } from '../store'
 import { EASE_OUT } from '../motion'
-import { planPillText, usagePercent, friendlyReset, billingActionErrorCopy, canDeleteAccount } from '../billing/entitlement'
+import {
+  planPillText,
+  usagePercent,
+  friendlyReset,
+  billingActionErrorCopy,
+  canDeleteAccount,
+  hasManageableSub,
+} from '../billing/entitlement'
 import { planDisplayName } from '../billing/plans'
 import { DANGER_BTN, DANGER_BTN_DISABLED } from '../danger'
+import cubicLogoUrl from '../assets/cubic-logo.svg'
 
 /**
- * §D Settings — a centered modal with a left tab sidebar (General / Account / Billing / Usage), same
- * Shell animation vocabulary as the other modals. Account = email + Delete account (P2); Billing = plan +
- * Manage subscription → Portal + Cancel plan (direct Stripe cancel) + a display-only renew/cancel date;
- * Usage = the %-bar. General is a placeholder. ("Learn more" moved to the account dropdown, Claude-style;
- * its links land with §G-2/§G-4.) The renderer never talks to Supabase — main owns openPortal.
+ * §D Settings — a centered modal with a left tab sidebar (General / Account / Billing / Usage), same Shell
+ * animation vocabulary as the other modals. General = About Cubic (logo + version). Account = profile +
+ * Log out + Delete account (P2). Billing = plan + Change plan (→ fullscreen paywall) + Manage subscription
+ * (→ Portal home) + Cancel plan (direct Stripe cancel) + a display-only renew/cancel date. Usage = plan
+ * name + the %-bar. The renderer never talks to Supabase — main owns openPortal/openCheckout.
+ *
+ * Deliberately NO backdrop-blur on the scrim (per design); the tab rail is a darker two-tone vs the pane.
  */
 
-// Statuses whose Stripe customer can be managed in the Portal (live/recoverable sub). Everything else
-// (canceled/incomplete/null) has no manageable sub → the "Subscribe"/"Resubscribe" picker path instead.
-const PORTAL_MANAGEABLE = new Set(['active', 'trialing', 'past_due', 'unpaid', 'paused'])
+// Shared reusable button styles (the only tokenised buttons are the danger ones in danger.ts).
+const BTN_NEUTRAL = 'rounded-md bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/15'
 
 type TabId = 'general' | 'account' | 'billing' | 'usage'
 const TABS: Array<{ id: TabId; label: string; Icon: () => ReactNode }> = [
@@ -58,17 +67,20 @@ export function SettingsModal() {
   const setPickerOpen = useChatStore((s) => s.setPickerOpen)
   const setDeleteAccountOpen = useChatStore((s) => s.setDeleteAccountOpen)
   const deleteAccountOpen = useChatStore((s) => s.deleteAccountOpen)
+  const pickerOpen = useChatStore((s) => s.pickerOpen)
   const user = useChatStore((s) => s.auth.user)
   const billing = useChatStore((s) => s.billing)
   const addToast = useChatStore((s) => s.addToast)
   const [tab, setTab] = useState<TabId>('general')
   const [cancelConfirm, setCancelConfirm] = useState(false)
+  const [version, setVersion] = useState('')
 
-  // Land on General + clear the cancel confirm each time Settings opens.
+  // Land on General + clear the cancel confirm each time Settings opens; fetch the app version once.
   useEffect(() => {
     if (open) {
       setTab('general')
       setCancelConfirm(false)
+      void window.cubic.getAppVersion().then(setVersion).catch(() => {})
     }
   }, [open])
 
@@ -79,17 +91,19 @@ export function SettingsModal() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       if (cancelConfirm) return void setCancelConfirm(false)
-      if (deleteAccountOpen) return
+      // Delete modal / paywall overlay render ON TOP — let each handle its own Escape (don't also close
+      // Settings underneath).
+      if (deleteAccountOpen || pickerOpen) return
       setOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, setOpen, cancelConfirm, deleteAccountOpen])
+  }, [open, setOpen, cancelConfirm, deleteAccountOpen, pickerOpen])
 
   const close = (): void => setOpen(false)
   const ent = billing.entitlement
   const pill = planPillText(billing)
-  const manageable = !!ent?.status && PORTAL_MANAGEABLE.has(ent.status)
+  const manageable = hasManageableSub(ent)
   const hasUsage = billing.status === 'ready' && !!ent && ent.allowanceCents > 0
   // Renewal-date only (display, no backend): the next-renewal date for a live/active sub.
   const renews = ent && ent.status === 'active' ? friendlyReset(ent.periodEnd) : ''
@@ -101,23 +115,30 @@ export function SettingsModal() {
   const cancelDate = friendlyReset(ent?.periodEnd ?? null)
   const planName = planDisplayName(ent?.plan ?? null)
 
-  // Manageable sub → Portal (manage / switch / cancel / update card). Otherwise → the plan picker
-  // (Checkout) for a first/again subscribe.
-  const onManagePlan = async (): Promise<void> => {
-    if (manageable) {
-      const r = await window.cubic.openPortal()
-      if (!r.ok) addToast(billingActionErrorCopy(r.error))
-      return
-    }
-    close()
+  // Change plan / Subscribe → open the fullscreen paywall overlay OVER Settings (don't close it), so its
+  // Back button returns here. Checkout for a first sub, Portal "switch" for an up/down-grade — the paywall
+  // routes per-card.
+  const onOpenPaywall = (): void => {
     setPickerOpen(true)
   }
 
-  // Deep-link straight to Stripe's cancel confirmation (no Portal-home hunting). Shared by the Billing
-  // tab's Cancel-plan button and the Account tab's delete-blocked CTA.
+  // Manage subscription → the Stripe Portal HOME (invoices / receipts / payment method). Plan CHANGES go
+  // through the paywall above; this is the catch-all for everything else on a live sub.
+  const onManageBilling = async (): Promise<void> => {
+    const r = await window.cubic.openPortal()
+    if (!r.ok) addToast(billingActionErrorCopy(r.error))
+  }
+
+  // Deep-link straight to Stripe's cancel confirmation (no Portal-home hunting).
   const onCancelPlan = async (): Promise<void> => {
     const r = await window.cubic.openPortal('cancel')
     if (!r.ok) addToast(billingActionErrorCopy(r.error))
+  }
+
+  // Log out — close Settings first (in prod, sign-out drops the user to the AuthScreen).
+  const onLogOut = (): void => {
+    close()
+    void window.cubic.authSignOut()
   }
 
   // Open the destructive type-to-confirm modal — it renders OVER the Settings modal (z-60), Settings
@@ -134,8 +155,8 @@ export function SettingsModal() {
       {open && (
         <Shell key="settings" onClose={close}>
           <div className="flex h-[86vh] max-h-[720px]">
-            {/* Tab rail */}
-            <nav className="w-52 shrink-0 space-y-0.5 border-r border-white/10 p-3">
+            {/* Tab rail — a darker two-tone vs the content pane (Claude-style). */}
+            <nav className="w-52 shrink-0 space-y-0.5 border-r border-white/10 bg-black/20 p-3">
               <h2 className="px-2 pb-2 text-[13px] font-semibold text-white/90">Settings</h2>
               {TABS.map((t) => (
                 <button
@@ -162,17 +183,45 @@ export function SettingsModal() {
               </button>
               {/* Cap the content column so rows don't stretch across the wide modal (Claude-style). */}
               <div className="max-w-xl">
-              <h3 className="mb-4 text-[15px] font-semibold text-white/90">{active.label}</h3>
+              <h3 className="mb-5 text-[15px] font-semibold text-white/90">{active.label}</h3>
 
-              {tab === 'general' && <Placeholder>General settings will live here.</Placeholder>}
+              {tab === 'general' && (
+                <div>
+                  <div className="flex items-center gap-3">
+                    <img src={cubicLogoUrl} alt="Cubic" className="h-11 w-11" />
+                    <div>
+                      <div className="text-[15px] font-semibold text-white/90">Cubic</div>
+                      <div className="text-[12px] text-white/45">{version ? `Version ${version}` : 'Version —'}</div>
+                    </div>
+                  </div>
+                  <p className="mt-4 max-w-sm text-[12.5px] leading-relaxed text-white/45">
+                    AI-driven motion for After Effects — describe the animation you want and Cubic builds it
+                    right in your timeline.
+                  </p>
+                </div>
+              )}
 
               {tab === 'account' && (
                 <div>
-                  <Field label="Email" value={user?.email ?? '—'} />
+                  {/* Profile — avatar + name/email + Log out. */}
+                  <div className="flex items-center gap-3">
+                    {user && <Avatar user={user} />}
+                    <div className="min-w-0">
+                      <div className="truncate text-[14px] font-medium text-white/90">
+                        {user?.name || user?.email || '—'}
+                      </div>
+                      {user?.name && <div className="truncate text-[12px] text-white/45">{user.email}</div>}
+                    </div>
+                    <button onClick={onLogOut} className={`ml-auto shrink-0 ${BTN_NEUTRAL}`}>
+                      Log out
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[12px] text-white/40">Signed in with Google</p>
+
                   {/* Delete account (P2). The button is ALWAYS visible; grayed + unclickable until any live
                       subscription is cancelled first (flow: read this → Billing tab → Cancel plan → return
                       here → it unlocks). */}
-                  <div className="mt-6 border-t border-white/10 pt-4">
+                  <div className="mt-7 border-t border-white/10 pt-5">
                     <p className="text-[13px] font-medium text-white/85">Delete account</p>
                     <p className="mt-1 text-[12px] text-white/45">
                       {canDelete
@@ -199,20 +248,26 @@ export function SettingsModal() {
                   <div>
                     <Field label="Plan" value={pill || '—'} />
                     {cancelScheduled
-                      ? friendlyReset(ent?.periodEnd ?? null) && (
-                          <Field label="Cancels" value={friendlyReset(ent?.periodEnd ?? null)} />
-                        )
+                      ? cancelDate && <Field label="Cancels" value={cancelDate} />
                       : renews && <Field label="Renews" value={renews} />}
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        onClick={() => void onManagePlan()}
-                        className="rounded-md bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/15"
-                      >
-                        {manageable ? 'Manage subscription' : 'Subscribe'}
-                      </button>
-                      {showCancelBtn && (
-                        <button onClick={() => setCancelConfirm(true)} className={DANGER_BTN}>
-                          Cancel plan
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {manageable ? (
+                        <>
+                          <button onClick={onOpenPaywall} className={BTN_NEUTRAL}>
+                            Change plan
+                          </button>
+                          <button onClick={() => void onManageBilling()} className={BTN_NEUTRAL}>
+                            Manage subscription
+                          </button>
+                          {showCancelBtn && (
+                            <button onClick={() => setCancelConfirm(true)} className={DANGER_BTN}>
+                              Cancel plan
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button onClick={onOpenPaywall} className={BTN_NEUTRAL}>
+                          Subscribe
                         </button>
                       )}
                     </div>
@@ -220,7 +275,14 @@ export function SettingsModal() {
                 ))}
 
               {tab === 'usage' &&
-                (hasUsage && ent ? <UsageBar ent={ent} /> : <Placeholder>Usage appears here once you’re on a plan.</Placeholder>)}
+                (hasUsage && ent ? (
+                  <div>
+                    <p className="mb-4 text-[13px] font-medium text-white/85">{planDisplayName(ent.plan)} plan</p>
+                    <UsageBar ent={ent} />
+                  </div>
+                ) : (
+                  <Placeholder>Usage appears here once you’re on a plan.</Placeholder>
+                ))}
               </div>
             </div>
           </div>
@@ -275,6 +337,33 @@ export function SettingsModal() {
       )}
     </AnimatePresence>
     </>
+  )
+}
+
+/** Round avatar — provider photo when present, else initials from the name (or email). */
+function Avatar({ user }: { user: { name?: string; email: string; avatarUrl?: string } }) {
+  const [broken, setBroken] = useState(false)
+  if (user.avatarUrl && !broken) {
+    return (
+      <img
+        src={user.avatarUrl}
+        alt=""
+        onError={() => setBroken(true)}
+        className="h-10 w-10 shrink-0 rounded-full object-cover"
+      />
+    )
+  }
+  const source = user.name || user.email || '?'
+  const initials =
+    source
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || source[0]?.toUpperCase()
+  return (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-[13px] font-medium text-white/80">
+      {initials}
+    </span>
   )
 }
 

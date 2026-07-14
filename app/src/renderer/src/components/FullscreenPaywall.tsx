@@ -181,7 +181,7 @@ export function PaywallOverlay() {
       {open && (
         <motion.div
           key="paywall-overlay"
-          className="fixed inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-md"
+          className="fixed inset-0 z-[55] flex flex-col bg-black/60 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
