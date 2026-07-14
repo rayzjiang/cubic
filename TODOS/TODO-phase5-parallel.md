@@ -97,9 +97,10 @@
 - [x] Add Cubic (company name duh) to the sign in page + home page + new chat page? (def sign in page, prob make it the BIGGEST font of the 3 and put it right below logo? - or maybe to the right of logo)
 
 **P3b — First-run flow + AE-access gate** (flow orchestration + new transport plumbing)
-- [ ] Onboarding sequence?? (before paywall)
-- [ ] **§D-1 first-run sequence** — sign in → connect AE → try it → **paywall last** (greenfield; ends at P3a's paywall).
-- [ ] **§D-1a require AE file access** — renderer→bridge `checkFileAccess` (backend done; needs a renderer request/response caller); on `canWriteFiles:false` block w/ the AE **Settings → Scripting & Expressions → "Allow Scripts to Write Files…"** step, re-check until enabled.
+- [x] Onboarding sequence?? (before paywall)
+- [x] **§D-1 first-run sequence** — sign in → connect AE → try it → **paywall last** (greenfield; ends at P3a's paywall).
+    - [ ] save somewhere in this todo phase 5 to use fable to ensure states + file organization (like components, its hella long rn) are optimal + cleanly organized like a good engineering codebase + non redundant (i want it efficient, id rather ensure im engineering things well now, then have to figure out whats wrong later as my codebase gets bigger + laggier potentially)
+- [x] **§D-1a require AE file access** — renderer→bridge `checkFileAccess` (backend done; needs a renderer request/response caller); on `canWriteFiles:false` block w/ the AE **Settings → Scripting & Expressions → "Allow Scripts to Write Files…"** step, re-check until enabled.
 
 **P3c — OAuth page + copy closeout** (isolated infra + final sweep)
 - [ ] **§B-5 branded OAuth success page** — hosted HTTPS page fires `cubic://auth/callback?code=…` + "close this tab"; repoint `auth.ts` `redirectTo` + Supabase allow-list; host on the Worker. Not a blocker (deep link already works).
