@@ -30,6 +30,8 @@ const api: CubicApi = {
   refreshBilling: () => ipcRenderer.invoke(CHANNELS.billingRefresh),
   openCheckout: (plan) => ipcRenderer.invoke(CHANNELS.billingOpenCheckout, plan),
   openPortal: (flow, plan) => ipcRenderer.invoke(CHANNELS.billingOpenPortal, flow, plan),
+  getBillingDetails: () => ipcRenderer.invoke(CHANNELS.billingGetDetails),
+  openInvoice: (url) => ipcRenderer.invoke(CHANNELS.billingOpenInvoice, url),
   onBillingChanged: (cb) => {
     const listener = (_e: unknown, state: BillingState): void => cb(state)
     ipcRenderer.on(CHANNELS.billingChanged, listener)

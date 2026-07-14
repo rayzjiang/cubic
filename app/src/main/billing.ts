@@ -12,7 +12,7 @@
 import { EventEmitter } from 'node:events'
 import { shell } from 'electron'
 import type { BackendConfig } from './config.js'
-import type { BillingActionResult, BillingState, Entitlement, PlanId, SubscriptionStatus } from '../shared/ipc.js'
+import type { BillingActionResult, BillingDetails, BillingState, Entitlement, PlanId, SubscriptionStatus } from '../shared/ipc.js'
 
 // Post-Checkout/Portal-return webhook lag: Stripe's webhook is the only writer of paid-state and can lag
 // the browser return by a few seconds, so an immediate refetch may still show the old state. Poll on a
@@ -102,6 +102,53 @@ export class BillingManager extends EventEmitter {
     if (flow) body.flow = flow
     if (plan) body.plan = plan
     return this.openBrowserFlow('create-portal', body)
+  }
+
+  /** Read-only billing detail (default card + recent invoices) for the Settings → Billing tab. Like
+   *  `fetchEntitlement`, this returns DATA (not a browser open); `null` on any failure so the tab keeps
+   *  its other fields. The edge fn resolves the Stripe customer from the caller's JWT. */
+  async getBillingDetails(): Promise<BillingDetails | null> {
+    if (!this.configured()) return null
+    const token = await this.getAccessToken()
+    if (!token) return null
+    try {
+      const res = await fetch(new URL('/functions/v1/billing-details', this.supabaseUrl), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: this.anonKey, authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      })
+      // Surface WHY it failed in the dev log — a 404 means the function isn't deployed to this Supabase
+      // project; a 500 is a runtime error in the function (check its logs). Otherwise this fails silently.
+      if (!res.ok) {
+        console.error(`billing-details fetch failed: HTTP ${res.status} — ${await res.text().catch(() => '')}`)
+        return null
+      }
+      const data = (await res.json().catch(() => null)) as BillingDetails | null
+      if (!data || !Array.isArray(data.invoices)) {
+        console.error('billing-details: malformed response (missing invoices array)')
+        return null
+      }
+      return data
+    } catch (e) {
+      console.error('billing-details fetch threw', e)
+      return null
+    }
+  }
+
+  /** Open a Stripe-hosted invoice page (the "View" link) in the system browser. Guarded to https Stripe
+   *  hosts — the URL originates from our own edge fn, but we never hand an unvalidated string to the OS. */
+  async openInvoice(url: string): Promise<BillingActionResult> {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return { ok: false, error: 'invalid_url' }
+    }
+    if (parsed.protocol !== 'https:' || !/(^|\.)stripe\.com$/.test(parsed.hostname)) {
+      return { ok: false, error: 'invalid_url' }
+    }
+    await shell.openExternal(parsed.href)
+    return { ok: true }
   }
 
   /** Clear entitlement on sign-out (the row belongs to a now-signed-out user). Keeps 'unavailable'. */
