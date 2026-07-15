@@ -56,7 +56,7 @@ export function AuthScreen() {
             Animate in After Effects, with AI
           </h1>
           <p className="max-w-sm text-[13px] leading-relaxed text-white/55">
-            Describe the motion you want — Cubic builds it right in your timeline.
+            Describe the motion you want — Cubic builds it directly in AE.
           </p>
         </div>
 

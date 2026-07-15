@@ -31,7 +31,7 @@ function FileAccessBody({ onDismiss }: { onDismiss: () => void }) {
         it uses to undo changes. Turn it on to keep going:
       </p>
 
-      <ol className="mt-6 w-full space-y-2.5 text-left">
+      <ol className="mx-auto mt-6 w-full max-w-sm space-y-2.5 text-left">
         <Step n={1}>
           In After Effects, open <span className="text-white/80">Settings → Scripting &amp; Expressions</span>{' '}
           <span className="text-white/40">(Preferences on older versions)</span>.
@@ -48,9 +48,6 @@ function FileAccessBody({ onDismiss }: { onDismiss: () => void }) {
       >
         I’ve enabled it — Re-check
       </button>
-      <p className="mt-3 text-[11.5px] text-white/35">
-        If it doesn’t clear, restart After Effects — Cubic reconnects automatically.
-      </p>
 
       <button onClick={onDismiss} className="mt-6 text-[12px] text-white/35 hover:text-white/60">
         Dismiss for now

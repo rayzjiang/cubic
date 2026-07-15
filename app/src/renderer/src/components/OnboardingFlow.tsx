@@ -16,15 +16,19 @@ import { EASE_OUT } from '../motion'
 const SLIDES = [
   {
     title: 'Accelerate your After Effects workflow',
-    body: 'Cubic is an AI editor for After Effects. Prompt it with the changes you want, and Cubic builds it directly in your AE project.',
+    body: 'Cubic is an AI agent for After Effects. It reads your project and builds anything you ask for, directly in your AE project. Everything stays manually editable and native to AE.',
   },
   {
-    title: 'Restyle, redesign, reanimate',
-    body: 'Ask for smooth transitions, keyframes, graph edits — tedious edits that used to mean digging through AE. \nWith Cubic, effortlessly get it done in seconds.',
+    title: 'Complete understanding of your project',
+    body: 'Cubic reads and fully understands your project: every composition, layer, property, expression, effect, and more. The same way a real editor would.',
   },
   {
-    title: 'You’re all set',
-    body: 'One quick thing after you subscribe: Cubic needs file access in After Effects to save frames and keep automatic backups (so you can undo Cubic’s changes). We’ll walk you through it.',
+    title: 'Animate faster than ever before',
+    body: 'Smooth transitions. Bouncy keyframes. Satisfying overshoots.\nHours of manual work in AE, now done in seconds with Cubic.',
+  },
+  {
+    title: 'Ready to get started?',
+    body: 'One last thing: Cubic needs file access in After Effects to back up your project automatically, so every change stays undoable. We’ll guide you through it.',
   },
 ]
 
