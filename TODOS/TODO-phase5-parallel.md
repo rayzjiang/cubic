@@ -102,9 +102,9 @@
 - [x] **§D-1a require AE file access** — renderer→bridge `checkFileAccess` (backend done; needs a renderer request/response caller); on `canWriteFiles:false` block w/ the AE **Settings → Scripting & Expressions → "Allow Scripts to Write Files…"** step, re-check until enabled.
 - [ ] Finalize onboarding sequence + add images (like cursor's website??) - for mvp no video..
 
-**P3c — OAuth page + copy closeout** (isolated infra + final sweep)
-- [ ] **§B-5 branded OAuth success page** — hosted HTTPS page fires `cubic://auth/callback?code=…` + "close this tab"; repoint `auth.ts` `redirectTo` + Supabase allow-list; host on the Worker. Not a blocker (deep link already works).
-- [ ] **§D-4 non-technical copy pass** — consumer tone across ALL Wave-3 screens (incl. P2 delete copy) → **dead last**.
+**P3c — deferred out (both items relocated; nothing to build here → P3 is complete via P3a→P3b)**
+- §B-5 OAuth success page → moved to **"Post Cubic but still pre launch stuff"** (needs the domain — rides the landing-page/domain work).
+- §D-4 copy pass → moved to **Launch gates** (low priority; cheapest done once on frozen screens, batch with §G-2).
 
 **Order / deps:** P1 → P2 → P3 (**P3 = P3a → P3b → P3c**, see §5c). P2 needs P1's plumbing + the Settings delete-entry; P3's first-run ends at P3a's paywall, and its copy pass sweeps P2's screens. Then Wave 3.5 (WT-ANALYTICS).
 
@@ -149,12 +149,21 @@
 ## Launch gates — final, sequential (not a worktree; gates ship)
 - [ ] §G-1 price + cap numbers locked (confirms §C-8 decision is made, not TBD)
 - [ ] §G-2 ToS + Privacy Policy published — *start drafting early (legal lead time)*
+- [ ] ~~**\*LOW PRIORITY I THINK** · §D-4 non-technical copy pass — consumer tone across ALL Wave-3 screens (incl. P2 delete copy); cheapest done once on frozen screens (batch with §G-2 legal copy). Lowkey might not need it.~~
 - [ ] §G-3 full paid flow tested E2E on a clean machine (install → sign in → trial → cap → pay → use → cancel → revoked)
 - [ ] §G-4 refund + support process — real inbox + refund SOP. **Data-erasure / account-closure guard:** the self-serve delete flow (Wave 3 §D-5) covers the common case; for any **manual** deletion (admin-initiated erasure on request), follow the same invariant — **cancel the Stripe subscription BEFORE deleting the Supabase user**, or the `ON DELETE CASCADE` clears the local `subscriptions` cache while the real Stripe sub keeps billing a ghost.
 - [ ] **Stripe customer emails ON** (zero-code Dashboard config) — turn on the payment emails customers expect: successful-payment **receipts** (the sample statement), **failed-payment / dunning** (retry + "update your card", schedule matched to the ~24h fail-fast `past_due` grace), and renewal / card-expiry reminders (Settings → Customer emails + Settings → Billing → failed payments). Two things to verify or they don't land right: (1) the Stripe **Customer carries the user's email** (Checkout attaches it by default — confirm in the §G-3 E2E), (2) clean **product/price display names** so the receipt reads "Max plan," not a `prod_…` id. _(promoted to MVP from POSTMVP "Enable Stripe dunning emails")_
 - [ ] §G-5 dev/ops runbook (`docs/RUNBOOK.md`) — the maintainer's index of every operational surface so post-ship "where do I change/fix X" has one home. **Do this LAST** (rescan the finished codebase first, so procedures reflect final prod state). Structure: Tier-1 items get full inline procedures (they have no other home) — change a plan's price/allowance (`supabase/scripts/change-plan.ts`, `--dry-run` first, Subscription-Schedules staggered migration), prod deploy (Worker + Supabase functions/migrations + Stripe webhook endpoint), secrets registry + rotation, Stripe manual ops/refund/dispute SOP (folds in §G-4), incident/rollback. Tiers 2–3 = thin pointers to the per-package source-of-truth docs (`app/README.md`, `proxy/CLAUDE.md`, `supabase/README.md`, `server/*/CLAUDE.md`, `docs/ARCHITECTURE.md`, `migrations/`) — index, don't restate. Tier 4 = stub the not-yet-built ops (§E/§F/§H) to fill on completion. Mirrors how `ARCHITECTURE.md` defers to its sources rather than duplicating.
     - claude --resume 91773af0-93fc-4396-aeec-2f7e81af3d18
     - i want to document somewhere (either a new md file or to my root readme.md) all the dev stuff for my product (so ik where to do/fix/change certani things after i ship). do a thorough scan of my codebase for things like this to lmk what could go here. eg: one thing for certain i want to add is the new price migration script for changing price plans or allowance for users on certain plans (since its not documented anywhere rn, id probably forget i have this functionality, so i want somewhere easy for me to find all the stuff like this). Give me a bucketed list into tiers of highest to lowest priority of stuff that should go into a doc like this (think of it as dev documentation so that future develoeprs can help out/maintani my entire cubic software/customers/applicatoin) do u understand?
+---
+## Post Cubic but still pre launch stuff:
+
+- landing page + domain name
+    - **§B-5 branded OAuth success page** — hosted HTTPS "you're signed in — close this tab" page that fires `cubic://auth/callback?code=…`; needs the domain, so rides this. Repoint `AUTH_REDIRECT` (`app/src/main/auth.ts:22`) + the Supabase redirect allow-list + host on the Worker (add a `GET /auth/callback` route to `proxy/src/index.ts`, today `POST /v1/messages`-only). Non-blocker — the deep link already works (only an ugly hanging tab until then).
+- launch video
+- social media post
+
 ---
 
 ## Order / dependencies
