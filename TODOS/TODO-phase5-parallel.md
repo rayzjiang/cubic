@@ -110,6 +110,10 @@
 
 ---
 
+- Should I really be setting the 15 iteration limit? Maybe it's a high Q limitation, but when I ask it and throw it into a really big code base, it's pretty inefficient in figuring out where to look. And it can hit the iteration limit pretty quickly. I think it's just very inefficient in using the tool calls. **Maybe look at my pinned clipboard history with the tool granularity?? + add that? would that help?**
+
+---
+
 ## Wave 3.5 — instrument the finished flow (WT-ANALYTICS; after Wave 3, before packaging)
 
 **WT-ANALYTICS** — §H (PostHog event hooks, server-side, in the backend agent loop + dispatcher). **Pinned here, not a free float:** wiring it after Waves 1–3 and before §E packaging means every dependency is already in place → one unblocked pass, no returning to it later.
