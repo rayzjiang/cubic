@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useChatStore } from '../store'
 import { EASE_OUT } from '../motion'
+import demo1Url from '../assets/onboarding/demo1.webp'
+import demo2Url from '../assets/onboarding/demo2.webp'
+import demo4Url from '../assets/onboarding/demo4.webp'
+import cubicLogoUrl from '../assets/cubic-logo.svg'
 
 /**
  * §D-1 — the pre-paywall first-run sequence. Shown once per account (App.tsx renders it as the whole
@@ -13,14 +17,16 @@ import { EASE_OUT } from '../motion'
  * into <DemoMedia/> later.
  */
 
-const SLIDES = [
+const SLIDES: { title: string; body: string; media?: string }[] = [
   {
     title: 'Accelerate your After Effects workflow',
     body: 'Cubic is an AI agent for After Effects. It reads your project and builds anything you ask for, directly in your AE project. Everything stays manually editable and native to AE.',
+    media: demo1Url,
   },
   {
     title: 'Complete understanding of your project',
     body: 'Cubic reads and fully understands your project: every composition, layer, property, expression, effect, and more. The same way a real editor would.',
+    media: demo2Url,
   },
   {
     title: 'Animate faster than ever before',
@@ -29,15 +35,32 @@ const SLIDES = [
   {
     title: 'Ready to get started?',
     body: 'One last thing: Cubic needs file access in After Effects to back up your project automatically, so every change stays undoable. We’ll guide you through it.',
+    media: demo4Url,
   },
 ]
 
-/** Per-slide media slot — a placeholder rectangle today; swap in an <img>/<video> later with no layout
- *  change (fixed 16:9). */
-function DemoMedia() {
+/** The per-slide demo media in a fixed 16:9 box. Every slide's media is stacked absolutely so the box is
+ *  a CONSTANT height (the nav never shifts); only the active one is opaque, crossfading with the copy. A
+ *  slide with no `media` shows the placeholder. Add more screenshots/clips by setting `media` on SLIDES. */
+function DemoMedia({ step }: { step: number }) {
   return (
-    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-white/10 bg-white/4">
-      <span className="text-[12px] text-white/30">Demo coming soon</span>
+    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-white/10 bg-white/4">
+      {SLIDES.map((slide, i) => (
+        <motion.div
+          key={i}
+          className="absolute inset-0 flex items-center justify-center"
+          initial={false}
+          animate={{ opacity: i === step ? 1 : 0 }}
+          transition={{ duration: 0.2, ease: EASE_OUT }}
+          aria-hidden={i !== step}
+        >
+          {slide.media ? (
+            <img src={slide.media} alt="" className="h-full w-full object-contain" />
+          ) : (
+            <span className="text-[12px] text-white/30">Demo coming soon</span>
+          )}
+        </motion.div>
+      ))}
     </div>
   )
 }
@@ -73,6 +96,7 @@ export function OnboardingFlow() {
       </button>
 
       <div className="relative flex w-full max-w-lg flex-col items-center [-webkit-app-region:no-drag]">
+        <img src={cubicLogoUrl} alt="" className="mb-6 h-12 w-12" />
         {/* 3-square progress indicator. */}
         <div className="mb-8 flex gap-2">
           {SLIDES.map((_, i) => (
@@ -85,14 +109,13 @@ export function OnboardingFlow() {
           ))}
         </div>
 
-        {/* The media is identical across slides (only the copy changes), so it sits still. All three copy
-            blocks are stacked in ONE grid cell (every child at col/row 1 → they overlap), so the container
-            is ALWAYS as tall as the TALLEST slide — the nav below never shifts when a slide's description
-            wraps to a different number of lines (the longest slide sets the height for all). Only the
-            active block is opaque; it crossfades in. `whitespace-pre-line` lets a body use `\n` for a
-            manual line break. */}
+        {/* The demo box is a fixed 16:9 height (DemoMedia stacks the per-slide media absolutely), and the
+            copy blocks are stacked in ONE grid cell (every child at col/row 1 → they overlap), so the
+            container is ALWAYS as tall as the TALLEST slide — the nav below never shifts when a slide's
+            description wraps to a different number of lines. Only the active block is opaque; it crossfades
+            in. `whitespace-pre-line` lets a body use `\n` for a manual line break. */}
         <div className="flex w-full flex-col items-center text-center">
-          <DemoMedia />
+          <DemoMedia step={step} />
           <div className="mt-8 grid w-full grid-cols-1">
             {SLIDES.map((slide, i) => (
               <motion.div
