@@ -15,6 +15,7 @@ import {
   sendUserChat,
 } from './ws'
 import { track } from './analytics'
+import { readFirstRun, markIntroSeen as persistIntroSeen, markTriedIt as persistTriedIt } from './firstRun'
 
 // ── Persisted navigation (survives an in-window reload, NOT a fresh launch) ──
 // We remember the active conversation + view so a ⌘R / window reload lands back where the user was and
@@ -92,6 +93,14 @@ interface ChatState {
   // Live AE (CEP worker) connectivity, pushed by the backend (`aeStatus`). Distinct from `connection`
   // (the renderer↔backend link): drives the always-on After Effects status dot.
   aeConnected: boolean
+  // §D-1a — whether AE's "Allow Scripts to Write Files" setting is on, pushed by the backend
+  // (`fileAccess`). Tri-state: null = unknown/not-yet-checked (or AE disconnected); true = on; false =
+  // off. The file-access gate fires ONLY on an explicit `false` (never `null`) while AE is connected.
+  canWriteFiles: boolean | null
+  // Session-only: the file-access gate's fullscreen modal was dismissed → show the slim banner instead
+  // (composer stays gated). In-memory (resets on reload/launch) so the modal re-shows fullscreen next
+  // session while the setting is still off.
+  fileGateDismissed: boolean
   // Backend-link status, pushed by main over IPC (distinct from `connection`, the renderer's own WS):
   // covers backend crash/reconnect/port-in-use/install — states the WS can't carry when it's down.
   backendStatus: BackendStatus
@@ -104,6 +113,14 @@ interface ChatState {
   billing: BillingState
   // Which deployment we run as — gates sign-in (prod blocks until signed in; local never blocks).
   cubicEnv: CubicEnvName
+  // §D-1 first-run flags, hydrated from per-user localStorage when auth resolves signed-in (see setAuth):
+  //  - onboardingSeen — the pre-paywall info slides have been seen/skipped (OnboardingFlow gates on !this).
+  //  - triedItSeen    — the post-subscribe "start a chat" coachmark has been dismissed (first chat started).
+  onboardingSeen: boolean
+  triedItSeen: boolean
+  // When onboarding is REOPENED via Back from the paywall, resume on the last slide (not slide 1) — set
+  // by reopenOnboarding, read by OnboardingFlow at mount. A genuine first run leaves it false → slide 1.
+  onboardingResumeAtEnd: boolean
   view: 'home' | 'chat'
   projectPath: string
   // sidebar/home list
@@ -147,7 +164,8 @@ interface ChatState {
   // delete-refusal tracking (rollback an optimistic removal if the backend refuses mid-turn)
   pendingDeletes: Set<string>
   // §D billing UI overlays (root-mounted, store-driven like the confirm modals): the account Settings
-  // modal + the plan-picker (Checkout) modal opened from the account menu / Settings / paywalls.
+  // modal + the fullscreen paywall overlay (`pickerOpen`, opened from the account menu / Settings /
+  // paywall banner — the FullscreenPaywall PaywallOverlay).
   settingsOpen: boolean
   pickerOpen: boolean
   // P2 destructive account-deletion confirm modal (type-to-confirm), opened from Settings→Account.
@@ -166,6 +184,10 @@ interface ChatState {
   setAuth: (s: AuthState) => void
   setBilling: (s: BillingState) => void
   setCubicEnv: (e: CubicEnvName) => void
+  setFileGateDismissed: (dismissed: boolean) => void
+  markOnboardingSeen: () => void
+  reopenOnboarding: () => void
+  markTriedIt: () => void
   toggleSidebar: () => void
   setMobileDrawerOpen: (open: boolean) => void
   toggleMobileDrawer: () => void
@@ -233,10 +255,15 @@ function discardUncommittedTurn(s: ChatState): Partial<ChatState> {
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
   aeConnected: false,
+  canWriteFiles: null,
+  fileGateDismissed: false,
   backendStatus: { phase: 'starting', install: 'ok' },
   auth: { status: 'loading', user: null },
   billing: { status: 'loading', entitlement: null, activating: false },
   cubicEnv: 'local',
+  onboardingSeen: false,
+  triedItSeen: false,
+  onboardingResumeAtEnd: false,
   // Restore the active conversation + view so a reload lands back where the user was (see reattachActive).
   ...(() => { const n = loadNav(); return { view: n.view, sessionId: n.sessionId } })(),
   projectPath: '',
@@ -258,9 +285,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConnection: (c) => set({ connection: c }),
   setBackendStatus: (s) => set({ backendStatus: s }),
-  setAuth: (s) => set({ auth: s }),
+  // Hydrate the per-user first-run flags in the SAME set() as the auth state, so a returning signed-in
+  // user never flashes onboarding for a frame before a separate hydrate runs (the flags are false by
+  // default). Signed-out/loading → just store auth (flags stay at their harmless defaults).
+  setAuth: (s) => {
+    if (s.status === 'signedIn' && s.user) {
+      const fr = readFirstRun(s.user.id)
+      set({ auth: s, onboardingSeen: fr.intro, triedItSeen: fr.triedIt })
+    } else {
+      set({ auth: s })
+    }
+  },
   setBilling: (s) => set({ billing: s }),
   setCubicEnv: (e) => set({ cubicEnv: e }),
+  setFileGateDismissed: (dismissed) => set({ fileGateDismissed: dismissed }),
+  markOnboardingSeen: () => {
+    const id = get().auth.user?.id
+    if (id) persistIntroSeen(id)
+    set({ onboardingSeen: true })
+  },
+  // Back from the cold-start paywall → reopen the onboarding slides at the LAST one. Session-only: the
+  // persisted "seen" flag is left as-is (this is an in-session back, not an un-completion).
+  reopenOnboarding: () => set({ onboardingSeen: false, onboardingResumeAtEnd: true }),
+  markTriedIt: () => {
+    const id = get().auth.user?.id
+    if (id) persistTriedIt(id)
+    set({ triedItSeen: true })
+  },
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setMobileDrawerOpen: (open) => set({ mobileDrawerOpen: open }),
   toggleMobileDrawer: () => set((s) => ({ mobileDrawerOpen: !s.mobileDrawerOpen })),
@@ -340,7 +391,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       case 'aeStatus':
         // Live AE connectivity → status dot. Always apply (not session-scoped): it's app-global state.
-        set({ aeConnected: msg.connected })
+        // On disconnect, reset canWriteFiles to unknown (null) so a stale `false` can't gate the composer
+        // while AE is down; a fresh `fileAccess` push arrives on the next connect.
+        set(msg.connected ? { aeConnected: true } : { aeConnected: false, canWriteFiles: null })
+        break
+      case 'fileAccess':
+        // §D-1a — whether AE's "Allow Scripts to Write Files" setting is on. Drives the file-access gate.
+        set({ canWriteFiles: msg.canWriteFiles })
         break
       case 'restored':
         if (msg.ok) {

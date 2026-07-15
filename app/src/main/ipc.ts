@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus, type BillingState, type PlanId } from '../shared/ipc.js'
 import type { BackendConfig } from './config.js'
 import type { BackendSupervisor } from './backend.js'
@@ -17,11 +17,15 @@ import type { BillingManager } from './billing.js'
 export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager): void {
   ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
+  // Non-destructive AE reconnect (§D-1a companion): re-poke conn.json to wake a dormant panel.
+  ipcMain.handle(CHANNELS.reconnectAe, () => backend.repokeConn())
   backend.on('status', (status: BackendStatus) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.backendStatus, status)
     }
   })
+
+  ipcMain.handle(CHANNELS.getAppVersion, () => app.getVersion())
 
   // §B auth. The renderer drives sign-in/out and reads state; main owns the Supabase session.
   ipcMain.handle(CHANNELS.getCubicEnv, () => config.cubicEnv)
@@ -41,7 +45,9 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   ipcMain.handle(CHANNELS.billingGetState, () => billing.snapshot)
   ipcMain.handle(CHANNELS.billingRefresh, () => billing.refresh())
   ipcMain.handle(CHANNELS.billingOpenCheckout, (_e, plan: PlanId) => billing.openCheckout(plan))
-  ipcMain.handle(CHANNELS.billingOpenPortal, (_e, flow?: 'cancel') => billing.openPortal(flow))
+  ipcMain.handle(CHANNELS.billingOpenPortal, (_e, flow?: 'cancel' | 'update_card' | 'switch', plan?: PlanId) => billing.openPortal(flow, plan))
+  ipcMain.handle(CHANNELS.billingGetDetails, () => billing.getBillingDetails())
+  ipcMain.handle(CHANNELS.billingOpenInvoice, (_e, url: string) => billing.openInvoice(url))
   billing.on('change', (state: BillingState) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(CHANNELS.billingChanged, state)

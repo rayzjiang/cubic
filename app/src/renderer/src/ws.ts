@@ -76,6 +76,9 @@ function wsSend(msg: ClientMessage): void {
 
 export const sendList = (): void => wsSend({ type: 'list' })
 export const sendLoadHistory = (sessionId: string): void => wsSend({ type: 'loadHistory', sessionId })
+// Ask the backend to re-probe AE's "Allow Scripts to Write Files" setting (§D-1a) → replies `fileAccess`.
+// No-op on the backend while AE is disconnected (the gate is off then anyway).
+export const sendCheckFileAccess = (): void => wsSend({ type: 'checkFileAccess' })
 // Attach the user's fresh (auto-refreshed) Supabase access token per send so the Worker can verify it
 // per request (WT-PROXY-GATING §A-4). `getAccessToken()` returns null when signed out / in local mode —
 // harmless (the proxy is only hit in prod). Never blocks the optimistic UI (the store already painted).

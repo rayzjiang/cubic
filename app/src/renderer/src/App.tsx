@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useChatStore } from './store'
 import { useMotion } from './motion'
-import { bindWs, connectBackend, sendList } from './ws'
+import { bindWs, connectBackend, sendList, sendCheckFileAccess } from './ws'
 import { ChatPane } from './components/ChatPane'
 import { HomeView } from './components/HomeView'
 import { Sidebar } from './components/Sidebar'
@@ -14,10 +14,14 @@ import { AuthScreen } from './components/AuthScreen'
 import { ConfirmModal } from './components/ConfirmModal'
 import { SettingsModal } from './components/SettingsModal'
 import { DeleteAccountModal } from './components/DeleteAccountModal'
-import { PaywallTakeover, PaywallBanner, PlanPickerModal } from './components/Paywall'
+import { PaywallBanner } from './components/Paywall'
+import { FullscreenPaywall, PaywallOverlay } from './components/FullscreenPaywall'
+import { FileAccessOverlay, FileAccessBanner } from './components/FileAccessGate'
+import { OnboardingFlow } from './components/OnboardingFlow'
 import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
 import { isBlocked } from './billing/entitlement'
+import { isFileBlocked } from './fileAccess'
 
 /**
  * Root: wires the WS transport to the store and routes between the home landing view and the active
@@ -33,6 +37,11 @@ export function App() {
   const cubicEnv = useChatStore((s) => s.cubicEnv)
   const billing = useChatStore((s) => s.billing)
   const hasChats = useChatStore((s) => s.conversations.length > 0)
+  // §D-1 first-run: show the info slides once per account before the paywall can fire.
+  const onboardingSeen = useChatStore((s) => s.onboardingSeen)
+  // §D-1a file-access gate: the slim banner shows once the fullscreen modal was dismissed (composer stays
+  // gated). The fullscreen <FileAccessOverlay/> is root-mounted below.
+  const showFileBanner = useChatStore((s) => isFileBlocked(s) && s.fileGateDismissed)
   const isNarrow = useIsNarrow()
   const { crossfade } = useMotion()
 
@@ -84,6 +93,9 @@ export function App() {
       // §D — also re-sync entitlement on focus: catches out-of-band changes (a cancel/upgrade from
       // another device, or a Portal change) with no idle polling. Cheap self-read; main owns it.
       void window.cubic.refreshBilling()
+      // §D-1a — re-probe AE file access on focus: the user may have just flipped the setting in AE and
+      // switched back. Event-driven (no polling); the backend no-ops if AE is disconnected.
+      sendCheckFileAccess()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
@@ -98,13 +110,19 @@ export function App() {
     // Skipped while `loading` (so an already-signed-in user doesn't flash the sign-in screen on launch)
     // and entirely in local dev (cubicEnv==='local'), which stays usable signed-out.
     body = <AuthScreen />
+  } else if (authStatus === 'signedIn' && !onboardingSeen) {
+    // §D-1 first-run: a signed-in user who hasn't seen onboarding gets the pre-paywall info slides.
+    // Ordered ABOVE the cold-start paywall (below) so "paywall last" holds — finishing/skipping the
+    // slides flips the flag and falls through to the paywall. In prod sign-in is forced so this always
+    // applies to a first-timer; in local dev it applies only if the user signs in (testable, not naggy).
+    body = <OnboardingFlow />
   } else if (!listLoaded && connection !== 'disconnected') {
     body = <LoadingScreen />
   } else if (isBlocked(billing) && !hasChats) {
     // §D cold-start paywall — a blocked user with zero chats has nothing to browse, so the whole app
     // becomes the paywall (the money path). A blocked user WITH chats falls through to the in-context
     // banner below (they keep their history; only the composer is gated).
-    body = <PaywallTakeover />
+    body = <FullscreenPaywall />
   } else {
     // Home + chat share the global top bar; only the region below it differs. The two views
     // overlapping-crossfade (+subtle rise) into each other: both are absolutely positioned inside the
@@ -118,6 +136,9 @@ export function App() {
             cold-start takeover above didn't fire). Persistent bar on both Home + Chat; the composer is
             separately gated in InputBar. */}
         {isBlocked(billing) && <PaywallBanner />}
+        {/* §D-1a file-access limit state — the fullscreen gate was dismissed to this slim banner (the
+            composer stays gated in InputBar). The fullscreen <FileAccessOverlay/> is root-mounted below. */}
+        {showFileBanner && <FileAccessBanner />}
         {/* An AE project switch surfaces as a toast (see store `conversations` handler); the now-open
             project name shows in the TopBar. The slim ProjectSwitchBar component is kept (unmounted) for
             possible future reuse. */}
@@ -166,7 +187,8 @@ export function App() {
       <ConfirmModal />
       <SettingsModal />
       <DeleteAccountModal />
-      <PlanPickerModal />
+      <PaywallOverlay />
+      <FileAccessOverlay />
       <Toasts />
     </div>
   )

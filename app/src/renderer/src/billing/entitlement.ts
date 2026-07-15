@@ -1,5 +1,5 @@
-import type { BillingState, Entitlement, SubscriptionStatus } from '@shared/ipc'
-import { higherPlan, planDisplayName } from './plans'
+import type { BillingState, Entitlement, PlanId, SubscriptionStatus } from '@shared/ipc'
+import { higherPlan, planDisplayName, planRank } from './plans'
 
 /**
  * Entitlement DISPLAY derivations — the single home for turning a `BillingState` into what the UI shows
@@ -49,6 +49,36 @@ export function canDeleteAccount(billing: BillingState): boolean {
   return !DELETE_BLOCKING_STATUSES.has(ent.status)
 }
 
+/** Statuses whose Stripe customer has a live/recoverable subscription manageable in the Portal (switch /
+ *  cancel / update card). Everything else (canceled / incomplete / null) has no manageable sub → the
+ *  Checkout path instead. Shared by the paywall cards + Settings (single source). */
+export const PORTAL_MANAGEABLE: ReadonlySet<SubscriptionStatus> = new Set<SubscriptionStatus>([
+  'active', 'trialing', 'past_due', 'unpaid', 'paused',
+])
+
+/** Does the user have a live/recoverable Stripe subscription (i.e. Portal-manageable)? */
+export function hasManageableSub(ent: Entitlement | null): boolean {
+  return !!ent?.status && PORTAL_MANAGEABLE.has(ent.status)
+}
+
+/** The CTA for a given plan card on the fullscreen paywall, contextual to the user's current sub:
+ *  - 'current' — this IS their current plan (button disabled).
+ *  - 'switch'  — they have a manageable sub on a DIFFERENT tier → openPortal('switch', plan) (one-click
+ *    Stripe confirm); label reads Upgrade/Downgrade by rank.
+ *  - 'checkout'— no manageable sub (never subscribed / canceled) → openCheckout(plan) (first sub). */
+export interface PlanCardCta {
+  label: string
+  action: 'current' | 'switch' | 'checkout'
+}
+export function planCardCta(ent: Entitlement | null, plan: PlanId): PlanCardCta {
+  if (hasManageableSub(ent)) {
+    if (ent!.plan === plan) return { label: 'Current plan', action: 'current' }
+    const isUpgrade = planRank(plan) > planRank(ent!.plan)
+    return { label: `${isUpgrade ? 'Upgrade' : 'Downgrade'} to ${planDisplayName(plan)}`, action: 'switch' }
+  }
+  return { label: `Choose ${planDisplayName(plan)}`, action: 'checkout' }
+}
+
 /** Usage as a whole-number percent of the monthly allowance, rounded UP so any non-zero spend shows ≥1%
  *  (never a misleading 0% when you've actually used something), clamped to [0,100] (over-cap reads 100). */
 export function usagePercent(ent: Entitlement | null): number {
@@ -92,7 +122,9 @@ export function planPillText(billing: BillingState): string {
 export interface PaywallCopy {
   title: string
   body: string
-  cta: { label: string; action: 'picker' | 'portal' } | null
+  /** 'picker' opens the fullscreen plan chooser; 'portal' opens the Stripe Portal deep-linked to
+   *  `portalFlow` ('update_card' for past_due, 'switch' to `portalPlan` for an over-cap upgrade). */
+  cta: { label: string; action: 'picker' | 'portal'; portalFlow?: 'update_card' | 'switch'; portalPlan?: PlanId } | null
   /** Friendly reset date when relevant (over-cap), for the caller to render inline. */
   resetDate?: string
 }
@@ -106,7 +138,7 @@ export function paywallCopy(ent: Entitlement): PaywallCopy {
     return {
       title: 'Payment failed',
       body: "Your last payment didn't go through. Update your card to keep using Cubic.",
-      cta: { label: 'Update payment', action: 'portal' },
+      cta: { label: 'Update payment', action: 'portal', portalFlow: 'update_card' },
     }
   }
 
@@ -116,7 +148,7 @@ export function paywallCopy(ent: Entitlement): PaywallCopy {
       return {
         title: "You've hit this month's limit",
         body: `You're out of usage${reset ? ` until ${reset}` : ' for this cycle'}. Upgrade to ${planDisplayName(up)} for more.`,
-        cta: { label: `Upgrade to ${planDisplayName(up)}`, action: 'portal' },
+        cta: { label: `Upgrade to ${planDisplayName(up)}`, action: 'portal', portalFlow: 'switch', portalPlan: up },
         resetDate: reset,
       }
     }

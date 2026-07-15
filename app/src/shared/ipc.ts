@@ -5,6 +5,11 @@ export const CHANNELS = {
   getBackendPort: 'cubic:getBackendPort',
   getBackendStatus: 'cubic:getBackendStatus',
   backendStatus: 'cubic:backendStatus',
+  // Non-destructive AE reconnect: re-write ~/.cubic/conn.json so the dormant CEP panel's fs.watch fires
+  // and it reconnects — without dropping in-flight turns. Fired from the AeStatus "Reconnect" button.
+  reconnectAe: 'cubic:reconnectAe',
+  // App version (for the Settings → General "About" card). Read from the packaged app in main.
+  getAppVersion: 'cubic:getAppVersion',
   // §B auth — main owns the Supabase session; the renderer drives sign-in and reads state over these.
   getCubicEnv: 'cubic:getCubicEnv',
   authSignIn: 'cubic:auth:signIn',
@@ -21,6 +26,10 @@ export const CHANNELS = {
   billingOpenCheckout: 'cubic:billing:openCheckout',
   billingOpenPortal: 'cubic:billing:openPortal',
   billingChanged: 'cubic:billing:changed',
+  // Read-only billing detail for the Settings → Billing tab (default card + invoice history), fetched
+  // on-demand when the tab opens; and open a Stripe-hosted invoice page in the system browser.
+  billingGetDetails: 'cubic:billing:getDetails',
+  billingOpenInvoice: 'cubic:billing:openInvoice',
 } as const
 
 /**
@@ -131,6 +140,30 @@ export interface BillingActionResult {
   error?: string
 }
 
+/** The default card shown in Settings → Billing → Payment (from Stripe, read-only). */
+export interface PaymentMethod {
+  brand: string
+  last4: string
+}
+/** One past invoice for the Settings → Billing invoice table. Amounts are cents; dates are unix seconds
+ *  (as Stripe returns them). `hostedUrl` is the Stripe-hosted invoice page the "View" link opens. */
+export interface Invoice {
+  id: string
+  number: string | null
+  created: number
+  dueDate: number | null
+  total: number
+  currency: string
+  status: string | null
+  hostedUrl: string | null
+  pdfUrl: string | null
+}
+/** The Billing tab's on-demand read (default card + recent invoices), fetched when the tab opens. */
+export interface BillingDetails {
+  paymentMethod: PaymentMethod | null
+  invoices: Invoice[]
+}
+
 /** The API the preload bridges onto `window.cubic` in the renderer. */
 export interface CubicApi {
   /** The backend WS connection — its OS-assigned port + the per-launch session token the renderer must
@@ -140,6 +173,13 @@ export interface CubicApi {
   getBackendStatus(): Promise<BackendStatus>
   /** Subscribe to backend-link status pushes. Returns an unsubscribe fn. */
   onBackendStatus(cb: (status: BackendStatus) => void): () => void
+  /** Non-destructively nudge a disconnected AE panel to reconnect (re-writes ~/.cubic/conn.json → the
+   *  panel's fs.watch fires → it reconnects, dropping no in-flight turn). Resolves `true` if the poke was
+   *  written, `false` if the backend isn't ready (nothing to poke with — the user must reopen Cubic/AE).
+   *  Success (the panel actually landing) is observed via the `aeStatus` push flipping `aeConnected`. */
+  reconnectAe(): Promise<boolean>
+  /** The app version (from package.json / the packaged build) for the Settings "About" card. */
+  getAppVersion(): Promise<string>
   /** Which deployment we're running as — the gate uses this to block only in prod. */
   getCubicEnv(): Promise<CubicEnvName>
   /** Start the OAuth flow for a provider (opens the system browser). Resolves once the browser opens. */
@@ -164,9 +204,17 @@ export interface CubicApi {
   refreshBilling(): Promise<void>
   /** Open Stripe Checkout for a plan in the system browser (first paid conversion). */
   openCheckout(plan: PlanId): Promise<BillingActionResult>
-  /** Open the Stripe Customer Portal in the system browser. Default = Portal home (manage / switch plan /
-   *  cancel / card / invoices); `flow: 'cancel'` deep-links straight to the cancel confirmation. */
-  openPortal(flow?: 'cancel'): Promise<BillingActionResult>
+  /** Open the Stripe Customer Portal in the system browser. Default = Portal home; a `flow` deep-links
+   *  straight to the exact action: 'cancel' (cancel confirmation), 'update_card' (payment-method update,
+   *  past_due), or 'switch' (confirm switching to `plan` — Pro⇄Max upgrade/downgrade). */
+  openPortal(flow?: 'cancel' | 'update_card' | 'switch', plan?: PlanId): Promise<BillingActionResult>
+  /** Read-only billing detail (default card + recent invoices) for the Settings → Billing tab, fetched
+   *  on-demand when the tab opens. `null` = the read failed (keep the tab's other fields); an empty
+   *  `invoices` array = subscribed but nothing billed yet. Main resolves the customer from the JWT. */
+  getBillingDetails(): Promise<BillingDetails | null>
+  /** Open a Stripe-hosted invoice page (the invoice table's "View" link) in the system browser. Main
+   *  guards the URL to https Stripe hosts before opening. */
+  openInvoice(url: string): Promise<BillingActionResult>
   /** Subscribe to billing-state pushes. Returns an unsubscribe fn. */
   onBillingChanged(cb: (state: BillingState) => void): () => void
 }

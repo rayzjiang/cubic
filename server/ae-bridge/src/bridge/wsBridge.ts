@@ -35,7 +35,7 @@ type BridgeEvent = 'connect' | 'disconnect';
  *  one); `list` requests the current project's conversation list; `loadHistory` fetches one
  *  conversation's committed history as renderable display items. */
 export interface ChatInbound {
-  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename';
+  type: 'userChat' | 'cancel' | 'queue' | 'editQueue' | 'removeQueue' | 'attach' | 'delete' | 'list' | 'loadHistory' | 'restore' | 'rename' | 'checkFileAccess';
   sessionId?: string;
   text?: string;
   /** The renderer's fresh Supabase access token, attached to each `userChat` (proxy mode). Threaded into
@@ -52,7 +52,7 @@ export interface ChatInbound {
 
 /** The `ChatInbound['type']` values, for routing. Keep in sync with the union above. */
 const CHAT_INBOUND_TYPES = new Set<ChatInbound['type']>([
-  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore', 'rename',
+  'userChat', 'cancel', 'queue', 'editQueue', 'removeQueue', 'attach', 'delete', 'list', 'loadHistory', 'restore', 'rename', 'checkFileAccess',
 ]);
 
 export type ChatHandler = (ws: WebSocket, msg: ChatInbound) => void;

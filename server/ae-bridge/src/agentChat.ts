@@ -107,6 +107,21 @@ function sendAeStatus(ws: WebSocket): void {
   } catch { /* socket gone */ }
 }
 
+/** Probe whether AE's "Allow Scripts to Write Files and Access Network" setting is on and push the
+ *  result to one socket → drives the renderer's file-access gate (§D-1a). No-op while the worker is
+ *  disconnected (the gate is off when AE is down anyway, and the probe needs the panel to run it).
+ *  `checkFileAccess` writes a throwaway file to ~/.cubic (not the AE project), so re-calling it to
+ *  re-check is safe. Sent on the `list` handshake + every bridge (re)connect, and on renderer demand. */
+async function sendFileAccess(ws: WebSocket): Promise<void> {
+  if (!bridge.isConnected()) return;
+  try {
+    const raw = await bridge.sendCommand("checkFileAccess");
+    const result = JSON.parse(raw) as { status?: string; canWriteFiles?: boolean };
+    if (result.status === "error" || typeof result.canWriteFiles !== "boolean") return; // couldn't determine → leave the gate's last value
+    ws.send(JSON.stringify({ type: "fileAccess", canWriteFiles: result.canWriteFiles }));
+  } catch { /* socket gone / worker dropped mid-probe */ }
+}
+
 /**
  * Run one agent turn and persist it. `onCommit` accumulates exactly the real messages the loop
  * commits this turn (never the compaction summary); after the turn we resolve the project path,
@@ -190,7 +205,7 @@ export function registerAgentChat(): void {
   // every chat client so a cold-start list (worker not yet connected) fills in without a manual refresh.
   // Also flip every renderer's status dot to connected.
   bridge.on("connect", () => {
-    for (const ws of chatSockets) { void sendConversations(ws); sendAeStatus(ws); }
+    for (const ws of chatSockets) { void sendConversations(ws); sendAeStatus(ws); void sendFileAccess(ws); }
   });
   // AE worker dropped → flip every renderer's status dot to disconnected (the dot is the always-on
   // companion to the on-failure "After Effects isn't connected" turn error).
@@ -205,7 +220,15 @@ export function registerAgentChat(): void {
       // `list` is the renderer's connection handshake (fired on socket open) → seed its status dot with
       // the current AE state so a renderer that connects while AE is already up/down starts correct.
       sendAeStatus(ws);
+      void sendFileAccess(ws); // seed the file-access gate too (§D-1a)
       await sendConversations(ws);
+      return;
+    }
+
+    // File-access re-check on demand (renderer's "I've enabled it — Re-check" button + window-focus).
+    // No session — a pure control message, handled before the per-session hydration below.
+    if (msg.type === "checkFileAccess") {
+      void sendFileAccess(ws);
       return;
     }
 

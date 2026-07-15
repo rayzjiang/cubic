@@ -17,22 +17,24 @@ function getProjectPath() {
     }
 }
 
-// R: checkFileAccess — detect whether AE's "Allow Scripts to Write Files and Access Network"
-// setting is enabled. ExtendScript does NOT throw when it's off; File.open("w") simply returns
-// false (same mechanism saveFrameToPng pre-checks). We probe a throwaway file in ~/.cubic (a
-// known-writable dir, so the boolean isolates the setting as the cause) and clean it up. Read-only
-// w.r.t. the AE project — used by onboarding to require the setting before Cubic can edit.
+// R: checkFileAccess — detect whether AE's "Allow Scripts to Write Files and Access Network" setting is
+// enabled. We READ THE PREFERENCE directly (app.preferences), which is the reliable signal. A file-write
+// probe is NOT reliable: File.open("w") returns true even when the setting is OFF (the block happens at
+// write time / only after a restart, not at open), so it reports a false positive. Reading the pref
+// reflects the checkbox the moment the user closes Preferences — no AE restart needed to DETECT it.
+// The pref lives in the machine-independent prefs file on some AE versions and reads via the default
+// (machine-specific) on others, so we accept "enabled" if EITHER read reports 1 (each guarded). 1 =
+// enabled. Read-only w.r.t. the AE project — drives the §D-1a onboarding gate.
 function checkFileAccess() {
     try {
-        var dir = new Folder('~/.cubic');
-        if (!dir.exists) { dir.create(); }
-        var probe = new File(dir.fsName + '/.cubic_write_test');
-        var canWrite = probe.open('w');
-        if (canWrite) {
-            probe.close();
-            if (probe.exists) { probe.remove(); }
+        var SECTION = "Main Pref Section";
+        var KEY = "Pref_SCRIPTING_FILE_NETWORK_SECURITY";
+        var enabled = false;
+        try { enabled = app.preferences.getPrefAsLong(SECTION, KEY) === 1; } catch (e1) {}
+        if (!enabled && typeof PREFType !== "undefined") {
+            try { enabled = app.preferences.getPrefAsLong(SECTION, KEY, PREFType.PREF_Type_MACHINE_INDEPENDENT) === 1; } catch (e2) {}
         }
-        return JSON.stringify({ status: "success", canWriteFiles: canWrite === true }, null, 2);
+        return JSON.stringify({ status: "success", canWriteFiles: enabled }, null, 2);
     } catch (error) {
         return JSON.stringify({ status: "error", errorCode: error.code || ERROR_CODES.INTERNAL_ERROR, message: error.toString(), line: error.line }, null, 2);
     }
