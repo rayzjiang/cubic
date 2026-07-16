@@ -50,9 +50,15 @@ export function App() {
     const store = useChatStore.getState()
     // §H — one app_opened per cold launch. sessionStorage survives a ⌘R reload (like NAV_KEY in store.ts)
     // but not a real relaunch, so a reload doesn't re-fire; quit + relaunch does.
-    if (!sessionStorage.getItem('cubic.analytics.launched')) {
-      sessionStorage.setItem('cubic.analytics.launched', '1')
-      track('app_opened')
+    // Guard the storage access so a blocked/unavailable sessionStorage can't abort this mount effect
+    // before bindWs/connectBackend — analytics must never gate the app coming up (track() self-guards).
+    try {
+      if (!sessionStorage.getItem('cubic.analytics.launched')) {
+        sessionStorage.setItem('cubic.analytics.launched', '1')
+        track('app_opened')
+      }
+    } catch {
+      /* sessionStorage unavailable — skip the once-per-launch dedup, never block launch */
     }
     bindWs(store.handleServerMessage, store.setConnection)
     connectBackend()

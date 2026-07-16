@@ -62,8 +62,11 @@ export class AnalyticsManager {
       }
     }
     this.client = client
-    this.anonId = this.loadOrCreateAnonId()
-    this.firstEditDone = this.loadFirsts()
+    // Only mint the anonymous id + read first-edit state when analytics is actually on. When off (no
+    // key, or the client failed to construct) every method no-ops on the null client, so these are never
+    // read — don't touch disk or create an analytics identity for a disabled analytics system.
+    this.anonId = client ? this.loadOrCreateAnonId() : ''
+    this.firstEditDone = client ? this.loadFirsts() : new Set<string>()
   }
 
   /** On the signed-out→signed-in transition: alias the pre-sign-in anonymous events (app_opened, …) to
@@ -136,8 +139,8 @@ export class AnalyticsManager {
     if (props) for (const k of allowed) if (props[k] !== undefined) properties[k] = props[k]
     properties.source = source
     properties.cubic_env = this.cubicEnv
-    properties.app_version = app.getVersion()
     try {
+      properties.app_version = app.getVersion() // inside the try: keep every throwable inside the guard
       this.client.capture({ distinctId: this.distinctId(), event, properties })
     } catch {
       /* analytics never throws into the app */

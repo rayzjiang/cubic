@@ -128,12 +128,13 @@ export async function runAgentTurn(
   // Has this turn committed any assistant output yet? Drives discard-vs-mark on cancel: a stop before
   // the first assistant message means nothing was shown → discard the turn entirely (see cancelTurn).
   let rendered = false;
-  // §H — one analytics turn id for every command_run this turn emits, so "the model re-tried the same
-  // verb within a turn" (self-heal) is derivable downstream without extra code. Distinct from the
-  // snapshot turnId (a timestamp tied to the backup file); this is a stable per-turn correlation id.
-  const analyticsTurnId = randomUUID();
-
   try {
+    // §H — one analytics turn id for every command_run this turn emits, so "the model re-tried the same
+    // verb within a turn" (self-heal) is derivable downstream without extra code. Distinct from the
+    // snapshot turnId (a timestamp tied to the backup file); this is a stable per-turn correlation id.
+    // Inside the try so an (essentially impossible) randomUUID throw can't leave session.running stuck true.
+    const analyticsTurnId = randomUUID();
+
     // Context-window management at the turn boundary (history always ends on a complete turn here,
     // so compaction never splits a tool_use/tool_result pair). Mirrors Claude Code's auto-compact:
     // whenever we're at/over the threshold — INCLUDING past the hard ceiling — we ALWAYS try to
