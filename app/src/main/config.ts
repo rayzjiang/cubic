@@ -18,6 +18,13 @@ export interface BackendConfig {
    *  design (safe to ship), so it is baked into the prod build; dev reads both from the shell env. */
   supabaseUrl: string
   supabaseAnonKey: string
+  /** §H — PostHog product analytics, fired from main (the AnalyticsManager). The project key is a
+   *  PUBLIC, write-only ingest key (safe to bake, like `supabaseAnonKey`). `analyticsEnabled` is the
+   *  kill switch: on only when a key is set AND `CUBIC_ANALYTICS !== 'off'` — so dev is OFF by default
+   *  (leave POSTHOG_KEY unset; set it for a deliberate verify session), prod bakes the key → on. */
+  posthogKey: string
+  posthogHost: string
+  analyticsEnabled: boolean
 }
 
 export function loadConfig(): BackendConfig {
@@ -46,5 +53,12 @@ export function loadConfig(): BackendConfig {
   const supabaseUrl = process.env.SUPABASE_URL ?? ''
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? ''
 
-  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey }
+  // §H analytics. Dev leaves POSTHOG_KEY unset by default (off → zero dev pollution) and sets it only
+  // for a verify session; prod bakes the key at build. `CUBIC_ANALYTICS=off` hard-mutes even a keyed
+  // build. Fired from MAIN only — NOT forwarded to the child (the child relays events up over IPC).
+  const posthogKey = process.env.POSTHOG_KEY ?? ''
+  const posthogHost = process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'
+  const analyticsEnabled = !!posthogKey && process.env.CUBIC_ANALYTICS !== 'off'
+
+  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey, posthogKey, posthogHost, analyticsEnabled }
 }

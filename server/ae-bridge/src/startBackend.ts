@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultModel, COMPACT_THRESHOLD, KEEP_RECENT_TURNS } from "cubic-ai";
+import { defaultModel, COMPACT_THRESHOLD, KEEP_RECENT_TURNS, setAnalyticsSink } from "cubic-ai";
 import { bridge } from "./bridge/wsBridge.js";
 import { registerAgentChat } from "./agentChat.js";
 
@@ -64,6 +64,12 @@ export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void>
   console.error(bar);
   await bridge.start(port);
   registerAgentChat();
+  // §H — forward the agent brain's analytics events (command_run, …) UP to the Electron parent, which
+  // stamps identity + sends to PostHog. `process.send?` no-ops when there's no IPC channel: the MCP dev
+  // entrypoint (Claude Code over stdio) and a bare `npm run serve` both have no analytics parent.
+  setAnalyticsSink((event, props) => {
+    try { process.send?.({ type: "analytics", event, props }); } catch { /* best-effort */ }
+  });
   // Report the actual bound port + per-launch token UP to the Electron parent, which relays them to the
   // renderer via getBackendPort(). No-op when there's no IPC channel — the MCP entrypoint (Claude Code
   // over stdio) and a bare `npm run serve` both discover {port, token} via ~/.cubic/conn.json instead.

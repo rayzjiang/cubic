@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { getLLM } from '../llm/index.js';
 // Crown jewels: in direct-local dev esbuild aliases `@secrets` to the real proxy
 // secrets; the prod build aliases it to an empty stub (so the prompt/tool catalog
@@ -21,7 +22,7 @@ const DEFAULT_MAX_ITERATIONS = 15;
  */
 export interface AgentDeps {
   llm: LLMProvider;
-  executeTool: (tool: ToolUse, sessionId: string) => Promise<ToolExecution>;
+  executeTool: (tool: ToolUse, sessionId: string, turnId?: string) => Promise<ToolExecution>;
   snapshot: (sessionId: string, turnId: string) => Promise<SnapshotResult>;
   buildContext: () => Promise<LiveAEState>;
   buildSystemPrompt: () => SystemPromptInput;
@@ -127,6 +128,10 @@ export async function runAgentTurn(
   // Has this turn committed any assistant output yet? Drives discard-vs-mark on cancel: a stop before
   // the first assistant message means nothing was shown → discard the turn entirely (see cancelTurn).
   let rendered = false;
+  // §H — one analytics turn id for every command_run this turn emits, so "the model re-tried the same
+  // verb within a turn" (self-heal) is derivable downstream without extra code. Distinct from the
+  // snapshot turnId (a timestamp tied to the backup file); this is a stable per-turn correlation id.
+  const analyticsTurnId = randomUUID();
 
   try {
     // Context-window management at the turn boundary (history always ends on a complete turn here,
@@ -249,7 +254,7 @@ export async function runAgentTurn(
           continue;
         }
         emit({ type: 'tool_start', id: tool.id, name: tool.name, label: describeToolCall(tool.name, tool.input) });
-        const exec = await execute(tool, session.id);
+        const exec = await execute(tool, session.id, analyticsTurnId);
         emit({
           type: 'tool_end', id: tool.id, ok: exec.ok, errorCode: exec.errorCode, retried: exec.retried,
           noop: exec.noop,

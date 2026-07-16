@@ -4,6 +4,7 @@ import type { BackendConfig } from './config.js'
 import type { BackendSupervisor } from './backend.js'
 import type { AuthManager } from './auth.js'
 import type { BillingManager } from './billing.js'
+import type { AnalyticsManager } from './analytics.js'
 
 /**
  * §0 + §B6 + §B + §??? — main↔renderer IPC. `getBackendPort` is the one connection-discovery call: it
@@ -14,7 +15,7 @@ import type { BillingManager } from './billing.js'
  * backend crash + reconnect). The auth surface mirrors that shape exactly: snapshot getters + a `change`
  * broadcast. No filesystem access; the renderer stays sandboxed.
  */
-export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager): void {
+export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager, analytics: AnalyticsManager): void {
   ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
   // Non-destructive AE reconnect (§D-1a companion): re-poke conn.json to wake a dormant panel.
@@ -53,4 +54,10 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
       win.webContents.send(CHANNELS.billingChanged, state)
     }
   })
+
+  // §H analytics — one-way (fire-and-forget) forward of a renderer event to main, which stamps identity
+  // + captures. `.on`, not `.handle`: the renderer needs no ack (see preload trackEvent).
+  ipcMain.on(CHANNELS.analyticsTrack, (_e, event: string, props?: Record<string, unknown>) =>
+    analytics.captureFromRenderer(event, props),
+  )
 }

@@ -14,6 +14,9 @@
 export interface FirstRunState {
   intro: boolean
   triedIt: boolean
+  /** §H — the user's first-ever prompt has been sent (drives the first_prompt_sent analytics event,
+   *  fired once per account). Renderer-only, like the others. */
+  firstPrompt: boolean
 }
 
 const KEY = (userId: string): string => `cubic.firstrun.${userId}`
@@ -22,11 +25,11 @@ const KEY = (userId: string): string => `cubic.firstrun.${userId}`
 export function readFirstRun(userId: string): FirstRunState {
   try {
     const raw = localStorage.getItem(KEY(userId))
-    if (!raw) return { intro: false, triedIt: false }
+    if (!raw) return { intro: false, triedIt: false, firstPrompt: false }
     const parsed = JSON.parse(raw) as Partial<FirstRunState>
-    return { intro: parsed.intro === true, triedIt: parsed.triedIt === true }
+    return { intro: parsed.intro === true, triedIt: parsed.triedIt === true, firstPrompt: parsed.firstPrompt === true }
   } catch {
-    return { intro: false, triedIt: false }
+    return { intro: false, triedIt: false, firstPrompt: false }
   }
 }
 
@@ -46,4 +49,8 @@ export function markIntroSeen(userId: string): void {
 
 export function markTriedIt(userId: string): void {
   write(userId, { triedIt: true })
+}
+
+export function markFirstPromptSent(userId: string): void {
+  write(userId, { firstPrompt: true })
 }

@@ -20,7 +20,7 @@ import cubicLogoUrl from '../assets/cubic-logo.svg'
 const SLIDES: { title: string; body: string; media?: string }[] = [
   {
     title: 'Accelerate your After Effects workflow',
-    body: 'Cubic is an AI agent for After Effects. It reads your project and builds anything you ask for, directly in your AE project. Everything stays manually editable and native to AE.',
+    body: 'Cubic is an AI agent for After Effects. It reads your project and builds anything you ask for, directly in your AE project.\n\nSmooth transitions. Bouncy keyframes. Satisfying overshoots. Everything built in seconds and everything stays manually editable within AE.',
     media: demo1Url,
   },
   {
@@ -28,10 +28,10 @@ const SLIDES: { title: string; body: string; media?: string }[] = [
     body: 'Cubic reads and fully understands your project: every composition, layer, property, expression, effect, and more. The same way a real editor would.',
     media: demo2Url,
   },
-  {
-    title: 'Animate faster than ever before',
-    body: 'Smooth transitions. Bouncy keyframes. Satisfying overshoots.\nHours of manual work in AE, now done in seconds with Cubic.',
-  },
+  // {
+  //   title: 'Animate faster than ever before',
+  //   body: 'Smooth transitions. Bouncy keyframes. Satisfying overshoots.\nHours of manual work in AE, now done in seconds with Cubic.',
+  // },
   {
     title: 'Ready to get started?',
     body: 'One last thing: Cubic needs file access in After Effects to back up your project automatically, so every change stays undoable. We’ll guide you through it, if needed.',

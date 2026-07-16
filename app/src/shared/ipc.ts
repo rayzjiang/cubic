@@ -30,6 +30,9 @@ export const CHANNELS = {
   // on-demand when the tab opens; and open a Stripe-hosted invoice page in the system browser.
   billingGetDetails: 'cubic:billing:getDetails',
   billingOpenInvoice: 'cubic:billing:openInvoice',
+  // §H — one-way (fire-and-forget) forward of a renderer analytics event to main, which stamps the
+  // user id + sends to PostHog. `send`/`.on` (no ack), unlike every other channel here (all `invoke`).
+  analyticsTrack: 'cubic:analytics:track',
 } as const
 
 /**
@@ -217,4 +220,8 @@ export interface CubicApi {
   openInvoice(url: string): Promise<BillingActionResult>
   /** Subscribe to billing-state pushes. Returns an unsubscribe fn. */
   onBillingChanged(cb: (state: BillingState) => void): () => void
+  /** §H — fire-and-forget: forward a renderer analytics event to main (main stamps identity + captures,
+   *  applies the event/property whitelist, and sends to PostHog). No return; telemetry never blocks the
+   *  UI. Unknown event names / non-whitelisted props are dropped in main. */
+  trackEvent(event: string, props?: Record<string, unknown>): void
 }

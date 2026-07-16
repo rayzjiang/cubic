@@ -1,5 +1,6 @@
 export { runAgentTurn } from './loop.js';
 export type { AgentDeps } from './loop.js';
+export { setAnalyticsSink, emitAnalytics } from './analytics.js';
 export { Session, nextQueueId } from './session.js';
 export type { QueuedMessage } from './session.js';
 export { executeTool } from './executeTool.js';

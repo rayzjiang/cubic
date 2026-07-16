@@ -10,6 +10,7 @@ import { registerIpc } from './ipc.js'
 import { BackendSupervisor } from './backend.js'
 import { AuthManager } from './auth.js'
 import { BillingManager } from './billing.js'
+import { AnalyticsManager } from './analytics.js'
 import { provisionBridge } from './installBridge.js'
 import type { AuthState, AuthStatus } from '../shared/ipc.js'
 
@@ -57,16 +58,33 @@ if (!app.requestSingleInstanceLock()) {
   // Checkout/Portal. Refetch on the sign-in transition, clear on sign-out (mirrors how auth drives the
   // renderer). A transition guard avoids redundant refetches on the many intermediate auth `change`s.
   const billing = new BillingManager(config, () => auth.getAccessToken())
+  // §H analytics — one PostHog client in main; renderer + backend forward events here to be stamped with
+  // identity + sent. Off by default in dev (config.analyticsEnabled). Identity rides the same auth
+  // transition guard: identify on sign-in (aliasing pre-sign-in anonymous events), rotate on real sign-out.
+  const analytics = new AnalyticsManager(config)
   let lastAuthStatus: AuthStatus | null = null
   auth.on('change', (state: AuthState) => {
-    if (state.status === 'signedIn' && lastAuthStatus !== 'signedIn') void billing.refresh()
-    else if (state.status === 'signedOut') billing.clear()
+    if (state.status === 'signedIn' && lastAuthStatus !== 'signedIn') {
+      void billing.refresh()
+      // `interactive` = they just completed the OAuth flow (signingIn→signedIn), NOT a silent session
+      // restore (loading→signedIn) — so signed_in only fires for a real sign-in-page pass.
+      if (state.user) analytics.onSignIn(state.user.id, lastAuthStatus === 'signingIn')
+    } else if (state.status === 'signedOut') {
+      billing.clear()
+      // Only a genuine sign-out (was signedIn) rotates the anonymous id; the initial boot signed-out
+      // must keep it stable so app_opened + the later sign-in alias share one id and stitch.
+      if (lastAuthStatus === 'signedIn') analytics.onSignOut()
+    }
     lastAuthStatus = state.status
   })
 
   // Backend crash recovery + connection-state UX now live in the supervisor (§B6): it bounded-restarts
   // and emits `status` (broadcast to the renderer by registerIpc). Keep only spawn-error logging here.
   backend.on('error', (err: Error) => console.error('[main] backend error:', err.message))
+  // §H — the backend child forwards command_run / first_edit signals up; main stamps identity + sends.
+  backend.on('analytics', (e: { event: string; props?: Record<string, unknown> }) =>
+    analytics.captureFromBackend(e.event, e.props),
+  )
 
   // §B — register the cubic:// scheme so OAuth can return to the app. In dev (run via the electron
   // binary) the handler must point at this script so the OS launches the right process.
@@ -121,7 +139,7 @@ if (!app.requestSingleInstanceLock()) {
     // §B5 — provision the AE bridge (idempotent, content-hash gated) BEFORE the backend/UI come up.
     // Never throws; a failure only degrades AE connectivity (the status dot), never blocks launch.
     const install = await provisionBridge()
-    registerIpc(config, backend, auth, billing) // subscribe to status/auth/billing before markInstall/start so pushes broadcast
+    registerIpc(config, backend, auth, billing, analytics) // subscribe to status/auth/billing before markInstall/start so pushes broadcast
     backend.markInstall(install)
     buildAppMenu()
     backend.start()
@@ -154,12 +172,19 @@ if (!app.requestSingleInstanceLock()) {
     })
   })
 
-  // SIGTERM the child on quit so it frees the WS port (serve.ts's installShutdown).
-  app.on('before-quit', () => {
+  // SIGTERM the child on quit so it frees the WS port (serve.ts's installShutdown). PostHog's flush is
+  // async, so defer the quit until it resolves: prevent-default once, do the sync teardown, flush, then
+  // re-quit (the guard makes the second before-quit a no-op so quit proceeds).
+  let quitting = false
+  app.on('before-quit', (e) => {
+    if (quitting) return
+    quitting = true
+    e.preventDefault()
     backend.stop()
     auth.dispose() // cancel the token-refresh timer so it doesn't keep the process busy
     billing.dispose() // cancel any in-flight billing return poll
     preflightChild?.kill() // don't leave a dev preflight waiter polling after the app quits
+    void analytics.shutdown().finally(() => app.quit()) // flush the analytics tail, then really quit
   })
 
   app.on('window-all-closed', () => {

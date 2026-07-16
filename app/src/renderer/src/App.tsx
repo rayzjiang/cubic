@@ -22,6 +22,7 @@ import { Toasts } from './components/Toasts'
 import { TopBar } from './components/TopBar'
 import { isBlocked } from './billing/entitlement'
 import { isFileBlocked } from './fileAccess'
+import { track } from './analytics'
 
 /**
  * Root: wires the WS transport to the store and routes between the home landing view and the active
@@ -47,6 +48,12 @@ export function App() {
 
   useEffect(() => {
     const store = useChatStore.getState()
+    // §H — one app_opened per cold launch. sessionStorage survives a ⌘R reload (like NAV_KEY in store.ts)
+    // but not a real relaunch, so a reload doesn't re-fire; quit + relaunch does.
+    if (!sessionStorage.getItem('cubic.analytics.launched')) {
+      sessionStorage.setItem('cubic.analytics.launched', '1')
+      track('app_opened')
+    }
     bindWs(store.handleServerMessage, store.setConnection)
     connectBackend()
     // Backend-link status from main (over IPC, not the WS): snapshot first (covers a late mount/reload),

@@ -1,8 +1,13 @@
 /**
- * No-op analytics seam (§C "Instrument event seams"). Call sites stay in place now so we don't
- * retrofit later; the vendor + distinct_id + flags get wired in a later pass. Does nothing today.
+ * §H analytics seam. Forwards a renderer event to main over IPC (fire-and-forget); main holds the one
+ * PostHog client, stamps identity, applies the event-name + per-event property whitelist, and sends.
+ * The renderer never imports posthog and never sees the key. Unknown event names (the legacy
+ * message_sent/turn_done/… calls) are simply dropped in main, so those call sites stay free.
  */
 export function track(event: string, props?: Record<string, unknown>): void {
-  void event
-  void props
+  try {
+    window.cubic.trackEvent(event, props)
+  } catch {
+    /* telemetry is best-effort — never throw into the UI (e.g. no preload bridge in a renderer test) */
+  }
 }

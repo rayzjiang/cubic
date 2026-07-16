@@ -157,10 +157,14 @@ export class BackendSupervisor extends EventEmitter {
     this.child.stderr?.on('data', (d) => console.error('[backend]', d.toString().trimEnd()))
 
     this.child.on('message', (m: unknown) => {
-      const msg = m as { type?: string; port?: number; token?: string }
+      const msg = m as { type?: string; port?: number; token?: string; event?: string; props?: Record<string, unknown> }
       if (msg?.type === 'bridgeReady' && typeof msg.port === 'number' && typeof msg.token === 'string') {
         this.conn = { port: msg.port, token: msg.token }
         this.emit('ready', this.conn)
+      } else if (msg?.type === 'analytics' && typeof msg.event === 'string') {
+        // §H — the child (agent loop) can't send to PostHog or know the user; it just relays raw events
+        // up and main (index.ts) stamps identity + captures. Supervisor stays decoupled — just re-emits.
+        this.emit('analytics', { event: msg.event, props: msg.props })
       }
     })
 

@@ -1,6 +1,7 @@
 import { bridgeClient } from '../bridge/client.js';
 import { sessionCache } from '../context/cache.js';
 import { describeToolCall } from './events.js';
+import { emitAnalytics } from './analytics.js';
 import { COMMAND_NAMES, INTERNAL_COMMANDS } from '../tools/command-names.generated.js';
 import type { ToolUse, ToolResultBlock } from '../llm/types.js';
 
@@ -284,12 +285,72 @@ async function runOnce(command: string, args: Record<string, unknown>): Promise<
   }
 }
 
+/** §H — one command_run per resolved verb. `batch` never emits a `command:'batch'` bucket; it expands
+ *  to one record per sub-verb (below), so per-verb failure ranking stays honest. */
+interface CommandRunRecord {
+  command: string;
+  ok: boolean;
+  errorCode?: string;
+  noop?: boolean;
+  viaBatch: boolean;
+}
+
+/** Emit one command_run analytics event per record. Never throws (emitAnalytics swallows). `is_edit`
+ *  drives the once-per-user first_edit_succeeded derivation in main (keeps READ_ONLY_COMMANDS here). */
+function reportCommandRuns(records: CommandRunRecord[], retried: boolean, sessionId?: string, turnId?: string): void {
+  for (const r of records) {
+    emitAnalytics('command_run', {
+      command: r.command,
+      ok: r.ok,
+      error_code: r.errorCode,
+      noop: !!r.noop,
+      retried: retried ? 1 : 0,
+      via_batch: r.viaBatch,
+      session_id: sessionId,
+      turn_id: turnId,
+      is_edit: r.ok && !r.noop && !READ_ONLY_COMMANDS.has(r.command),
+    });
+  }
+}
+
+/** Decompose a batch outcome into per-sub-verb records. The raw envelope's `results[]` carries per-sub
+ *  { command, success, result:{ status, errorCode } } (see bridge.jsx `batch`). On a transport-level
+ *  failure (BRIDGE_ERROR — no per-sub results exist), attribute the failure to each INTENDED sub-verb
+ *  (from the normalized input) so no verb is lost and there is still never a `batch` bucket. */
+function batchRecords(outcome: RawOutcome, args: Record<string, unknown>): CommandRunRecord[] {
+  const intended = Array.isArray(args.commands) ? (args.commands as Array<{ command?: string }>) : [];
+  let results: Array<Record<string, unknown>> | null = null;
+  try {
+    const parsed = JSON.parse(outcome.content) as { results?: unknown };
+    if (Array.isArray(parsed.results)) results = parsed.results as Array<Record<string, unknown>>;
+  } catch { /* no parseable envelope — fall through to the intended-verbs fallback */ }
+  if (!results) {
+    return intended.map((c) => ({
+      command: String(c?.command ?? ''),
+      ok: false,
+      errorCode: outcome.errorCode ?? 'BRIDGE_ERROR',
+      viaBatch: true,
+    }));
+  }
+  return results.map((sub, i) => {
+    const inner = sub && typeof sub.result === 'object' && sub.result ? (sub.result as Record<string, unknown>) : null;
+    const ok = sub?.success === true; // the bridge's authoritative per-sub flag
+    return {
+      command: String(sub?.command ?? intended[i]?.command ?? ''),
+      ok,
+      errorCode: ok ? undefined : ((inner?.errorCode as string | undefined) ?? (sub?.errorCode as string | undefined)),
+      noop: inner?.status === 'noop',
+      viaBatch: true,
+    };
+  });
+}
+
 /**
  * Executes one model tool call against AE and returns a tool_result block plus UI
  * metadata. Retries once on a transient error code (e.g. RENDER_FAILED). Invalidates
  * the session cache after any mutating command so the next turn re-reads live state.
  */
-export async function executeTool(tool: ToolUse, sessionId?: string): Promise<ToolExecution> {
+export async function executeTool(tool: ToolUse, sessionId?: string, turnId?: string): Promise<ToolExecution> {
   // HARD CONTRACT: executeTool must NEVER throw. The agent loop commits the assistant tool_use, then
   // relies on this returning a tool_result to commit right after it. A throw here skips that commit and
   // orphans the tool_use (no tool_result follows) — which the API rejects forever, permanently bricking
@@ -309,6 +370,9 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
       }
     }
     if (blocked) {
+      // §H — record the model reaching for an invalid/hidden command (a standalone hallucinated verb).
+      // Skip a blocked batch: nothing ran, and only one sub was bad — don't mislabel the valid subs.
+      if (command !== 'batch') reportCommandRuns([{ command, ok: false, errorCode: 'UNKNOWN_COMMAND', viaBatch: false }], false, sessionId, turnId);
       return {
         block: { type: 'tool_result', tool_use_id: tool.id, content: JSON.stringify({ status: 'error', errorCode: 'UNKNOWN_COMMAND', message: blocked }), is_error: true },
         ok: false,
@@ -339,6 +403,16 @@ export async function executeTool(tool: ToolUse, sessionId?: string): Promise<To
     if (outcome.ok && !outcome.noop && !READ_ONLY_COMMANDS.has(command)) {
       sessionCache.invalidate();
     }
+
+    // §H — emit command_run(s). Wrapped so a malformed batch envelope can NEVER throw into the outer
+    // catch and mis-convert a genuinely successful tool into an INTERNAL_ERROR tool_result (the
+    // "executeTool never throws" contract). One event per resolved verb; batch expands per sub-verb.
+    try {
+      const records = command === 'batch'
+        ? batchRecords(outcome, args)
+        : [{ command, ok: outcome.ok, errorCode: outcome.errorCode, noop: outcome.noop, viaBatch: false }];
+      reportCommandRuns(records, retried, sessionId, turnId);
+    } catch { /* analytics must never affect the tool result */ }
 
     return {
       block: { type: 'tool_result', tool_use_id: tool.id, content: trimConfigurableProperties(outcome.content, command), is_error: !outcome.ok },

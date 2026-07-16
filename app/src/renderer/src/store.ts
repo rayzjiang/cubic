@@ -15,7 +15,8 @@ import {
   sendUserChat,
 } from './ws'
 import { track } from './analytics'
-import { readFirstRun, markIntroSeen as persistIntroSeen, markTriedIt as persistTriedIt } from './firstRun'
+import { isBlocked, paywallReason } from './billing/entitlement'
+import { readFirstRun, markIntroSeen as persistIntroSeen, markTriedIt as persistTriedIt, markFirstPromptSent } from './firstRun'
 
 // ── Persisted navigation (survives an in-window reload, NOT a fresh launch) ──
 // We remember the active conversation + view so a ⌘R / window reload lands back where the user was and
@@ -296,7 +297,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ auth: s })
     }
   },
-  setBilling: (s) => set({ billing: s }),
+  setBilling: (s) => {
+    // §H conversion — paywall_hit fires on the false→true "blocked" edge: the onboarding no-plan
+    // paywall, going over the usage cap, or past_due — plus the proxy-402 case, which refreshes
+    // billing and flips isBlocked here too. NOT a voluntary plan/upgrade page (an entitled user is
+    // never blocked, so this never fires for them). `reason` splits no_plan | over_cap | past_due.
+    if (!isBlocked(get().billing) && isBlocked(s)) track('paywall_hit', { reason: paywallReason(s.entitlement) })
+    set({ billing: s })
+  },
   setCubicEnv: (e) => set({ cubicEnv: e }),
   setFileGateDismissed: (dismissed) => set({ fileGateDismissed: dismissed }),
   markOnboardingSeen: () => {
@@ -390,6 +398,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break
       }
       case 'aeStatus':
+        // §H — activation funnel: fire ae_connected once on the false→true handshake edge (raw connect
+        // only; the file-access step is intentionally not tracked). Guard on the pre-message value so
+        // re-pushes (every connect + the list handshake) don't re-fire.
+        if (msg.connected && !s.aeConnected) track('ae_connected')
         // Live AE connectivity → status dot. Always apply (not session-scoped): it's app-global state.
         // On disconnect, reset canWriteFiles to unknown (null) so a stale `false` can't gate the composer
         // while AE is down; a fresh `fileAccess` push arrives on the next connect.
@@ -524,6 +536,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // flip it — and SUPPRESS the transient error notice (it would double up with the banner). The
         // discard still runs, so the message returns to the composer, ready to send after they subscribe.
         if (event.status === 402) {
+          // §H paywall_hit is NOT fired here: the refreshBilling() below flips isBlocked → setBilling
+          // fires it once (covers this 402 case + the onboarding/over-cap cases the 402 path can't see).
+          // Firing here too would double-count.
           void window.cubic.refreshBilling()
           set({ ...discardUncommittedTurn(s) })
           track('turn_error')
@@ -616,6 +631,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...(isNewChat ? { pendingNewChats: [...s.pendingNewChats, { id: s.sessionId, title: text }] } : {}),
     })
     track('message_sent')
+    // §H — activation funnel: first_prompt_sent fires only on the user's first-ever prompt (per-user,
+    // localStorage via firstRun). This runs in the first-send branch (mid-turn steers returned early
+    // above), so a steer never counts; needs a signed-in user id to key the per-user flag.
+    const uid = s.auth.user?.id
+    if (uid && !readFirstRun(uid).firstPrompt) {
+      markFirstPromptSent(uid)
+      track('first_prompt_sent')
+    }
     void sendUserChat(s.sessionId, text)
   },
 

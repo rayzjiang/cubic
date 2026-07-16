@@ -38,6 +38,8 @@ const api: CubicApi = {
     ipcRenderer.on(CHANNELS.billingChanged, listener)
     return () => ipcRenderer.removeListener(CHANNELS.billingChanged, listener)
   },
+  // §H — one-way send (no invoke): the renderer fires analytics events, main stamps identity + sends.
+  trackEvent: (event, props) => ipcRenderer.send(CHANNELS.analyticsTrack, event, props),
 }
 
 contextBridge.exposeInMainWorld('cubic', api)
