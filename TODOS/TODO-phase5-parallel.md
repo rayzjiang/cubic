@@ -55,7 +55,7 @@
 - [x] §A-6 usage metering — write usage + deduct allowance + reject over cap (needs WT-BILLING + locked numbers) — `metering.ts`/`usage-parse.ts`, tee + async `waitUntil` → new `record_usage` RPC
 - [x] §C-6 cap/trial enforcement at the proxy → emits the "out of allowance / trial ended" signal — over-cap → 402; client maps 401/402/429 (interim copy; §D screens = Wave 3)
 - [x] §A-7 per-user rate-limit + abuse guard — Cloudflare native `RATE_LIMITER` (per user) + `IP_RATE_LIMITER` (per IP) + free edge DDoS
-- [ ] §A-8 wire the client to prod-by-default + real-deploy E2E capstone. The Worker + cloud Supabase are already deployed; what's left client-side: **bake the prod proxy URL + Supabase URL/anon-key into the prod build** so a signed app auto-routes through the proxy with no env vars (today `app/src/main/config.ts` reads `CUBIC_PROXY_URL`/`SUPABASE_*` from the shell with no baked default → the app can't reach the deployed Worker unless you pass them manually); **refresh the stale "stub" comments** that still claim the proxy doesn't exist yet (`config.ts:29` + `:37`, and `app/README.md`'s §B7 line); then run the **full clean-machine E2E** (also lands the pulled-forward §G-3 cloud-Supabase check). Keep direct-local the dev default.
+- [ ] §A-8 flip the shipped default to prod + real-deploy clean-machine E2E capstone (→ §G-3). Keep direct-local the dev default. _(The config **baking** it needs — proxy URL + Supabase URL/anon-key + refreshing the stale `config.ts:29`/`:37` + `app/README.md` §B7 stub comments — moved to §G-? below.)_
 
 ---
 
@@ -151,7 +151,8 @@
 ---
 
 ## Launch gates — final, sequential (not a worktree; gates ship)
-- [ ] §G-1 price + cap numbers locked (confirms §C-8 decision is made, not TBD)
+- [ ] §G-? **prod config: decide bake vs Worker-override per var.** Packaged app has no shell env (`process.env.*` empty in prod), so every config value needs a prod home: **bake** a safe default into the build (change = new release) or let the **Cloudflare Worker** serve it at runtime (change = instant). Bake the frozen-is-fine stuff (with a JS default as fallback); Worker-override anything I want live control over. **Bake:** `POSTHOG_KEY`/`CUBIC_ANALYTICS`, Supabase URL+anon, `CUBIC_PROXY_URL`. **Worker-override:** `CUBIC_MODEL`, agent-loop tuning (context window, compact threshold, keep-recent-turns, max-iters). `ANTHROPIC_API_KEY` = Worker-only, never baked. Absorbs ex-§A-8's proxy/Supabase bake; do it via electron-vite `define` (main) + esbuild `define` (child). _(placeholder ID — §G-0 is the taste gate.)_
+- [x] §G-1 price + cap numbers locked (confirms §C-8 decision is made, not TBD)
 - [ ] §G-2 ToS + Privacy Policy published — *start drafting early (legal lead time)*
 - [ ] ~~**\*LOW PRIORITY I THINK** · §D-4 non-technical copy pass — consumer tone across ALL Wave-3 screens (incl. P2 delete copy); cheapest done once on frozen screens (batch with §G-2 legal copy). Lowkey might not need it.~~
 - [ ] §G-3 full paid flow tested E2E on a clean machine (install → sign in → trial → cap → pay → use → cancel → revoked)
