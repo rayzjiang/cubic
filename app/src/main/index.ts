@@ -173,8 +173,11 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   // SIGTERM the child on quit so it frees the WS port (serve.ts's installShutdown). PostHog's flush is
-  // async, so defer the quit until it resolves: prevent-default once, do the sync teardown, flush, then
-  // re-quit (the guard makes the second before-quit a no-op so quit proceeds).
+  // async, so defer termination until it resolves: prevent-default once, do the sync teardown, flush, then
+  // app.exit(0) — a HARD exit, NOT app.quit(). A signal-initiated quit (Ctrl+C / SIGTERM) that we
+  // preventDefault can't be reliably resumed with app.quit(): the process survives, orphans (PPID 1), and
+  // keeps holding the single-instance lock, silently blocking the next launch. app.exit bypasses
+  // before-quit/window-all-closed and always terminates.
   let quitting = false
   app.on('before-quit', (e) => {
     if (quitting) return
@@ -184,7 +187,7 @@ if (!app.requestSingleInstanceLock()) {
     auth.dispose() // cancel the token-refresh timer so it doesn't keep the process busy
     billing.dispose() // cancel any in-flight billing return poll
     preflightChild?.kill() // don't leave a dev preflight waiter polling after the app quits
-    void analytics.shutdown().finally(() => app.quit()) // flush the analytics tail, then really quit
+    void analytics.shutdown().finally(() => app.exit(0)) // flush the analytics tail, then really exit
   })
 
   app.on('window-all-closed', () => {
