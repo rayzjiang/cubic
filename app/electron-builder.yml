@@ -1,0 +1,84 @@
+# electron-builder config — macOS packaging/distribution (§E). Driven by `npm run dist`
+# (app/scripts/dist.mjs), which builds the prod bundles + obfuscates them first.
+# Windows later is purely additive: add top-level `win:` + `nsis:` blocks and `win` to targets —
+# appId / productName / files / extraResources / protocols / publish are already shared. Don't add now.
+
+appId: com.cubic.app
+productName: Cubic
+copyright: © 2026 Cubic
+
+directories:
+  buildResources: build-resources
+  output: release
+
+# Bundle the app (out/ + prod node_modules for the externalized main deps @supabase/supabase-js +
+# posthog-node) into app.asar. Start from electron-builder's default (**/*, prod-deps-pruned) and
+# subtract dev-only inputs (src/, scripts/, config, tsconfig, .env*, build-resources).
+asar: true
+npmRebuild: false
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!scripts/*"
+  - "!build-resources/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!electron-builder.yml"
+  - "!{.gitignore,.editorconfig,.prettierignore,.eslintrc.cjs,.eslintignore}"
+  - "!{.env,.env.*,.npmrc}"
+  - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+  - "!*.tsbuildinfo"
+
+# The backend + CEP panel ship OUTSIDE app.asar as plain files (Contents/Resources/{backend,cep-extension}),
+# landing exactly where the app already looks when packaged: backend.ts resolves
+# process.resourcesPath/backend/serve.js and installBridge.ts resolves process.resourcesPath/cep-extension.
+# They're text (not Mach-O) → no signing/notarization concern; no asarUnpack needed (already outside asar).
+extraResources:
+  - from: ../server/ae-bridge/build/serve.js
+    to: backend/serve.js
+  - from: ../server/ae-bridge/cep-extension/dist
+    to: cep-extension
+
+# cubic:// deep link → CFBundleURLTypes in Info.plist. index.ts's dev-only process.defaultApp check
+# means the packaged app takes the setAsDefaultProtocolClient('cubic') branch — no code change needed.
+protocols:
+  - name: Cubic Protocol
+    schemes:
+      - cubic
+
+# Fuses (§E-2) run in afterPack BEFORE electron-builder signs (flipping fuse bits invalidates any
+# signature, so it must precede signing).
+afterPack: ./scripts/afterPack.cjs
+
+mac:
+  category: public.app-category.graphics-design
+  icon: build-resources/icon.icns
+  target:
+    - dmg
+    - zip # electron-updater REQUIRES a zip for macOS auto-update (WT7); a dmg alone can't auto-update
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build-resources/entitlements.mac.plist
+  entitlementsInherit: build-resources/entitlements.mac.inherit.plist
+  notarize: true # electron-builder-native notarytool; reads APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+  extendInfo:
+    NSHighResolutionCapable: true
+
+dmg:
+  title: Cubic ${version}
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+
+# WT7 auto-update feed (Cloudflare R2). STUB — inert until §F wires electron-updater. Replace the URL.
+publish:
+  - provider: generic
+    url: https://REPLACE-with-r2-public-bucket.example.com/releases/
+    channel: latest

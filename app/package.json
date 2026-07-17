@@ -2,6 +2,7 @@
   "name": "cubic-app",
   "version": "0.1.0",
   "description": "Cubic standalone desktop app (Electron + React) — Phase 4 shell; hosts the AE bridge + agent loop as a child process",
+  "author": "Cubic",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {
@@ -11,7 +12,8 @@
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dist": "node scripts/dist.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -25,13 +27,16 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^20.19.41",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^41.7.1",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^3.1.0",
+    "javascript-obfuscator": "^4.1.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.2.2",
     "vite": "^6.4.3",
