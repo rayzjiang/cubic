@@ -6,6 +6,19 @@
 // them from ~/.cubic/conn.json. So the port is no longer a config value main decides — this file only
 // carries the deployment env + Supabase settings forwarded to the child.
 
+// §E packaging — baked config constants. On a prod packaging build (CUBIC_BUILD=prod) the
+// electron-vite main `define` (electron.vite.config.ts) textually replaces these identifiers with
+// the frozen PUBLIC values from app/.env.production. In dev they're never defined, so the
+// `typeof … !== 'undefined'` guards below fall through to process.env — `typeof` on an undeclared
+// name is legal and yields "undefined" (a bare reference would ReferenceError, hence the guard,
+// and the short-circuit never evaluates the bare identifier in dev). All baked values are public
+// by design (anon key, write-only PostHog ingest key, proxy URL); real secrets live only in the Worker.
+declare const __CUBIC_SUPABASE_URL__: string
+declare const __CUBIC_SUPABASE_ANON_KEY__: string
+declare const __CUBIC_POSTHOG_KEY__: string
+declare const __CUBIC_PROXY_URL__: string
+declare const __CUBIC_CONFIG_ENV__: string
+
 export type CubicEnv = 'local' | 'prod'
 
 export interface BackendConfig {
@@ -28,35 +41,36 @@ export interface BackendConfig {
 }
 
 export function loadConfig(): BackendConfig {
-  const cubicEnv: CubicEnv = process.env.CUBIC_ENV === 'prod' ? 'prod' : 'local'
+  // Packaged builds bake CUBIC_ENV='prod' (empty process.env can't carry it); dev reads the shell.
+  const bakedEnv = typeof __CUBIC_CONFIG_ENV__ !== 'undefined' ? __CUBIC_CONFIG_ENV__ : process.env.CUBIC_ENV
+  const cubicEnv: CubicEnv = bakedEnv === 'prod' ? 'prod' : 'local'
 
   // The child always learns the env; in prod it also learns where to route Claude calls.
   const childEnv: Record<string, string> = { CUBIC_ENV: cubicEnv }
   if (cubicEnv === 'prod') {
-    // §B7 STUB — the hosted proxy (Phase 5) doesn't exist yet. When it does, this forwards
-    // a base URL the Anthropic SDK honors (ANTHROPIC_BASE_URL) so the agent loop routes
-    // through the proxy instead of calling Anthropic directly. `prod` is wired but inert
-    // until CUBIC_PROXY_URL is set.
-    const proxyBase = process.env.CUBIC_PROXY_URL
+    // Route the agent loop through the hosted proxy: forward a base URL the Anthropic SDK honors
+    // (ANTHROPIC_BASE_URL). Baked into the packaged build from app/.env.production; dev sets it via
+    // the shell. If empty, the child throws at LLM construction (anthropic.ts) — prod needs a real URL.
+    const proxyBase = typeof __CUBIC_PROXY_URL__ !== 'undefined' ? __CUBIC_PROXY_URL__ : process.env.CUBIC_PROXY_URL
     if (proxyBase) {
       childEnv.ANTHROPIC_BASE_URL = proxyBase
     } else {
-      console.warn('[config] CUBIC_ENV=prod but CUBIC_PROXY_URL is unset — the proxy lands in Phase 5; falling through to direct Anthropic.')
+      console.warn('[config] CUBIC_ENV=prod but CUBIC_PROXY_URL is unset — chat will fail until a proxy URL is baked/set.')
     }
   }
   // 'local': forward nothing extra — the agent loop calls Anthropic directly with the
   // ANTHROPIC_API_KEY inherited from this process's environment.
 
   // Supabase (§B auth). Dev reads from the shell env (or server/.env, inherited by this process);
-  // prod bakes the real values in at build time (the anon key is public). Both default to '' so an
+  // prod bakes the real values at build time (the anon key is public). Both default to '' so an
   // unconfigured dev machine still launches — the AuthManager treats '' as "auth unavailable".
-  const supabaseUrl = process.env.SUPABASE_URL ?? ''
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? ''
+  const supabaseUrl = typeof __CUBIC_SUPABASE_URL__ !== 'undefined' ? __CUBIC_SUPABASE_URL__ : (process.env.SUPABASE_URL ?? '')
+  const supabaseAnonKey = typeof __CUBIC_SUPABASE_ANON_KEY__ !== 'undefined' ? __CUBIC_SUPABASE_ANON_KEY__ : (process.env.SUPABASE_ANON_KEY ?? '')
 
   // §H analytics. Dev leaves POSTHOG_KEY unset by default (off → zero dev pollution) and sets it only
   // for a verify session; prod bakes the key at build. `CUBIC_ANALYTICS=off` hard-mutes even a keyed
   // build. Fired from MAIN only — NOT forwarded to the child (the child relays events up over IPC).
-  const posthogKey = process.env.POSTHOG_KEY ?? ''
+  const posthogKey = typeof __CUBIC_POSTHOG_KEY__ !== 'undefined' ? __CUBIC_POSTHOG_KEY__ : (process.env.POSTHOG_KEY ?? '')
   const posthogHost = process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'
   const analyticsEnabled = !!posthogKey && process.env.CUBIC_ANALYTICS !== 'off'
 
