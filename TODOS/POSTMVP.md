@@ -15,6 +15,8 @@
 
 ---
 
+- [ ] github actions ci/cd for triggering notarization stuff for any new tag/pushed to main
+
 ## Editing model (NLE-style)
 
 - [ ] **NLE-style ripple / reorder editing — the one trim/reorder gap.** _(was TODO.md `# postmvp`)_
@@ -200,6 +202,13 @@ Deferred improvements (roughly in priority order):
   + contextIsolation + `nodeIntegration:false` + strict CSP + no `rehype-raw`). Full fix: move token ownership into
   Electron main (main brokers the WS auth / injects the Bearer) so the renderer never holds it — a real re-plumb of the
   WS handshake, deferred as a well-contained low.
+
+- [ ] **Backend spawn → Electron `utilityProcess.fork()` so the `RunAsNode` fuse can be disabled.** _(surfaced during WT-PACKAGING §E-2)_
+  The backend is spawned via `process.execPath` + `ELECTRON_RUN_AS_NODE=1` (`app/src/main/backend.ts`), which forces the
+  `RunAsNode` Electron fuse to stay **enabled** — the one hardening hole left open in the packaged build (a local attacker
+  could run the signed binary as a generic Node runtime). Migrating the spawn to Electron's blessed `utilityProcess.fork()`
+  (a real re-plumb: its IPC is `MessagePort`-based, not the current stdio-fd `{port,token}` handshake — touches the verified
+  WT-WS-AUTH transport) would let `RunAsNode` be disabled for full hardening. Deferred as a deliberate post-MVP security pass.
 
 ---
 
