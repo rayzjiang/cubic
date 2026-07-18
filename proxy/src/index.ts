@@ -2,6 +2,7 @@ import { injectedSystem, injectedTools } from './inject.js';
 import { verifyJwt, bearerToken } from './auth.js';
 import { getEntitlement } from './entitlement.js';
 import { meterResponse, ALLOWED_MODELS } from './metering.js';
+import { handleReleases } from './releases.js';
 
 /**
  * WT-PROXY-CORE — Anthropic-shaped passthrough Worker (Phase 5 §A-2).
@@ -46,6 +47,9 @@ export interface Env {
   /** When set, return a canned Anthropic-shaped response instead of calling upstream —
    *  lets full-stack-local exercise the whole client→Worker path at zero API spend. */
   MOCK_UPSTREAM?: string;
+  /** §F-1 auto-update feed — private R2 bucket served read-only via `GET /releases/*`
+   *  (src/releases.ts). Optional in the type so the pure-function unit tests construct a minimal Env. */
+  RELEASES?: R2Bucket;
 }
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -170,6 +174,11 @@ async function enforceRateLimit(limiter: RateLimit | undefined, key: string, lab
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+    // §F-1 — auto-update feed (read-only, unauthenticated, Range-aware). Handled before the
+    // POST /v1/messages gate so electron-updater can pull latest-mac.yml + the signed .zip/.blockmap.
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/releases/')) {
+      return handleReleases(req, env);
+    }
     if (req.method !== 'POST' || url.pathname !== '/v1/messages') {
       return json({ type: 'error', error: { type: 'not_found', message: 'POST /v1/messages only' } }, 404);
     }

@@ -15,6 +15,12 @@
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // §F-1 — auto-update feed. Private R2 bucket served (read-only) via `GET /releases/*` (src/releases.ts);
+  // the release script uploads signed artifacts + latest-mac.yml here. Create once:
+  // `wrangler r2 bucket create cubic-releases`.
+  "r2_buckets": [
+    { "binding": "RELEASES", "bucket_name": "cubic-releases" }
+  ],
   "vars": {
     "ANTHROPIC_VERSION": "2023-06-01",
     "SUPABASE_URL": "https://igdbwihwvksraoqghswr.supabase.co"
