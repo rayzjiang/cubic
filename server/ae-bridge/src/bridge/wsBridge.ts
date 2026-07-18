@@ -291,6 +291,16 @@ class AEBridge {
     return this.workerClient !== null && this.workerClient.readyState === WebSocket.OPEN;
   }
 
+  /** True when a panel is connected but running an OUTDATED build — its hello `buildId` no longer matches
+   *  the panel this app version ships (`CUBIC_PANEL_BUILD_ID`, injected by Electron main). CEP loads the
+   *  panel once at AE launch, so an app update that changed the panel leaves the running one stale until
+   *  AE restarts → the renderer nudges "Restart After Effects" (§F-4). Unknown ids → false (never a false
+   *  positive). */
+  isWorkerStale(): boolean {
+    const shipped = process.env.CUBIC_PANEL_BUILD_ID;
+    return this.isConnected() && !!this.workerBuildId && !!shipped && this.workerBuildId !== shipped;
+  }
+
   /** Ask the connected panel to reload (re-fetch main.js with the fresh baked-in bundle). Dev only —
    *  triggered by the preflight via the `devReload` control message. */
   reloadWorker(): void {

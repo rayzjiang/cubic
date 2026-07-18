@@ -103,7 +103,9 @@ function broadcastConversations(): void {
  *  chat socket on each bridge connect/disconnect (below). Separate from the renderer↔backend link. */
 function sendAeStatus(ws: WebSocket): void {
   try {
-    ws.send(JSON.stringify({ type: "aeStatus", connected: bridge.isConnected() }));
+    // `stale` = a connected panel running an outdated build (see wsBridge.isWorkerStale) → the renderer
+    // shows a "Restart After Effects" nudge (§F-4). Rides the same message as `connected`.
+    ws.send(JSON.stringify({ type: "aeStatus", connected: bridge.isConnected(), stale: bridge.isWorkerStale() }));
   } catch { /* socket gone */ }
 }
 

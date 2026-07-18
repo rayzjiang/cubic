@@ -1,3 +1,5 @@
+import { bundledPanelBuildId } from './installBridge.js'
+
 // §0 + §B7 + §??? — the backend environment config (NOT the port).
 //
 // The backend OS-assigns its own WS port (`bind 127.0.0.1:0`) and mints the per-launch session token,
@@ -47,6 +49,11 @@ export function loadConfig(): BackendConfig {
 
   // The child always learns the env; in prod it also learns where to route Claude calls.
   const childEnv: Record<string, string> = { CUBIC_ENV: cubicEnv }
+  // §F-4 — tell the backend which panel build this app version ships, so it can flag a stale RUNNING
+  // panel (a connected panel whose hello buildId ≠ this) → the renderer nudges "Restart After Effects".
+  // Null (missing sidecar) → unset → staleness never triggers (fail-safe).
+  const panelBuildId = bundledPanelBuildId()
+  if (panelBuildId) childEnv.CUBIC_PANEL_BUILD_ID = panelBuildId
   if (cubicEnv === 'prod') {
     // Route the agent loop through the hosted proxy: forward a base URL the Anthropic SDK honors
     // (ANTHROPIC_BASE_URL). Baked into the packaged build from app/.env.production; dev sets it via

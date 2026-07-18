@@ -53,6 +53,18 @@ function resolveDistDir(): string {
   return dev
 }
 
+/** The build id of the panel THIS app version ships — the `build-id` sidecar baked into cep-extension/dist
+ *  by build-cep-extension.mjs (copied to Resources/cep-extension in prod). Handed to the backend as
+ *  CUBIC_PANEL_BUILD_ID so it can flag a stale RUNNING panel — one whose hello buildId no longer matches
+ *  what we ship (§F-4). Null if the sidecar is missing/unreadable → staleness simply never triggers. */
+export function bundledPanelBuildId(): string | null {
+  try {
+    return readFileSync(join(resolveDistDir(), 'build-id'), 'utf8').trim()
+  } catch {
+    return null
+  }
+}
+
 /** Per-platform Adobe CEP extensions dir for a bundle id. Null on unsupported platforms. */
 function cepExtensionsDir(bundleId: string): string | null {
   const home = homedir()
