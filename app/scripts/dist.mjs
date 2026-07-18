@@ -111,9 +111,13 @@ async function main() {
     if (!UNSIGNED) {
       console.log('[dist] 8/8 sign + notarize + staple the DMG')
       const releaseDir = resolve(APP_DIR, 'release')
-      const dmg = readdirSync(releaseDir).find((f) => f.endsWith('.dmg'))
-      if (!dmg) throw new Error('no .dmg found in release/ to notarize')
-      const dmgPath = resolve(releaseDir, dmg)
+      // Match THIS version's dmg (artifacts are Cubic-<version>-arch.dmg), not just the first .dmg —
+      // so a stale older-version dmg left in release/ can never be signed/notarized by mistake.
+      const version = JSON.parse(readFileSync(resolve(APP_DIR, 'package.json'), 'utf8')).version
+      const dmgs = readdirSync(releaseDir).filter((f) => f.endsWith('.dmg') && f.includes(`-${version}-`))
+      if (dmgs.length === 0) throw new Error(`no .dmg for v${version} found in release/ to notarize`)
+      if (dmgs.length > 1) throw new Error(`multiple .dmg for v${version} in release/: ${dmgs.join(', ')}`)
+      const dmgPath = resolve(releaseDir, dmgs[0])
       const identity = process.env.CSC_NAME || 'Developer ID Application'
       run('codesign', ['--force', '--sign', identity, '--timestamp', dmgPath], APP_DIR)
       run('xcrun', ['notarytool', 'submit', dmgPath, '--apple-id', process.env.APPLE_ID, '--team-id', process.env.APPLE_TEAM_ID, '--password', process.env.APPLE_APP_SPECIFIC_PASSWORD, '--wait'], APP_DIR)
