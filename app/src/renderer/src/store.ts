@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AuthState, BackendStatus, BillingState, CubicEnvName } from '@shared/ipc'
+import type { AuthState, BackendStatus, BillingState, CubicEnvName, UpdateState } from '@shared/ipc'
 import type { AgentEvent, ConversationMeta, DisplayItem, ServerMessage } from './protocol'
 import {
   type Connection,
@@ -94,6 +94,9 @@ interface ChatState {
   // Live AE (CEP worker) connectivity, pushed by the backend (`aeStatus`). Distinct from `connection`
   // (the renderer↔backend link): drives the always-on After Effects status dot.
   aeConnected: boolean
+  // §F-4 — a connected panel running an OUTDATED build (backend build-id mismatch) → the renderer nudges
+  // "Restart After Effects". Set from `aeStatus.stale`; always false while disconnected.
+  panelStale: boolean
   // §D-1a — whether AE's "Allow Scripts to Write Files" setting is on, pushed by the backend
   // (`fileAccess`). Tri-state: null = unknown/not-yet-checked (or AE disconnected); true = on; false =
   // off. The file-access gate fires ONLY on an explicit `false` (never `null`) while AE is connected.
@@ -112,6 +115,12 @@ interface ChatState {
   // account pill, the Settings usage bar, and the paywall/limit states. The enforcement GATE is the
   // proxy (a 402 on a blocked send) — this is the display side. Main owns every Supabase/Stripe call.
   billing: BillingState
+  // §F auto-update state (phase + version), pushed by main over IPC. `ready` drives the restart banner +
+  // the Settings→General indicator; download is silent. Fail-silent (a failed check stays 'idle').
+  update: UpdateState
+  // Session-only: the user clicked "Later" on the restart banner → hide the banner (the Settings→General
+  // indicator still shows). Cleared when a newer version stages (see setUpdate).
+  updateDismissed: boolean
   // Which deployment we run as — gates sign-in (prod blocks until signed in; local never blocks).
   cubicEnv: CubicEnvName
   // §D-1 first-run flags, hydrated from per-user localStorage when auth resolves signed-in (see setAuth):
@@ -184,6 +193,8 @@ interface ChatState {
   setBackendStatus: (s: BackendStatus) => void
   setAuth: (s: AuthState) => void
   setBilling: (s: BillingState) => void
+  setUpdate: (s: UpdateState) => void
+  dismissUpdate: () => void
   setCubicEnv: (e: CubicEnvName) => void
   setFileGateDismissed: (dismissed: boolean) => void
   markOnboardingSeen: () => void
@@ -256,11 +267,14 @@ function discardUncommittedTurn(s: ChatState): Partial<ChatState> {
 export const useChatStore = create<ChatState>((set, get) => ({
   connection: 'connecting',
   aeConnected: false,
+  panelStale: false,
   canWriteFiles: null,
   fileGateDismissed: false,
   backendStatus: { phase: 'starting', install: 'ok' },
   auth: { status: 'loading', user: null },
   billing: { status: 'loading', entitlement: null, activating: false },
+  update: { phase: 'idle', version: null },
+  updateDismissed: false,
   cubicEnv: 'local',
   onboardingSeen: false,
   triedItSeen: false,
@@ -305,6 +319,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!isBlocked(get().billing) && isBlocked(s)) track('paywall_hit', { reason: paywallReason(s.entitlement) })
     set({ billing: s })
   },
+  setUpdate: (s) => {
+    // A newly-staged (or newer) version clears a prior "Later" dismissal so the banner re-appears.
+    const prev = get().update
+    const newlyReady = s.phase === 'ready' && (prev.phase !== 'ready' || prev.version !== s.version)
+    set(newlyReady ? { update: s, updateDismissed: false } : { update: s })
+  },
+  dismissUpdate: () => set({ updateDismissed: true }),
   setCubicEnv: (e) => set({ cubicEnv: e }),
   setFileGateDismissed: (dismissed) => set({ fileGateDismissed: dismissed }),
   markOnboardingSeen: () => {
@@ -405,7 +426,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Live AE connectivity → status dot. Always apply (not session-scoped): it's app-global state.
         // On disconnect, reset canWriteFiles to unknown (null) so a stale `false` can't gate the composer
         // while AE is down; a fresh `fileAccess` push arrives on the next connect.
-        set(msg.connected ? { aeConnected: true } : { aeConnected: false, canWriteFiles: null })
+        set(msg.connected ? { aeConnected: true, panelStale: !!msg.stale } : { aeConnected: false, panelStale: false, canWriteFiles: null })
         break
       case 'fileAccess':
         // §D-1a — whether AE's "Allow Scripts to Write Files" setting is on. Drives the file-access gate.

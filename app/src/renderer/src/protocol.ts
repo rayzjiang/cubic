@@ -86,7 +86,7 @@ export type ServerMessage =
   // Live After Effects bridge (CEP worker) connectivity. Pushed once on connect (alongside the `list`
   // reply) so a fresh renderer has a correct value, then on every bridge connect/disconnect. Drives the
   // always-on status dot — distinct from `connection` (the renderer↔backend link in ws.ts).
-  | { type: 'aeStatus'; connected: boolean }
+  | { type: 'aeStatus'; connected: boolean; stale?: boolean }
   // Whether AE's "Allow Scripts to Write Files and Access Network" setting is on (§D-1a). Pushed on the
   // `list` handshake + every bridge (re)connect + on demand; drives the file-access gate. Only sent
   // while AE is connected — a disconnected renderer keeps its last value (reset to unknown on aeStatus:false).

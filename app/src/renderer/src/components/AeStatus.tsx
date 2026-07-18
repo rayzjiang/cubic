@@ -7,10 +7,6 @@ import aeLogoUrl from '../assets/after-effects.svg'
 import prLogoUrl from '../assets/premiere-pro.svg'
 import resolveLogoUrl from '../assets/davinci-resolve-small.png'
 
-// After the bridge is (re)installed this launch, AE — if already open — won't load the new panel until
-// it restarts; we wait a grace period before nagging so a fresh install where AE simply isn't open yet
-// never shows a misleading "restart AE".
-const RESTART_AE_GRACE_MS = 8000
 // The AE panel is invisible and connects via fs.watch, so it lands near-instantly — but on a cold app
 // open there's a brief window before it reports in. Show an optimistic "Connecting…" during it rather
 // than a scary red, then fall back to "not connected" if it never lands.
@@ -44,6 +40,7 @@ const HOST_APPS: HostApp[] = [
 export function AeStatus() {
   const connection = useChatStore((s) => s.connection)
   const aeConnected = useChatStore((s) => s.aeConnected)
+  const panelStale = useChatStore((s) => s.panelStale)
   const { phase, install } = useChatStore((s) => s.backendStatus)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -52,18 +49,6 @@ export function AeStatus() {
   // The connected host today is always After Effects (the only shipped adapter). FUTURE: read this from
   // the store once a second host can connect.
   const activeHostId: HostApp['id'] = 'ae'
-
-  // Restart-AE hint: only after a grace, and only when an install actually copied a new panel this launch.
-  const [showRestartAe, setShowRestartAe] = useState(false)
-  const eligibleForRestartHint = connection === 'open' && !aeConnected && install === 'updated'
-  useEffect(() => {
-    if (!eligibleForRestartHint) {
-      setShowRestartAe(false)
-      return
-    }
-    const t = setTimeout(() => setShowRestartAe(true), RESTART_AE_GRACE_MS)
-    return () => clearTimeout(t)
-  }, [eligibleForRestartHint, aeConnected])
 
   // Optimistic "Connecting…" grace. Seeded from mount-time state so an eligible cold open never paints
   // red for a frame before the effect runs.
@@ -123,12 +108,16 @@ export function AeStatus() {
   // The connected host's connectivity: dot color + short label + one-line hint (only when there's
   // actually something for a non-technical user to do).
   const aeStatus: HostStatus = (() => {
+    // A connected panel running an OUTDATED build (an app update changed the panel; CEP loads it once at
+    // AE launch, so the running one is stale until AE restarts) → amber "Restart AE". Backend-detected via
+    // a build-id comparison (aeStatus.stale), NOT connection state — so it fires even though the stale
+    // panel reconnected fine, which is the case the old `!aeConnected` check silently missed (§F-4).
+    if (aeConnected && panelStale)
+      return { dot: 'bg-amber-400', label: 'Restart AE', hint: 'Restart After Effects to finish updating.' }
     if (aeConnected) return { dot: 'bg-green-400', label: 'Connected', hint: null }
     if (install === 'failed')
       return { dot: 'bg-red-500', label: 'Panel error', hint: 'Restart Cubic to reinstall the panel.' }
     if (connecting) return { dot: 'bg-amber-400', label: 'Connecting…', hint: null }
-    if (install === 'updated' && showRestartAe)
-      return { dot: 'bg-amber-400', label: 'Restart AE', hint: 'Restart After Effects — Cubic just updated its panel.' }
     return { dot: 'bg-red-500', label: 'Not connected', hint: 'Open After Effects to connect.' }
   })()
 

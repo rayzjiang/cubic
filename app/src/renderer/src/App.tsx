@@ -15,6 +15,8 @@ import { ConfirmModal } from './components/ConfirmModal'
 import { SettingsModal } from './components/SettingsModal'
 import { DeleteAccountModal } from './components/DeleteAccountModal'
 import { PaywallBanner } from './components/Paywall'
+import { UpdateBanner } from './components/UpdateBanner'
+import { RestartAeBanner } from './components/RestartAeBanner'
 import { FullscreenPaywall, PaywallOverlay } from './components/FullscreenPaywall'
 import { FileAccessOverlay, FileAccessBanner } from './components/FileAccessGate'
 import { OnboardingFlow } from './components/OnboardingFlow'
@@ -70,13 +72,17 @@ export function App() {
     void window.cubic.getAuthState().then(store.setAuth).catch(() => {})
     // §D billing/entitlement DISPLAY: same snapshot-then-subscribe shape (main owns the fetch).
     void window.cubic.getBilling().then(store.setBilling).catch(() => {})
+    // §F auto-update DISPLAY: same snapshot-then-subscribe shape; main owns electron-updater.
+    void window.cubic.getUpdateState().then(store.setUpdate).catch(() => {})
     const offBackend = window.cubic.onBackendStatus(store.setBackendStatus)
     const offAuth = window.cubic.onAuthChanged(store.setAuth)
     const offBilling = window.cubic.onBillingChanged(store.setBilling)
+    const offUpdate = window.cubic.onUpdateChanged(store.setUpdate)
     return () => {
       offBackend()
       offAuth()
       offBilling()
+      offUpdate()
     }
   }, [])
 
@@ -152,6 +158,11 @@ export function App() {
         {/* §D-1a file-access limit state — the fullscreen gate was dismissed to this slim banner (the
             composer stays gated in InputBar). The fullscreen <FileAccessOverlay/> is root-mounted below. */}
         {showFileBanner && <FileAccessBanner />}
+        {/* §F-4 — restart-AE nudge when the running panel is stale after an update (self-guards). */}
+        <RestartAeBanner />
+        {/* §F — restart-to-update bar (lowest priority; stacks below the paywall/file bars). Self-guards
+            (renders only when an update is staged + not dismissed). Non-blocking. */}
+        <UpdateBanner />
         {/* An AE project switch surfaces as a toast (see store `conversations` handler); the now-open
             project name shows in the TopBar. The slim ProjectSwitchBar component is kept (unmounted) for
             possible future reuse. */}

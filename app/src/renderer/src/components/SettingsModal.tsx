@@ -78,6 +78,7 @@ export function SettingsModal() {
   const pickerOpen = useChatStore((s) => s.pickerOpen)
   const user = useChatStore((s) => s.auth.user)
   const billing = useChatStore((s) => s.billing)
+  const update = useChatStore((s) => s.update)
   const addToast = useChatStore((s) => s.addToast)
   const isNarrow = useIsNarrow()
   const [tab, setTab] = useState<TabId>('general')
@@ -181,6 +182,24 @@ export function SettingsModal() {
             AI-driven motion for After Effects — describe the animation you want and Cubic builds it
             right in your timeline.
           </p>
+          {/* §F — re-findable "restart to update" entry (the banner may have been dismissed). Only shown
+              once an update is downloaded + staged. */}
+          {update.phase === 'ready' && (
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-white/85">
+                  Update ready{update.version ? ` — version ${update.version}` : ''}
+                </div>
+                <div className="text-[11.5px] text-white/45">Restart Cubic to finish updating.</div>
+              </div>
+              <button
+                onClick={() => window.cubic.restartToUpdate()}
+                className="shrink-0 rounded-md bg-white/90 px-2.5 py-1 text-[12px] font-medium text-neutral-900 hover:bg-white"
+              >
+                Restart now
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -209,7 +228,7 @@ export function SettingsModal() {
             <p className="mt-1 text-[12px] text-white/45">
               {canDelete
                 ? 'Permanently deletes your account and everything in it. This can’t be undone.'
-                : 'Please cancel your subscription first — you can cancel it in the Billing tab.'}
+                : 'Please cancel your subscription first (cancel in the Billing tab)'}
             </p>
             {canDelete ? (
               <button onClick={onDeleteAccount} className={`mt-3 ${DANGER_BTN}`}>
