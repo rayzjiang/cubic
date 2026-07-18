@@ -12,6 +12,7 @@ import { AuthManager } from './auth.js'
 import { BillingManager } from './billing.js'
 import { AnalyticsManager } from './analytics.js'
 import { provisionBridge } from './installBridge.js'
+import { UpdateManager } from './updater.js'
 import type { AuthState, AuthStatus } from '../shared/ipc.js'
 
 /**
@@ -62,6 +63,9 @@ if (!app.requestSingleInstanceLock()) {
   // identity + sent. Off by default in dev (config.analyticsEnabled). Identity rides the same auth
   // transition guard: identify on sign-in (aliasing pre-sign-in anonymous events), rotate on real sign-out.
   const analytics = new AnalyticsManager(config)
+  // §F auto-update — electron-updater in main; checks/downloads in the background and stages for the next
+  // restart. No-op unless packaged (started below, after the window).
+  const updater = new UpdateManager()
   let lastAuthStatus: AuthStatus | null = null
   auth.on('change', (state: AuthState) => {
     if (state.status === 'signedIn' && lastAuthStatus !== 'signedIn') {
@@ -139,7 +143,7 @@ if (!app.requestSingleInstanceLock()) {
     // §B5 — provision the AE bridge (idempotent, content-hash gated) BEFORE the backend/UI come up.
     // Never throws; a failure only degrades AE connectivity (the status dot), never blocks launch.
     const install = await provisionBridge()
-    registerIpc(config, backend, auth, billing, analytics) // subscribe to status/auth/billing before markInstall/start so pushes broadcast
+    registerIpc(config, backend, auth, billing, analytics, updater) // subscribe to status/auth/billing/update before markInstall/start so pushes broadcast
     backend.markInstall(install)
     buildAppMenu()
     backend.start()
@@ -150,6 +154,9 @@ if (!app.requestSingleInstanceLock()) {
     await backend.whenReady().catch((e: Error) => console.error('[main] backend not ready:', e.message))
     runDevPreflight() // dev-only; non-blocking, quits the app if the panel was stale + reloaded
     createWindow()
+    // §F — begin background update checks (no-op unless packaged). After the window so a check never
+    // competes with cold-start work; it downloads silently + stages the update for the next restart.
+    updater.start()
 
     // §B — restore any persisted session, then flush a deep link that arrived during cold start.
     void auth.init()
@@ -186,8 +193,17 @@ if (!app.requestSingleInstanceLock()) {
     backend.stop()
     auth.dispose() // cancel the token-refresh timer so it doesn't keep the process busy
     billing.dispose() // cancel any in-flight billing return poll
+    updater.dispose() // stop the periodic update-check timer
     preflightChild?.kill() // don't leave a dev preflight waiter polling after the app quits
-    void analytics.shutdown().finally(() => app.exit(0)) // flush the analytics tail, then really exit
+    void analytics.shutdown().finally(() => {
+      // §F — if an update was downloaded + staged, apply it now (quit → swap → relaunch) instead of a
+      // hard exit. app.exit(0) would BYPASS electron-updater's install step. This one branch serves BOTH
+      // the "Restart now" button (which just calls app.quit()) AND a passive quit with a staged update
+      // (autoInstallOnAppQuit). The `quitting` guard above no-ops the re-entrant before-quit that
+      // quitAndInstall triggers.
+      if (updater.isUpdateStaged()) updater.quitAndInstall()
+      else app.exit(0) // flush the analytics tail, then really exit
+    })
   })
 
   app.on('window-all-closed', () => {

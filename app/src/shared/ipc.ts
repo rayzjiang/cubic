@@ -33,6 +33,12 @@ export const CHANNELS = {
   // §H — one-way (fire-and-forget) forward of a renderer analytics event to main, which stamps the
   // user id + sends to PostHog. `send`/`.on` (no ack), unlike every other channel here (all `invoke`).
   analyticsTrack: 'cubic:analytics:track',
+  // §F auto-update — main owns electron-updater; the renderer reads state + triggers a restart-to-install.
+  // Same snapshot getter + `change` broadcast shape as backend/auth/billing; `updateRestart` is a
+  // fire-and-forget `send` (the app quits, so there's no ack to await).
+  updateGetState: 'cubic:update:getState',
+  updateChanged: 'cubic:update:changed',
+  updateRestart: 'cubic:update:restart',
 } as const
 
 /**
@@ -56,6 +62,24 @@ export type InstallState = 'ok' | 'updated' | 'failed'
 export interface BackendStatus {
   phase: BackendPhase
   install: InstallState
+}
+
+/**
+ * §F auto-update state, owned by main's UpdateManager and pushed to the renderer (same snapshot +
+ * `change` shape as BackendStatus). Download is silent/background; the renderer acts ONLY on `ready`
+ * (shows the restart-to-update bar + Settings indicator). A failed/absent check never surfaces — it
+ * stays `idle` (fail-silent).
+ *  - idle        — nothing pending / already current / a check failed
+ *  - checking    — a check is in flight
+ *  - available   — a newer version was found (download starting)
+ *  - downloading — downloading in the background
+ *  - ready       — downloaded + STAGED; applies on the next restart (the only state the UI acts on)
+ */
+export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready'
+export interface UpdateState {
+  phase: UpdatePhase
+  /** The version being offered/staged (from `available` onward); null when idle. */
+  version: string | null
 }
 
 /** The backend's WS connection info, discovered by main from the child's `bridgeReady` report and
@@ -224,4 +248,11 @@ export interface CubicApi {
    *  applies the event/property whitelist, and sends to PostHog). No return; telemetry never blocks the
    *  UI. Unknown event names / non-whitelisted props are dropped in main. */
   trackEvent(event: string, props?: Record<string, unknown>): void
+  /** §F — current auto-update state (snapshot), for a renderer that mounts/reloads mid-run. */
+  getUpdateState(): Promise<UpdateState>
+  /** §F — subscribe to update-state pushes. Returns an unsubscribe fn. */
+  onUpdateChanged(cb: (state: UpdateState) => void): () => void
+  /** §F — apply a staged update: quit + swap + relaunch into the new version. Fire-and-forget (the app
+   *  quits). Only meaningful when the phase is 'ready'; a no-op otherwise. */
+  restartToUpdate(): void
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CHANNELS, type AuthState, type BackendStatus, type BillingState, type CubicApi } from '../shared/ipc.js'
+import { CHANNELS, type AuthState, type BackendStatus, type BillingState, type CubicApi, type UpdateState } from '../shared/ipc.js'
 
 // Sandbox-safe bridge: with sandbox:true the preload may use contextBridge + ipcRenderer
 // but NOT fs/ws/arbitrary node — exactly the intent. The renderer touches main only
@@ -40,6 +40,14 @@ const api: CubicApi = {
   },
   // §H — one-way send (no invoke): the renderer fires analytics events, main stamps identity + sends.
   trackEvent: (event, props) => ipcRenderer.send(CHANNELS.analyticsTrack, event, props),
+  // §F auto-update — snapshot + subscribe (same shape as backend/auth/billing); restart is a one-way send.
+  getUpdateState: () => ipcRenderer.invoke(CHANNELS.updateGetState),
+  onUpdateChanged: (cb) => {
+    const listener = (_e: unknown, state: UpdateState): void => cb(state)
+    ipcRenderer.on(CHANNELS.updateChanged, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.updateChanged, listener)
+  },
+  restartToUpdate: () => ipcRenderer.send(CHANNELS.updateRestart),
 }
 
 contextBridge.exposeInMainWorld('cubic', api)

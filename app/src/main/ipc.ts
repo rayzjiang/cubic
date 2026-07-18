@@ -1,10 +1,11 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus, type BillingState, type PlanId } from '../shared/ipc.js'
+import { CHANNELS, type AuthProvider, type AuthState, type BackendStatus, type BillingState, type PlanId, type UpdateState } from '../shared/ipc.js'
 import type { BackendConfig } from './config.js'
 import type { BackendSupervisor } from './backend.js'
 import type { AuthManager } from './auth.js'
 import type { BillingManager } from './billing.js'
 import type { AnalyticsManager } from './analytics.js'
+import type { UpdateManager } from './updater.js'
 
 /**
  * §0 + §B6 + §B + §??? — main↔renderer IPC. `getBackendPort` is the one connection-discovery call: it
@@ -15,7 +16,7 @@ import type { AnalyticsManager } from './analytics.js'
  * backend crash + reconnect). The auth surface mirrors that shape exactly: snapshot getters + a `change`
  * broadcast. No filesystem access; the renderer stays sandboxed.
  */
-export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager, analytics: AnalyticsManager): void {
+export function registerIpc(config: BackendConfig, backend: BackendSupervisor, auth: AuthManager, billing: BillingManager, analytics: AnalyticsManager, updater: UpdateManager): void {
   ipcMain.handle(CHANNELS.getBackendPort, () => backend.whenReady())
   ipcMain.handle(CHANNELS.getBackendStatus, () => backend.status)
   // Non-destructive AE reconnect (§D-1a companion): re-poke conn.json to wake a dormant panel.
@@ -60,4 +61,15 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   ipcMain.on(CHANNELS.analyticsTrack, (_e, event: string, props?: Record<string, unknown>) =>
     analytics.captureFromRenderer(event, props),
   )
+
+  // §F auto-update — snapshot getter + `change` broadcast (same shape as auth/billing). `updateRestart`
+  // is a fire-and-forget `send`: app.quit() drives the before-quit install branch (index.ts), which
+  // applies the staged update instead of a hard exit. No ack — the app is quitting.
+  ipcMain.handle(CHANNELS.updateGetState, () => updater.snapshot)
+  ipcMain.on(CHANNELS.updateRestart, () => app.quit())
+  updater.on('change', (state: UpdateState) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(CHANNELS.updateChanged, state)
+    }
+  })
 }
