@@ -40,28 +40,34 @@ function loadLocalEnv(): void {
  */
 export async function startBackend(port: number = AE_BRIDGE_PORT): Promise<void> {
   loadLocalEnv();
-  // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in server/.env is reflected (sonnet|haiku|opus
-  // or a full model id). An unmissable banner so the active model — and whether it's the costly
-  // Sonnet default — is obvious in the `npm run dev` terminal every boot.
-  const model = defaultModel();
-  const raw = process.env.CUBIC_MODEL?.trim();
-  const bar = "=".repeat(46);
-  console.error(bar);
-  console.error(`  CUBIC MODEL: ${model}`);
-  console.error(`  (source: ${raw ? `CUBIC_MODEL=${raw}` : "default — no CUBIC_MODEL set"})`);
-  if (!raw) {
-    console.error("  ⚠  CUBIC_MODEL unset → defaulting to Sonnet (pricier).");
-    console.error("     Set CUBIC_MODEL=haiku in server/.env for cheap dev.");
+  // Startup banner: the active model + compaction tuning. DEV-ONLY (gated on CUBIC_ENV !== 'prod') — a
+  // PACKAGED build must never print the model or tuning to a terminal (internal IP, the same reason the
+  // prompt + tools moved server-side in Phase 5). `npm run dev`/`serve`/MCP all run with CUBIC_ENV unset
+  // or 'local' → still shown; the packaged app spawns the backend with CUBIC_ENV='prod' → skipped.
+  if (process.env.CUBIC_ENV !== "prod") {
+    // Resolved AFTER loadLocalEnv so a CUBIC_MODEL set in server/.env is reflected (sonnet|haiku|opus
+    // or a full model id). An unmissable banner so the active model — and whether it's the costly
+    // Sonnet default — is obvious in the `npm run dev` terminal every boot.
+    const model = defaultModel();
+    const raw = process.env.CUBIC_MODEL?.trim();
+    const bar = "=".repeat(46);
+    console.error(bar);
+    console.error(`  CUBIC MODEL: ${model}`);
+    console.error(`  (source: ${raw ? `CUBIC_MODEL=${raw}` : "default — no CUBIC_MODEL set"})`);
+    if (!raw) {
+      console.error("  ⚠  CUBIC_MODEL unset → defaulting to Sonnet (pricier).");
+      console.error("     Set CUBIC_MODEL=haiku in server/.env for cheap dev.");
+    }
+    // Compaction test knobs — print the EFFECTIVE value (env override or the built-in default) so a
+    // stale shell export or an un-restarted backend is obvious when verifying compaction behavior.
+    const ctxWin = process.env.CUBIC_CONTEXT_WINDOW?.trim();
+    const thresh = process.env.CUBIC_COMPACT_THRESHOLD?.trim();
+    const keep = process.env.CUBIC_KEEP_RECENT_TURNS?.trim();
+    console.error(`  CONTEXT WINDOW: ${ctxWin ? `${ctxWin} (override)` : "unset → full model window"}`);
+    console.error(`  COMPACT THRESHOLD: ${thresh ? `${thresh} (override)` : `${COMPACT_THRESHOLD} (default)`}`);
+    console.error(`  KEEP RECENT TURNS: ${keep ? `${keep} (override)` : `${KEEP_RECENT_TURNS} (default)`}`);
+    console.error(bar);
   }
-  // Compaction test knobs — print the EFFECTIVE value (env override or the built-in default) so a
-  // stale shell export or an un-restarted backend is obvious when verifying compaction behavior.
-  const ctxWin = process.env.CUBIC_CONTEXT_WINDOW?.trim();
-  const thresh = process.env.CUBIC_COMPACT_THRESHOLD?.trim();
-  const keep = process.env.CUBIC_KEEP_RECENT_TURNS?.trim();
-  console.error(`  CONTEXT WINDOW: ${ctxWin ? `${ctxWin} (override)` : "unset → full model window"}`);
-  console.error(`  COMPACT THRESHOLD: ${thresh ? `${thresh} (override)` : `${COMPACT_THRESHOLD} (default)`}`);
-  console.error(`  KEEP RECENT TURNS: ${keep ? `${keep} (override)` : `${KEEP_RECENT_TURNS} (default)`}`);
-  console.error(bar);
   await bridge.start(port);
   registerAgentChat();
   // §H — forward the agent brain's analytics events (command_run, …) UP to the Electron parent, which
