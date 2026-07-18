@@ -133,15 +133,7 @@
 
 ## Wave 4 — ship the binary (serial — build/release tooling)
 
-> **Auto-update + extension lifecycle (how a shipped update reaches users — WT7 mechanics, captured here for reference):** electron-updater checks + downloads a new version in the background on launch, but the swap **applies on the next Cubic restart** (never mid-run) → a non-blocking "restart to update" nudge. If the user never restarts Cubic, it never updates. The AE panel rides **inside** the `.app`, so app + backend + panel travel together in one update; on the post-update launch `provisionBridge()` copies the new panel **only if its content hash changed**, and only then must the user restart AE. Most updates (app/backend only) touch nothing in AE.
->
-> | Time | What happens | User sees |
-> |---|---|---|
-> | You ship | `npm run dist` → upload to R2 | nothing |
-> | User's Cubic, next launch/check | downloads v2 in background | keeps working |
-> | Download done | update staged (not applied) | "Update ready — restart Cubic" (non-blocking) |
-> | User restarts Cubic | v2 applies; `provisionBridge` copies new panel *iff* hash changed | "Restart After Effects to finish" (only if panel changed) |
-> | User restarts AE | new panel loads, reconnects | back to work |
+> **Release + auto-update flow** (how to ship a version + how a shipped update reaches users) now lives in the root [`README.md`](../README.md) § "Releasing & shipping updates" — the durable dev doc. Summary: bump `app/package.json` version → `npm run dist` → `npm run release`; the update downloads in the background, applies on the next Cubic restart, and nudges "Restart After Effects" only if the panel changed.
 
 - [ ] Build in-app 'Clear all local data' now Add a Settings action that wipes ~/.cubic/sessions + frames on demand (never .cubic-backups). WHY: gives users a real data-wipe control while installed — the realistic substitute for the impossible uninstall hook; good privacy story. WHY NOT: it's a Settings/UI feature, not packaging — scope creep into a build-tooling wave; and it still can't fire on an actual uninstall (a trashed app can't run it). Better as its own small Settings item.
 
@@ -154,12 +146,12 @@
 - [x] App icon — **DONE (good enough to ship).** `app/build-resources/icon.icns` generated from `cubic-logo.svg` (white cube) on a dark rounded square with genuinely transparent corners (Swift/NSImage alpha render → `iconutil`). Optional: swap in professionally-designed art later, but this is a real icon, not a placeholder.
 - [x] §E-6 seamless AE bridge — **DONE + live-verified.** Invisible auto-starting headless panel via Adobe's invisible-extension recipe: `<Type>Custom</Type>` + `<AutoVisible>false` + `<StartOn>` (ApplicationInitialized/Activate) + no `<Menu>` → loads invisibly on AE launch, never in Window→Extensions, auto-connects with zero user setup. **Instant + zero-idle-poll connect** via Node `--enable-nodejs` + `fs.watch` on `~/.cubic/conn.json` (dormant/0 CPU while Cubic closed; wakes the instant Cubic writes conn.json; bounded quick-retries for transient drops; ExtendScript-read + backoff fallback if node absent). Also: `checkFileAccess` detection command (→ §D-1a gate), `.debug` Extension-Id fix (DevTools at http://localhost:8088 is the ONLY way to debug the invisible panel — see `server/ae-bridge/CLAUDE.md`). (Earlier `<Type>Panel>` attempt failed — dockable → workspace-persisted + throttled — and was corrected. Cubic can't load/unload the extension itself; CEP loads only at AE startup/activate, so dormancy is the idle model.) The app-switcher status dropdown that grew out of this is consumer UI → moved to Wave 3 §D-6.
 
-**7. WT-AUTO-UPDATE** — §F (strictly after WT-PACKAGING — reuses its signing identity)
-- [ ] §F-1 update feed on Cloudflare R2 (release script uploads signed artifacts + `latest.yml`)
-- [ ] §F-2 signed updates (reuse §E identity → no Gatekeeper re-trigger)
-- [ ] §F-3 update UX — background download → "restart to update"
-- [ ] §F-4 seamless updates — never touch/reload the AE panel
-- [ ] §F-5 (optional) staged rollout / beta channel
+**7. WT-AUTO-UPDATE** ✅ **DONE — built + E2E-verified on the dev machine** (0.1.0→0.1.1→0.1.3: background download → Restart now → applied, **no Gatekeeper reprompt**; differential blockmap download live; the stale-panel "Restart AE" nudge fires). Clean-machine confirm rides §G-3. — §F (reuses §E signing identity)
+- [x] §F-1 update feed — **private R2 bucket served read-only via the `cubic-proxy` Worker's Range-aware `GET /releases/*`** (`proxy/src/releases.ts`, 206/blockmap support); `app/scripts/release.mjs` uploads signed `.zip`+`.blockmap`+`.dmg`+`latest-mac.yml` via the S3 API (`@aws-sdk/client-s3`), version-immutable unless `--force`. Feed URL baked in `electron-builder.yml` `publish` (→ `app-update.yml`), not config.ts.
+- [x] §F-2 signed updates — the `.zip`'s `.app` IS the §E notarized+stapled build → Squirrel applies with no Gatekeeper reprompt (verified).
+- [x] §F-3 update UX — `UpdateManager` (`app/src/main/updater.ts`) autoDownloads in the background + stages; non-dismissable-until-restart `UpdateBanner` + Settings→General indicator; `before-quit` branches to `quitAndInstall()` on a staged update so BOTH "Restart now" and a passive quit install. Launch + 6h re-check; fail-silent.
+- [x] §F-4 seamless updates — app-only update never re-copies the panel (`provisionBridge` hash gate → `'unchanged'`); a panel-CHANGING update is now **detected** (backend compares the connected panel's `hello` build-id vs the shipped `CUBIC_PANEL_BUILD_ID`) → loud non-blocking "Restart After Effects" banner + amber status dot (`RestartAeBanner`/`AeStatus`), closing the silent-stale-panel gap the old `!aeConnected` hint missed.
+- [ ] §F-5 (optional) staged rollout / beta channel — **DEFERRED post-MVP** (single `latest` channel, 100%).
 
 ---
 
@@ -173,6 +165,9 @@
 - [ ] §G-2 ToS + Privacy Policy published — *start drafting early (legal lead time)*
 - [ ] ~~**\*LOW PRIORITY I THINK** · §D-4 non-technical copy pass — consumer tone across ALL Wave-3 screens (incl. P2 delete copy); cheapest done once on frozen screens (batch with §G-2 legal copy). Lowkey might not need it.~~
 - [ ] §G-3 full paid flow tested E2E on a clean machine (install → sign in → trial → cap → pay → use → cancel → revoked)
+    - [ ] + auto update flow on new machine (dad's mac?)
+    - [ ] verify on LIVE/fr stripe mode + verify that payment to stripe goes thru (maybe set plan price to like $0.50)
+    - [ ] set allowance cap to like $1 and see what happens when limit is hit
 - [ ] §G-4 refund (prob wont have refunds allowed like most saas) + support process — real inbox + refund SOP. **Data-erasure / account-closure guard:** the self-serve delete flow (Wave 3 §D-5) covers the common case; for any **manual** deletion (admin-initiated erasure on request), follow the same invariant — **cancel the Stripe subscription BEFORE deleting the Supabase user**, or the `ON DELETE CASCADE` clears the local `subscriptions` cache while the real Stripe sub keeps billing a ghost.
 - [ ] **Stripe customer emails ON** (zero-code Dashboard config) — turn on the payment emails customers expect: successful-payment **receipts** (the sample statement), **failed-payment / dunning** (retry + "update your card", schedule matched to the ~24h fail-fast `past_due` grace), and renewal / card-expiry reminders (Settings → Customer emails + Settings → Billing → failed payments). Two things to verify or they don't land right: (1) the Stripe **Customer carries the user's email** (Checkout attaches it by default — confirm in the §G-3 E2E), (2) clean **product/price display names** so the receipt reads "Max plan," not a `prod_…` id. _(promoted to MVP from POSTMVP "Enable Stripe dunning emails")_
 - [ ] POST MVP PROB - §G-5 dev/ops runbook (`docs/RUNBOOK.md`) — the maintainer's index of every operational surface so post-ship "where do I change/fix X" has one home. **Do this LAST** (rescan the finished codebase first, so procedures reflect final prod state). Structure: Tier-1 items get full inline procedures (they have no other home) — change a plan's price/allowance (`supabase/scripts/change-plan.ts`, `--dry-run` first, Subscription-Schedules staggered migration), prod deploy (Worker + Supabase functions/migrations + Stripe webhook endpoint), secrets registry + rotation, Stripe manual ops/refund/dispute SOP (folds in §G-4), incident/rollback. Tiers 2–3 = thin pointers to the per-package source-of-truth docs (`app/README.md`, `proxy/CLAUDE.md`, `supabase/README.md`, `server/*/CLAUDE.md`, `docs/ARCHITECTURE.md`, `migrations/`) — index, don't restate. Tier 4 = stub the not-yet-built ops (§E/§F/§H) to fill on completion. Mirrors how `ARCHITECTURE.md` defers to its sources rather than duplicating.
