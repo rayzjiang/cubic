@@ -4,6 +4,9 @@ dist/
 release/
 .env.signing
 .env.production
+.env.release
+build-resources/icon-preview.png
+build-resources/icon.iconset/
 *.log
 *.tsbuildinfo
 .DS_Store

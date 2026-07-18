@@ -13,10 +13,13 @@
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
-    "dist": "node scripts/dist.mjs"
+    "dist": "node scripts/dist.mjs",
+    "release": "node scripts/release.mjs",
+    "icon": "swift scripts/make-icon.swift"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "electron-updater": "^6.3.9",
     "motion": "^12.40.0",
     "ogl": "^1.0.11",
     "posthog-node": "^5.43.0",
@@ -27,6 +30,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
     "@electron/fuses": "^1.8.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^20.19.41",

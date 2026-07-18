@@ -77,8 +77,11 @@ dmg:
       type: link
       path: /Applications
 
-# WT7 auto-update feed (Cloudflare R2). STUB — inert until §F wires electron-updater. Replace the URL.
+# §F-1 auto-update feed. electron-builder bakes this into the app's hidden app-update.yml; electron-updater
+# reads it to pull latest-mac.yml + the signed .zip. Served read-only by the cubic-proxy Worker from a
+# PRIVATE R2 bucket (GET /releases/*, proxy/src/releases.ts) — same host as CUBIC_PROXY_URL, invisible to
+# users. Swap the host to the custom domain at the launch-gate domain step (no code change, just a rebuild).
 publish:
   - provider: generic
-    url: https://REPLACE-with-r2-public-bucket.example.com/releases/
+    url: https://cubic-proxy.raymondj.workers.dev/releases/
     channel: latest
