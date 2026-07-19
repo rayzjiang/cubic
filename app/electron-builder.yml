@@ -13,14 +13,17 @@ directories:
 
 # Bundle the app (out/ + prod node_modules for the externalized main deps @supabase/supabase-js +
 # posthog-node) into app.asar. Start from electron-builder's default (**/*, prod-deps-pruned) and
-# subtract dev-only inputs (src/, scripts/, config, tsconfig, .env*, build-resources).
+# subtract dev-only inputs (src/, scripts/, config, tsconfig, .env*, build-resources) plus docs
+# (*.md) and test files (*.test.*/*.spec.*) — none are loaded by the packaged app (entry = out/).
 asar: true
 npmRebuild: false
 files:
   - "!**/.vscode/*"
-  - "!src/*"
+  - "!src/**/*"
   - "!scripts/*"
   - "!build-resources/*"
+  - "!**/*.md"
+  - "!**/*.{test,spec}.*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
   - "!electron-builder.yml"
   - "!{.gitignore,.editorconfig,.prettierignore,.eslintrc.cjs,.eslintignore}"
