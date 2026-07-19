@@ -38,7 +38,7 @@ export const PLANS: readonly PlanDisplay[] = [
     name: 'Max',
     priceLabel: '$89/mo',
     tagline: 'For heavy, all-day use.',
-    highlights: ['Over 3× the monthly usage of Pro', 'Best for heavy, all-day motion work', 'Cancel anytime'],
+    highlights: ['Over 3x the monthly usage of Pro', 'Best for heavy, all-day motion work', 'Cancel anytime'],
   },
 ] as const
 
