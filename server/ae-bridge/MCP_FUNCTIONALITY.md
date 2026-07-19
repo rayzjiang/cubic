@@ -1,6 +1,6 @@
 # Cubic MCP — Functionality Map
 
-A complete map of every tool, command, and capability currently exposed by the Cubic MCP server. Use this as the source-of-truth reference when designing the agent brain (Phase 2) or onboarding a new collaborator.
+A complete map of every tool, command, and capability exposed by the Cubic bridge/MCP command surface. Use it as the command-catalog reference when extending the agent brain or onboarding a new collaborator. (Point-in-time snapshot — the authoritative allowlist is `src/commands.ts`.)
 
 > **Invocation model:** Almost everything is called via `runScript({ script, parameters })` or wrapped in `batch` (itself a `runScript` command). The MCP-level typed tools (`runScript`, `createComposition`, `runBridgeTest`, `getHelp`) are diagnostic/bridge surface only. The real verbs are the handler commands listed below.
 
@@ -358,7 +358,7 @@ Handler errors return:
 
 ## 15. Architecture (one-paragraph)
 
-Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:0` (an OS-assigned dynamic port, published with a per-launch session token to `~/.cubic/conn.json`; every client authenticates with the token in its first `hello` frame), receives MCP tool calls, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
+The Node backend hosts a WebSocket on `127.0.0.1:0` (an OS-assigned dynamic port, published with a per-launch session token to `~/.cubic/conn.json`; every client authenticates with the token in its first `hello` frame), receives commands, and forwards `{ id, command, args }` to a CEP panel running inside After Effects. Two entrypoints share this boot: `src/serve.ts` (the standalone backend the app spawns — bridge + agent loop) and `src/index.ts` (a dev-only MCP entrypoint for Claude Code). The panel runs `evalScript(handlersBundle + footer)`, where the bundle is the concatenated `.jsx` domain files plus `bridge.jsx` (which provides the dispatch switch, undo wrappers, batch loop, error envelope, and helpers). Results come back synchronously through the same WS connection. No polling, no file-watching, no `getResults` round-trip.
 
 ---
 
@@ -366,7 +366,7 @@ Node MCP server (`src/index.ts`) hosts a WebSocket on `127.0.0.1:0` (an OS-assig
 
 **Top improvements based on better MVP/leverage:** 12, 11, 13, 22, 21, 19, 20, 17, 5 (audio)
 
-Ordered roughly by leverage. None are blockers for Phase 2 — these are the things worth picking up opportunistically.
+Ordered roughly by leverage — things worth picking up opportunistically, none blocking.
 
 ### Surface cleanup
 1. **Retire `getResults`** — ✅ Done. Removed from the typed surface (results are synchronous).
@@ -393,11 +393,11 @@ Ordered roughly by leverage. None are blockers for Phase 2 — these are the thi
 18. **Server-side caching of getProjectInfo / listCompositions** — invalidate on any mutation. Reduces redundant WS round-trips during a turn.
 
 ### Safety / observability
-19. **Pre-mutation snapshot** — autosave the project (or write a sidecar `.json` of all mutated state) before each turn so the user has a last-known-good even if undo history is overwhelmed. Mentioned in TODO as Phase 2/3.
-20. **Mutation log** — append a per-turn JSONL of every command + previousValues to `~/.cubic/log/`. Powers Cubic's own undo viewer in the Phase 4 panel.
+19. **Pre-mutation snapshot** — ✅ Implemented. The agent loop takes a pre-turn `.aep` snapshot to `.cubic-backups/` (via the internal `backupProject`); `restoreProject` walks it back. See `server/ai` `snapshot.ts`.
+20. **Mutation log** — append a per-turn JSONL of every command + previousValues to `~/.cubic/log/`. Would power Cubic's own undo-viewer panel.
 21. **Structured warnings** — handlers occasionally encounter non-fatal weirdness (e.g. effect applied but a property name didn't match). Right now they succeed silently. Returning `{ status: "ok", warnings: [...] }` would give the self-healing loop more to chew on.
 
 ### Future expressions / motion library
-22. **Expanded preset library** — beyond the 8 current presets: `SPRING`, `SETTLE`, `ROTATION_DECAY`, `SCALE_BREATHE`, `RANDOM_OFFSET`. Likely lives as system prompt content rather than handler code (per TODO Phase 2 note).
+22. **Expanded preset library** — beyond the 8 current presets: `SPRING`, `SETTLE`, `ROTATION_DECAY`, `SCALE_BREATHE`, `RANDOM_OFFSET`. Likely lives as system prompt content rather than handler code.
 23. **`applyMotionRecipe`** — ✅ Implemented. See §8 "Recipes (macro)".
 24. **`distributeLayers3D`** — ✅ Implemented. See §4 "Spatial".

@@ -5,13 +5,10 @@ Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 > live WebSocket bridge (`server/ae-bridge/src/bridge/wsBridge.ts`) as an external
 > client. Does NOT modify any bridge or CEP code (that lives in `server/ae-bridge`).
 
-## Phase 2 build order (this module)
-1. ✅ **Context pipeline** — fetch live AE state before every Claude call
-2. ✅ **System prompt assembly** — `STATIC_RULES` (Motion Copilot prompt) + `buildSystemPrompt()`
-3. ✅ **Tool schema registration** — zod schemas for `runScript`/`batch`/`createComposition` (no `getHelp` — see tool-surface rule); wired into `chat()`; `ChatResponse.toolUses[]`; content-block `Message` type
-4. ✅ **Agent loop + self-healing** (`src/agent/`) — bounded while-loop: chat → execute tools → feed `tool_result` back → repeat until no tool calls or the iteration budget. Pre-turn `.aep` snapshot is the revert point (NOT a per-turn undo group — infeasible across async round-trips). Self-heals by returning error tool_results; retries `RENDER_FAILED` once; invalidates `sessionCache` after mutations. Folded into the MCP process via a `userChat`/`agentEvent` channel.
-
-See `../../TODOS/TODO-phase2.md` for the full checklist.
+## What this module does
+- **Context pipeline** — fetches live AE state before every Claude call.
+- **Prompt + tool surface** — the system prompt + tool catalog (the crown jewels) live in `proxy/src/secrets`; this module builds against them via the `@secrets` alias (see Module map) and exposes `runScript`/`batch`/`createComposition` to the model.
+- **Agent loop + self-healing** (`src/agent/`) — bounded while-loop: chat → execute tools → feed `tool_result` back → repeat until no tool calls or the iteration budget. Pre-turn `.aep` snapshot is the revert point (NOT a per-turn undo group — infeasible across async round-trips). Self-heals by returning error tool_results; retries `RENDER_FAILED` once; invalidates `sessionCache` after mutations. Folded into the backend process via a `userChat`/`agentEvent` channel.
 
 ## Architecture
 ```
@@ -35,10 +32,10 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - `context/buildContext.ts` — assembles `LiveAEState` per turn.
 - `context/cache.ts` — `SessionCache` / `sessionCache`: caches `getProjectInfo` + `getCompositionsList`; `invalidate()`.
 - `context/format.ts` — `formatStateForPrompt()` → `<live_ae_state>` JSON block.
-- **Crown jewels moved server-side (Phase 5 §A).** The system prompt + tool catalog — `rules.ts` (`STATIC_RULES`), `command-params.ts` (`COMMAND_PARAMS` registry), `definitions.ts` (`AE_TOOLS` zod schemas), `renderCatalog.ts`, `buildSystemPrompt.ts` — now live in `proxy/src/secrets` (the Worker injects them so they never ship in the binary). The loop imports them via the `@secrets` alias: esbuild resolves it to the real proxy secrets for direct-local dev and to `src/secrets/stub.ts` for the prod build (see `scripts/build-ai.mjs`); the runtime `CUBIC_ENV` fork in `loop.ts` is what selects bare-vs-full.
+- **Crown jewels live server-side.** The system prompt + tool catalog are not in this package — they live in `proxy/src/secrets` (see `proxy/CLAUDE.md`) and the Worker injects them, so they never ship in the binary. This package imports them via the `@secrets` alias: esbuild resolves it to the real proxy secrets for direct-local dev and to `src/secrets/stub.ts` for the prod build (see `scripts/build-ai.mjs`); the runtime `CUBIC_ENV` fork in `loop.ts` selects bare-vs-full.
 - `tools/command-names.generated.ts` — **codegen'd** names-only mirror of the registry (`node proxy/scripts/gen-command-names.mjs`); ships in the binary to back the `executeTool.ts` dispatch guard (names aren't secret). Drift-checked by `proxy/tests/drift-guard.test.ts`.
-- `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types). `anthropic.ts` forks on `CUBIC_ENV`: direct mode sends system+tools+real key; proxy mode omits them (Worker injects), uses a placeholder key, and attaches the caller's **real Supabase JWT per request** as an `Authorization` header (WT-PROXY-GATING §A-4 — the Worker verifies it, checks entitlement, meters usage). The token rides the `userChat` frame → `ChatOptions.authToken` (per-call, since it refreshes ~hourly).
-- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`snapshotProject()` — calls the bridge `backupProject` command), `events.ts` (`AgentEvent` union streamed to the panel).
+- `llm/` — provider abstraction (`getLLM`, `AnthropicProvider`, types). `anthropic.ts` forks on `CUBIC_ENV`: direct mode sends system+tools+real key; proxy mode omits them (Worker injects), uses a placeholder key, and attaches the caller's **real Supabase JWT per request** as an `Authorization` header (the Worker verifies it, checks entitlement, meters usage). The token rides the `userChat` frame → `ChatOptions.authToken` (per-call, since it refreshes ~hourly).
+- `agent/` — the agent loop. `loop.ts` (`runAgentTurn` — deps injectable for tests; `DEFAULT_MAX_ITERATIONS = 15`, overridable per-turn), `session.ts` (`Session`: history + run lock + cancel/steer flags + `lastContextTokens` for compaction), `executeTool.ts` (ToolUse → `callRunScript` → `tool_result`; retry `RENDER_FAILED`; cache invalidation), `compaction.ts` (auto-summarizes history when the context window fills — `compactSession`/`findCompactionCut`; `COMPACT_THRESHOLD` 90%, `HARD_CEILING` 97% emergency pause, `KEEP_RECENT_TURNS` 3 kept verbatim), `snapshot.ts` (`snapshotProject()` — calls the bridge `backupProject` command), `events.ts` (`AgentEvent` union streamed to the panel), `analytics.ts` (`setAnalyticsSink`/`emitAnalytics` — an injectable analytics sink; the ae-bridge host forwards these events to the app's main process).
 - `index.ts` — public barrel export.
 
 ## Agent loop (`src/agent/`)
@@ -51,8 +48,8 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 - **Consumed by `server/ae-bridge`:** that package folds this loop into its process (`cubic-ai` as a `file:../ai` dep) and owns the panel↔loop wiring, session persistence, and steer-queue editing — see `server/ae-bridge/CLAUDE.md`. Build note: rebuild `cubic-ai` (incl. `build:types`) before building `server/ae-bridge`.
 
 ## Bridge transport (BridgeClient)
-- **How the bridge starts:** Claude Code spawns `server/ae-bridge/build/index.js` via stdio (MCP transport). As a side effect of `main()`, the MCP server opens a WebSocket server on a dynamic OS-assigned port and publishes `{port, token}` to `~/.cubic/conn.json`. The CEP panel inside AE connects *to* that WS port as a client; `BridgeClient` here connects as a second external client — both read `conn.json` and authenticate with the token. Neither depends on Claude Code directly — both just connect to the port the MCP server opened.
-- **`npm start` is NOT needed** when Claude Code is running — the bridge is already up. Run `npm start` only when running `server/ai` standalone outside Claude Code.
+- **How it connects:** the `server/ae-bridge` backend opens the WS server and publishes `{port, token}` to `~/.cubic/conn.json` (see `server/ae-bridge/CLAUDE.md`). `BridgeClient` reads that file and connects as a second client (`role:'loopback'`) alongside the CEP panel — this module never starts the bridge, it only joins it.
+- **`npm start` is NOT needed** when the bridge is already up (spawned by the app or Claude Code). Run `npm start` only when running `server/ai` standalone.
 - Connection: read `{port, token}` from `~/.cubic/conn.json` (the backend OS-assigns a dynamic port + mints a per-launch token), connect, and send `{type:'hello', token, role:'loopback'}` as the first frame (the backend drops any socket whose first frame lacks the token). Then `callRunScript(command, args)` sends `{ id, command, args }` via `routeExternalCommand()` in `wsBridge.ts`. 10s timeout; results are JSON-parsed.
 - Requires AE open **with the Cubic panel connected**; a bare bridge with no panel replies with empty/blank state.
 

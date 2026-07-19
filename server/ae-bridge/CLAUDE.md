@@ -1,35 +1,30 @@
 # CLAUDE.md — server/ae-bridge
 Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
-> **Scope:** AE bridge — WS transport (`wsBridge.ts`), ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them, plus an optional MCP-server dev entrypoint. Hosts the `cubic-ai` agent loop in-process but does NOT reimplement the brain (that lives in `server/ai`). End goal: Motion Copilot — an AI agent that writes animations natively in After Effects; see [`docs/PRD.md`](../../docs/PRD.md) (vision) + `TODOS/TODO-phase4.md` (status).
+> **Scope:** AE bridge — WS transport (`wsBridge.ts`), ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them, plus an optional MCP-server dev entrypoint. Hosts the `cubic-ai` agent loop in-process but does NOT reimplement the brain (that lives in `server/ai`). End goal: Motion Copilot — an AI agent that writes animations natively in After Effects; see [`docs/PRD.md`](../../docs/PRD.md) (vision).
 
-## Project structure (repo root: `cubic/`)
+## Project structure
+The `app/` (Electron shell) and `server/ai` (the `cubic-ai` brain this package hosts) siblings are documented in [`app/README.md`](../../app/README.md) and [`server/ai/CLAUDE.md`](../ai/CLAUDE.md); the whole-system picture is in [`docs/architecture.md`](../../docs/architecture.md). This package:
 ```
-cubic/
-├── docs/PRD.md              # Product vision + phase roadmap (source of truth for scope)
-├── TODO.md                  # Phase checklist (keep in sync when completing tasks)
-├── app/                     # Standalone Electron desktop app (React chat UI + hosts the Node backend) — see app/README.md
-├── server/
-│   ├── ai/                  # Claude API backend / agent brain (loop, self-heal, compaction, sessions) — see server/ai/CLAUDE.md
-│   └── ae-bridge/           # AE bridge + ExtendScript handlers + CEP extension + optional MCP-server dev interface (this package)
-│       ├── src/
-│       │   ├── index.ts         # MCP server entrypoint (dev): tool/resource registration + stdio transport for Claude Code
-│       │   ├── serve.ts         # Standalone backend entrypoint: bridge + agent loop only, no MCP/stdio — the app spawns this (§B)
-│       │   ├── startBackend.ts  # Shared boot helper: loadLocalEnv() + bridge.start() + registerAgentChat() + signal shutdown; logs the active model banner (used by both entrypoints)
-│       │   ├── commands.ts       # COMMANDS allowlist — source of truth for valid command names (index.ts validates every runScript against it)
-│       │   ├── agentChat.ts      # Folds in the cubic-ai agent loop: bridge.onChat handler, steer queue (incl. edit/remove by id), streams agentEvents back
-│       │   ├── persist.ts        # Conversation persistence — sessions on disk (default ~/.cubic/sessions, override CUBIC_SESSIONS_DIR)
-│       │   ├── reattach.ts / displayItems.ts  # Re-bind an in-flight turn's stream on renderer reload; map agent events → renderer DisplayItem rows
-│       │   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
-│       │   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
-│       │       ├── bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
-│       │       ├── compositions.jsx / fonts.jsx / layers.jsx / text.jsx / shapes.jsx / animation.jsx / masks.jsx / effects.jsx / footage.jsx / markers.jsx / project.jsx
-│       ├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (Phase 4: strip its UI, app auto-installs it)
-│       ├── scripts/build-cep-extension.mjs  # Bundles .jsx files → handlers.bundled.jsx
-│       └── tests/               # Per-domain integration tests (require live AE + panel)
+server/ae-bridge/
+├── src/
+│   ├── index.ts         # MCP server entrypoint (dev): tool/resource registration + stdio transport for Claude Code
+│   ├── serve.ts         # Standalone backend entrypoint: bridge + agent loop only, no MCP/stdio — the app spawns this
+│   ├── startBackend.ts  # Shared boot: loadLocalEnv() + bridge.start() + registerAgentChat() + signal shutdown; logs the model banner (both entrypoints)
+│   ├── commands.ts      # COMMANDS allowlist — source of truth for valid command names (index.ts validates every runScript against it)
+│   ├── agentChat.ts     # Folds in the cubic-ai agent loop: bridge.onChat handler, steer queue (incl. edit/remove by id), streams agentEvents back
+│   ├── persist.ts       # Conversation persistence — sessions on disk (default ~/.cubic/sessions, override CUBIC_SESSIONS_DIR)
+│   ├── reattach.ts / displayItems.ts  # Re-bind an in-flight turn's stream on renderer reload; map agent events → renderer DisplayItem rows
+│   ├── bridge/wsBridge.ts  # WebSocket server relaying commands to the CEP panel
+│   └── scripts/         # ExtendScript handlers (run inside AE via evalScript)
+│       ├── bridge.jsx   # Dispatch + batch + undo groups — NOT a handler file
+│       └── compositions.jsx / fonts.jsx / layers.jsx / text.jsx / shapes.jsx / animation.jsx / masks.jsx / effects.jsx / footage.jsx / markers.jsx / project.jsx
+├── cep-extension/src/main.js  # Thin headless AE bridge: WS client + evalScript dispatch footer (no UI; the app auto-installs it)
+├── scripts/build-cep-extension.mjs  # Bundles .jsx files → handlers.bundled.jsx
+└── tests/               # Per-domain integration tests (require live AE + panel)
 ```
 
-> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. Both the code-identifier rename (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`) AND the path/bundle rename (§B2, done 6/16/26) are complete: bundle id is now `com.cubic.ae-bridge`, the CEP panel displays as **Cubic**, and the backend publishes its `{port, token}` to `~/.cubic/conn.json` (alongside `~/.cubic/sessions/`).
+> **Naming:** only the actual MCP server entrypoint (`index.ts` + `.mcp.json` + the SDK dep) is correctly named "mcp". The transport, handlers, CEP extension, and `server/ai`'s bridge client are *bridge*, not MCP. Both the code-identifier rename (`bridge.jsx`, `server/ai/src/bridge/` + `BridgeClient`) AND the path/bundle rename (done 6/16/26) are complete: bundle id is now `com.cubic.ae-bridge`, the CEP panel displays as **Cubic**, and the backend publishes its `{port, token}` to `~/.cubic/conn.json` (alongside `~/.cubic/sessions/`).
 
 ## Commands
 ```bash
@@ -40,7 +35,7 @@ npm run build:plugin   # Bundle CEP extension → cep-extension/dist/
 npm run build          # build:backend + build:plugin
 npm run install-plugin # Copy extension to Adobe CEP folder + enable PlayerDebugMode
 npm start              # Run the MCP server standalone (not needed — Claude Code already spawns it)
-npm run serve          # Run the backend standalone (bridge + agent loop, no MCP) — the path Electron main spawns in §B
+npm run serve          # Run the backend standalone (bridge + agent loop, no MCP) — the path Electron main spawns
 ```
 
 ## When to restart what
@@ -57,7 +52,7 @@ Two dev artifacts go stale silently: the **panel** bundle (baked into `main.js` 
 - **Panel:** computes the latest build id from source, queries the open panel's `__CUBIC_BUILD_ID__` (reported in `hello`); if stale, rebuilds the plugin + reloads the panel (`devReload`).
 - **Backend:** content-hashes both TS trees (`ae-bridge/src` + `ai/src`, `.ts` only, excluding `*.test.ts`) into `__CUBIC_BACKEND_BUILD_ID__`, baked into `build/serve.js`+`build/index.js` by `scripts/build-backend.mjs` and reported by the running backend (`backendInfo`); if stale, rebuilds `server/ai` then `serve.js` (dependency order: the brain first so serve.js's runtime import is current).
 
-Both ids are content hashes, so an unchanged rebuild is a no-op (no spurious reloads/rebuilds). Runs at the top of the panel/backend-requiring `test*` scripts (via `&&`, incl. `server/ai`'s live tests → `node ../ae-bridge/scripts/preflight.mjs`) and dev-only in the Electron app's boot (`app/src/main/index.ts` → `runDevPreflight`, after `backend.start()`; quits the app if stale). Purely developer tooling — production gets fresh code via the auto-updater (no Cubic UI, no per-command runtime guard). Wire shapes (`buildId` in `hello`, `workerInfo`/`backendInfo`/`reload`/`devReload`) are in `PROTOCOL.md`.
+Both ids are content hashes, so an unchanged rebuild is a no-op (no spurious reloads/rebuilds). Runs at the top of the panel/backend-requiring `test*` scripts (via `&&`, incl. `server/ai`'s live tests → `node ../ae-bridge/scripts/preflight.mjs`) and dev-only in the Electron app's boot (the app runs it after starting the backend, quitting if stale — see `app/README.md`). Purely developer tooling — production gets fresh code via the auto-updater (no Cubic UI, no per-command runtime guard). Wire shapes (`buildId` in `hello`, `workerInfo`/`backendInfo`/`reload`/`devReload`) are in `PROTOCOL.md`.
 
 ## Env (one shared file)
 `startBackend.ts` → `loadLocalEnv()` loads the single **`server/.env`** (resolves `build/ → ../../.env`) — the one source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL` (alias `sonnet|haiku|opus`), gitignored. The per-package `server/ai/.env` / `server/ae-bridge/.env` were removed to stop "edited the wrong .env" drift; don't recreate them. Boot prints a model banner (and warns if `CUBIC_MODEL` is unset → costly Sonnet default). Flip models by editing `server/.env` + restarting — `build:serve` only needed when `src/` changes. A shell-exported `CUBIC_MODEL` still wins (loadEnvFile never overrides a real env var).
@@ -105,18 +100,18 @@ Read-only allowlist (`READ_ONLY_COMMANDS`): `getProjectInfo`, `listCompositions`
 
 **Atomic create (handler convention).** A `create*`/`apply*` handler that builds an object (`addText`, `addShape`, `addSolid`, `Effects.addProperty`, `Masks.addProperty`, …) and then does more work that can throw MUST roll back on failure: declare the object var as `null` *before* the `try`, assign it on creation, and in the `catch` do `if (obj !== null) { try { obj.remove(); } catch (e2) {} }` (a loop in reverse for multi-object creates like `applyEffectTemplate`). Without this, a failed create leaves an orphan and the agent's self-heal retry stacks a duplicate. This is intra-handler atomicity — distinct from the model-facing inverse-CRUD above. Since AE can't programmatically undo, there's no generic wrapper; it's per-handler.
 
-Autosave-before-run revert point is now the agent loop's pre-turn `backupProject` snapshot (a filesystem copy to `.cubic-backups/`), NOT a per-turn undo group — AE undo groups can't span the loop's async LLM round-trips. Deferred: undo history panel (Phase 4).
+Autosave-before-run revert point is the agent loop's pre-turn `backupProject` snapshot (a filesystem copy to `.cubic-backups/`), NOT a per-turn undo group — AE undo groups can't span the loop's async LLM round-trips. Deferred: a visual undo-history panel.
 
-## Agent loop fold (Phase 2)
+## Agent loop fold
 This process now also hosts the AI agent loop: `server/ae-bridge` depends on `cubic-ai` (`file:../ai`) and `agentChat.ts` registers a chat handler on the bridge (`bridge.onChat`). The panel sends `{type:'userChat'|'cancel'|'queue'}` over its worker socket; the loop streams `{type:'agentEvent', event}` back. **Rebuild + `npm install` notes:** after changing `server/ai`, run its `npm run build` (emits `build/` + `build/types/`) so the symlinked `cubic-ai` is current; then rebuild this server. The loop reaches AE via cubic-ai's own loopback bridge client (a second WS connection), so command + agentEvent traffic share the panel socket. Around the loop this package owns `persist.ts`, `reattach.ts`, `displayItems.ts`, and the steer queue in `agentChat.ts` (queue/edit/remove by id) — see the structure tree above. The `cubic-ai` Session only exposes the FIFO `pendingMessages` drain; queue editing is this package's transport concern.
 
 ## Structured errors (Tier 3)
 All handler `catch` blocks now return `{ status:"error", errorCode, message, line }`. `errorCode` is one of: `COMP_NOT_FOUND`, `LAYER_NOT_FOUND`, `LAYER_INDEX_OOB`, `PROPERTY_NOT_FOUND`, `INVALID_ARGS`, `TIME_OUT_OF_RANGE`, `RENDER_FAILED`, `UNKNOWN_COMMAND`, `HANDLER_UNCAUGHT`, `INTERNAL_ERROR`, `BATCH_FAILED` (any sub-command of a `batch` failed — per-command codes are in `results[]`). The Node bridge uses `BridgeError` (with `.code`) for transport-level errors. `dispatchTool()` in `src/index.ts` parses handler responses and sets MCP `isError:true` + `structuredContent` when `status:"error"` is detected.
 
 ## saveFrameToPng
-`comp.saveFrameToPng(time, file)` — renders a single frame. Default output: `~/.cubic/frames/frame_<ts>.png` (persistent; Phase 3 can diff across turns). Returns text JSON + inline base64 PNG. Timeout 30s (rendering is slow). AE setting required: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**.
+`comp.saveFrameToPng(time, file)` — renders a single frame. Default output: `~/.cubic/frames/frame_<ts>.png` (persistent — kept for cross-turn frame diffing). Returns text JSON + inline base64 PNG. Timeout 30s (rendering is slow). AE setting required: **Settings → Scripting & Expressions → Allow Scripts to Write Files and Access Network**.
 
-**SUPER IMPORTANT `RENDER_FAILED` is retryable.** AE's renderer occasionally flushes the PNG after evalScript returns, producing a 0-byte file. `dispatchTool` in `index.ts` validates the PNG magic header and returns `RENDER_FAILED` in this case. The agent loop (Phase 2) should treat `RENDER_FAILED` on `saveFrameToPng` as a transient error and retry once — not escalate to the user.
+**SUPER IMPORTANT `RENDER_FAILED` is retryable.** AE's renderer occasionally flushes the PNG after evalScript returns, producing a 0-byte file. `dispatchTool` in `index.ts` validates the PNG magic header and returns `RENDER_FAILED` in this case. The agent loop treats `RENDER_FAILED` on `saveFrameToPng` as a transient error and retries once — not escalated to the user.
 
 ## Critical ExtendScript quirks
 - **Array values arrive as strings:** `[0, 0]` arrives as `"[0, 0]"` — use `eval("(" + value + ")")` to parse.

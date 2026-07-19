@@ -1,16 +1,16 @@
 # CLAUDE.md — proxy (Cloudflare Worker LLM proxy)
 
-> **Scope:** the hosted LLM proxy (Phase 5 §A). Holds the Anthropic key + owns the
+> **Scope:** the hosted LLM proxy. Holds the Anthropic key + owns the
 > crown jewels (system prompt + tool catalog) and injects them server-side, so the
 > shipped desktop binary never contains either. Anthropic-shaped passthrough: the
 > agent loop stays client-side (`server/ai`), one Claude response per call.
 >
-> **Gated (WT-PROXY-GATING, Wave 2).** Every `POST /v1/messages` now runs: IP throttle → verify the
+> **Gated.** Every `POST /v1/messages` runs: IP throttle → verify the
 > Supabase JWT (JWKS) → per-user rate limit → entitlement check (paid + under cap) → **model allowlist +
 > `max_tokens` clamp** → forward → meter usage. Fail-closed: an un-verifiable/un-entitled/over-cap/
 > unpriced-model request is rejected (400/401/402/429/503) before any Anthropic spend. The gate runs
-> server-side on EVERY request (app or raw curl), so there is no metering bypass. §A-8 (real deploy +
-> flipping the shipped default) is the remaining Wave-2 step.
+> server-side on EVERY request (app or raw curl), so there is no metering bypass. The one remaining step
+> is the real prod deploy + flipping the shipped default to prod.
 
 ## Layout
 - `src/index.ts` — the Worker. `POST /v1/messages` → **gate** (IP limit → `verifyJwt` → user rate
@@ -19,19 +19,25 @@
   streams to the client, the other is metered async via `ctx.waitUntil`). An **agent** call injects
   system+tools+tool_choice (`prepareUpstream`); a **utility** call (`x-cubic-request: utility` header —
   e.g. the compaction summary) forwards the client body bare (`prepareBareUpstream`, no AE injection),
-  still gated + metered. The real `x-api-key` is set from the Worker secret either way.
-- `src/auth.ts` — §A-4 `verifyJwt`: stateless JWKS verification with `jose` (pins asymmetric algs +
+  still gated + metered. The real `x-api-key` is set from the Worker secret either way. The Worker also
+  serves `GET|HEAD /releases/*` (the auto-update feed) *before* the gate — see `releases.ts`.
+- `src/auth.ts` — `verifyJwt`: stateless JWKS verification with `jose` (pins asymmetric algs +
   checks iss/aud/exp). `verifyJwtWithKeySet` is the unit-testable core; `bearerToken` parses the header.
-- `src/entitlement.ts` — §A-5 `getEntitlement`: `get_entitlement` RPC as service-role, ~60s in-memory
+- `src/entitlement.ts` — `getEntitlement`: `get_entitlement` RPC as service-role, ~60s in-memory
   cache, **strict fail-closed** (throws on lookup failure → 503, never serves stale).
-- `src/metering.ts` + `src/usage-parse.ts` — §A-6 `meterResponse`: parse token counts from the teed
+- `src/http.ts` — `fetchWithTimeout` + `RPC_TIMEOUT_MS`: wraps the Supabase RPC calls
+  (`getEntitlement`/`record_usage`) in an abortable timeout so a hung Supabase can't stall a request.
+- `src/releases.ts` — `handleReleases`: serves the electron-updater feed at `GET|HEAD /releases/*`
+  read-only from the private R2 `RELEASES` bucket (range-aware for blockmap/differential downloads).
+  **Unauthenticated by design** — the updater holds no JWT — so it runs before the auth gate.
+- `src/metering.ts` + `src/usage-parse.ts` — `meterResponse`: parse token counts from the teed
   response (JSON now, SSE forward-compat) → cost-cents (proxy-side pricing map, which is ALSO the
   `ALLOWED_MODELS` source — the gate rejects anything unpriced) → `record_usage` RPC. `recordUsage`
   checks the response, logs failures, and retries once, so a systematic write outage is visible in
   observability instead of silently zeroing everyone's usage. Adding a model = one row in the pricing
   map (+ the client-side debug mirror in `server/ai/src/llm/anthropic.ts`).
-- `src/inject.ts` — builds the injected `system` (static prefix + `cache_control: ephemeral`,
-  §A-9) and `tools` (zod → JSON-Schema) from the secrets. Computed once at module load.
+- `src/inject.ts` — builds the injected `system` (static prefix + `cache_control: ephemeral`)
+  and `tools` (zod → JSON-Schema) from the secrets. Computed once at module load.
 - `src/secrets/` — **the single source of truth + the crown jewels** (moved from `server/ai`):
   `rules.ts`, `command-params.ts`, `renderCatalog.ts`, `definitions.ts`, `buildSystemPrompt.ts`,
   `index.ts` (barrel). `server/ai` imports this barrel via its `@secrets` alias in direct-local
@@ -51,10 +57,12 @@
 - `SUPABASE_URL` — env-specific **var** (JWKS + PostgREST base). Prod: `wrangler deploy` var / dashboard;
   local: `--var SUPABASE_URL:http://127.0.0.1:54321`. `SUPABASE_JWKS_URL` optionally overrides the JWKS.
 - Rate limits — `RATE_LIMITER` (per user) + `IP_RATE_LIMITER` (per IP) native bindings in `wrangler.jsonc`.
+- `RELEASES` — R2 bucket binding (`cubic-releases`) holding the signed auto-update artifacts that
+  `releases.ts` serves. Uploaded by `app/scripts/release.mjs`; see the root README's release flow.
 - `MOCK_UPSTREAM` — when set, return a canned Anthropic-shaped response instead of calling
   upstream → lets full-stack-local exercise the whole client→Worker path at **zero API spend**.
 
-## Four test surfaces (§A-0)
+## Four test surfaces
 - **MCP-only** — bridge standalone; never touches the proxy.
 - **direct-local** (`CUBIC_ENV=local`, default `npm run dev`) — `server/ai` calls Anthropic
   directly with the local secrets. The proxy is not involved.
