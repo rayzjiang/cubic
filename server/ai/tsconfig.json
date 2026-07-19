@@ -10,7 +10,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["node"],
-    "baseUrl": ".",
     // `@secrets` is the crown-jewels chokepoint. tsc + the editor always resolve it to the
     // type-correct empty stub (inside rootDir); esbuild aliases it to the REAL proxy secrets
     // for direct-local dev and back to the stub for the prod build (see scripts/build-ai.mjs).
