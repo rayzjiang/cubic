@@ -13,10 +13,22 @@ export function ConversationRow({ conv, active }: { conv: ConversationMeta; acti
   const requestDelete = useChatStore((s) => s.requestDelete)
   const renameConversation = useChatStore((s) => s.renameConversation)
   const [menuOpen, setMenuOpen] = useState(false)
+  // Whether the menu opens above the kebab (set on open when there's no room below — keeps it on-screen).
+  const [openUp, setOpenUp] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   // Set when Esc cancels, so the unmount-triggered blur skips the save (Enter/blur are the save paths).
   const cancelledRef = useRef(false)
+  const kebabRef = useRef<HTMLButtonElement>(null)
+
+  function toggleMenu() {
+    // On open, flip above the button when the ~2-row menu would spill past the viewport bottom.
+    if (!menuOpen) {
+      const r = kebabRef.current?.getBoundingClientRect()
+      if (r) setOpenUp(window.innerHeight - r.bottom < 96)
+    }
+    setMenuOpen((v) => !v)
+  }
 
   function startRename() {
     setMenuOpen(false)
@@ -61,7 +73,8 @@ export function ConversationRow({ conv, active }: { conv: ConversationMeta; acti
         {conv.title}
       </button>
       <button
-        onClick={() => setMenuOpen((v) => !v)}
+        ref={kebabRef}
+        onClick={toggleMenu}
         className="mr-1 rounded px-1.5 py-1 text-white/40 opacity-0 group-hover:opacity-100 hover:bg-white/10 hover:text-white/80 aria-expanded:opacity-100"
         aria-expanded={menuOpen}
         aria-label="Conversation options"
@@ -71,7 +84,9 @@ export function ConversationRow({ conv, active }: { conv: ConversationMeta; acti
       {menuOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-1 top-9 z-20 w-32 rounded-md border border-white/10 bg-neutral-800 py-1 shadow-lg">
+          <div
+            className={`absolute right-1 z-20 w-32 rounded-md border border-white/10 bg-neutral-800 py-1 shadow-lg ${openUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+          >
             <button
               onClick={startRename}
               className="block w-full px-3 py-1.5 text-left text-[13px] text-white/80 hover:bg-white/10"
