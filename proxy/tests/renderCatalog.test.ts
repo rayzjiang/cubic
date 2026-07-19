@@ -19,12 +19,16 @@ describe('renderCommandCatalog', () => {
     for (const name of visible) {
       expect(catalog).toContain(`${name}(`);
     }
-    // The only commands we expect to be hidden are the internal diagnostics.
+    // The only hidden commands are the ones OUR code invokes and the model never should: diagnostics
+    // (introspectMatchNames), an app-driven capability probe (checkFileAccess — the renderer's AE
+    // file/network-access gate), and saveFrameToPng. Exhaustive on purpose: it's a tripwire so a command
+    // can't get silently hidden from the model, which means adding an `internal: true` entry to the
+    // registry is a DELIBERATE two-line change (registry + this list).
     const hidden = (Object.entries(COMMAND_PARAMS) as [string, CommandSpec][])
       .filter(([, spec]) => spec.internal)
       .map(([name]) => name)
       .sort();
-    expect(hidden).toEqual(['introspectMatchNames', 'saveFrameToPng']);
+    expect(hidden).toEqual(['checkFileAccess', 'introspectMatchNames', 'saveFrameToPng']);
     for (const name of hidden) expect(catalog).not.toContain(`${name}(`);
   });
 
