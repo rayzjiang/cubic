@@ -7,13 +7,14 @@ Built for video editors, not developers: a standalone desktop app with a consume
 ## How it works
 
 ```
-┌─────────────────┐     IPC      ┌──────────────────┐
-│  Electron app   │◄────────────►│   Node backend   │
-│ (React chat UI) │   WebSocket  │  (AE bridge +    │
-└─────────────────┘◄────────────►│   Claude brain)  │
-                                 └────────┬─────────┘
-                                          │ WebSocket (127.0.0.1, OS-assigned port, token-authed)
-                                          ▼
+┌─────────────────┐     IPC      ┌──────────────────┐   Claude calls    ┌────────────────────────────┐
+│  Electron app   │◀────────────▶│   Node backend   │──────────────────▶│  Cloudflare Worker proxy   │
+│ (React chat UI) │  WebSocket   │  (AE bridge +    │  in prod          │  holds API key + system    │
+└─────────────────┘◀────────────▶│   Claude brain)  │  (dev: direct)    │  prompt; gates auth+billing│
+                                 └────────┬─────────┘                   └──────────────┬─────────────┘
+                                          │ WebSocket (127.0.0.1,                      │
+                                          │  OS-assigned port, token)                  ▼
+                                          ▼                             Anthropic API · Supabase · Stripe
                                  ┌──────────────────┐
                                  │  CEP extension   │
                                  │  in After Effects│ ── runs ExtendScript
@@ -21,10 +22,13 @@ Built for video editors, not developers: a standalone desktop app with a consume
 ```
 
 1. You type a request in the desktop app.
-2. The **Claude brain** fetches live AE state (active comp, selected layers, assets) and reasons about the motion.
-3. It executes **ExtendScript commands** over a local WebSocket bridge into a CEP extension running inside After Effects.
-4. If AE throws a compile error, the agent feeds it back to the model and retries — a forward **self-healing loop** (no undo), with a pre-turn `.aep` snapshot for safety.
-5. The result appears natively in your AE timeline.
+2. The **Claude brain** (inside the Node backend) fetches live AE state — active comp, selected layers, assets — and reasons about the motion.
+3. In the shipped app, that Claude call routes through the **hosted proxy** — a Cloudflare Worker that holds the API key + server-side system prompt, verifies your account + subscription, and meters usage before forwarding to Anthropic. (In local dev the brain calls Anthropic directly, no proxy.)
+4. The brain executes **ExtendScript commands** over a local WebSocket bridge into a CEP extension running inside After Effects.
+5. If AE throws a compile error, the agent feeds it back to the model and retries — a forward **self-healing loop** (no undo), with a pre-turn `.aep` snapshot for safety.
+6. The result appears natively in your AE timeline.
+
+> For the full system design (proxy gating, Supabase/Stripe billing, analytics, packaging), see [`docs/architecture.md`](docs/architecture.md).
 
 ## Project structure
 
