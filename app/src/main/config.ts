@@ -1,4 +1,5 @@
 import { bundledPanelBuildId } from './installBridge.js'
+import { readCachedConfig, CONFIG_ENV_VARS, type ConfigRejection } from './remoteConfig.js'
 
 // §0 + §B7 + §??? — the backend environment config (NOT the port).
 //
@@ -40,6 +41,12 @@ export interface BackendConfig {
   posthogKey: string
   posthogHost: string
   analyticsEnabled: boolean
+  /** §G-? — the hosted proxy's base URL (baked). Also the host of `GET /config`, the Worker-override
+   *  channel refreshed in the background at launch (see remoteConfig.ts). '' when unconfigured. */
+  proxyUrl: string
+  /** §G-? — cached override values this launch had to ignore (out of range / wrong type). Surfaced by
+   *  index.ts once the AnalyticsManager exists, since loadConfig() runs before it is constructed. */
+  configRejections: ConfigRejection[]
 }
 
 export function loadConfig(): BackendConfig {
@@ -54,15 +61,33 @@ export function loadConfig(): BackendConfig {
   // Null (missing sidecar) → unset → staleness never triggers (fail-safe).
   const panelBuildId = bundledPanelBuildId()
   if (panelBuildId) childEnv.CUBIC_PANEL_BUILD_ID = panelBuildId
+  // Route the agent loop through the hosted proxy: forward a base URL the Anthropic SDK honors
+  // (ANTHROPIC_BASE_URL). Baked into the packaged build from app/.env.production; dev sets it via
+  // the shell. If empty, the child throws at LLM construction (anthropic.ts) — prod needs a real URL.
+  const proxyUrl = (typeof __CUBIC_PROXY_URL__ !== 'undefined' ? __CUBIC_PROXY_URL__ : process.env.CUBIC_PROXY_URL) ?? ''
+  const configRejections: ConfigRejection[] = []
   if (cubicEnv === 'prod') {
-    // Route the agent loop through the hosted proxy: forward a base URL the Anthropic SDK honors
-    // (ANTHROPIC_BASE_URL). Baked into the packaged build from app/.env.production; dev sets it via
-    // the shell. If empty, the child throws at LLM construction (anthropic.ts) — prod needs a real URL.
-    const proxyBase = typeof __CUBIC_PROXY_URL__ !== 'undefined' ? __CUBIC_PROXY_URL__ : process.env.CUBIC_PROXY_URL
-    if (proxyBase) {
-      childEnv.ANTHROPIC_BASE_URL = proxyBase
+    if (proxyUrl) {
+      childEnv.ANTHROPIC_BASE_URL = proxyUrl
     } else {
       console.warn('[config] CUBIC_ENV=prod but CUBIC_PROXY_URL is unset — chat will fail until a proxy URL is baked/set.')
+    }
+    // §G-? Worker-override: apply the cached /config values (fetched in the background on a previous
+    // launch — see remoteConfig.ts). Reading the cache is sync + local, so nothing here touches the
+    // network or delays the spawn below. An absent/invalid key is simply not forwarded, leaving the
+    // child on its baked in-code default — a failed fetch can never brick a launch.
+    const { config: remote, rejected } = readCachedConfig()
+    configRejections.push(...rejected)
+    for (const [key, envVar] of Object.entries(CONFIG_ENV_VARS)) {
+      const value = remote[key as keyof typeof remote]
+      if (value === undefined) continue
+      // An explicitly-set local env var WINS over the Worker. Preserves the convention the backend
+      // already documents ("a shell-exported CUBIC_MODEL still wins") and keeps full-stack-local testing
+      // honest: `CUBIC_MODEL=haiku` must stay Haiku instead of being silently swapped for the Worker's
+      // pricier model mid-test. In real prod process.env is empty, so this never fires.
+      const local = process.env[envVar]
+      if (local !== undefined && local.trim() !== '') continue
+      childEnv[envVar] = String(value)
     }
   }
   // 'local': forward nothing extra — the agent loop calls Anthropic directly with the
@@ -81,5 +106,5 @@ export function loadConfig(): BackendConfig {
   const posthogHost = process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'
   const analyticsEnabled = !!posthogKey && process.env.CUBIC_ANALYTICS !== 'off'
 
-  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey, posthogKey, posthogHost, analyticsEnabled }
+  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey, posthogKey, posthogHost, analyticsEnabled, proxyUrl, configRejections }
 }

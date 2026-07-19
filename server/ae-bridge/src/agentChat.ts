@@ -164,18 +164,23 @@ async function runTurnAndPersist(session: Session, text: string, emit: (e: Agent
       compaction = { summary: e.summary, keptTurns: e.keptTurns };
     emit(e);
   };
-  // Dev-only compaction test knobs (unset in normal use → no effect): shrink the context window,
-  // lower the compact threshold, and/or keep fewer recent turns verbatim so a few short messages cross
-  // 90% (pill) and compaction has something to summarize — without filling a real 200k window. See §C.
+  // Agent-loop tuning (unset → the loop's own defaults, i.e. no effect). Two sources, same env vars:
+  // in dev they're compaction test knobs (shrink the context window, lower the compact threshold, and/or
+  // keep fewer recent turns verbatim so a few short messages cross 90% and compaction has something to
+  // summarize — without filling a real 200k window; see §C). In prod the app's main process populates
+  // them from the Worker-served config it cached at launch (§G-?), which is how these become tunable
+  // without an app release. A locally-set value always wins — main only injects what isn't already set.
   const ctxOverride = process.env.CUBIC_CONTEXT_WINDOW ? Number(process.env.CUBIC_CONTEXT_WINDOW) : undefined;
   const threshOverride = process.env.CUBIC_COMPACT_THRESHOLD ? Number(process.env.CUBIC_COMPACT_THRESHOLD) : undefined;
   const keepOverride = process.env.CUBIC_KEEP_RECENT_TURNS ? Number(process.env.CUBIC_KEEP_RECENT_TURNS) : undefined;
+  const itersOverride = process.env.CUBIC_MAX_ITERATIONS ? Number(process.env.CUBIC_MAX_ITERATIONS) : undefined;
   await runAgentTurn(session, text, capture, {
     onCommit: (m) => committed.push(m),
     authToken,
     contextWindowOverride: ctxOverride,
     compactThreshold: threshOverride,
     keepRecentTurns: keepOverride,
+    maxIterations: itersOverride,
   });
   if (discarded) { clearBuffer(session.id); return; }
   if (committed.length === 0) return; // turn refused/paused before committing anything (e.g. context_full)

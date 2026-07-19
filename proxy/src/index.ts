@@ -3,6 +3,7 @@ import { verifyJwt, bearerToken } from './auth.js';
 import { getEntitlement } from './entitlement.js';
 import { meterResponse, ALLOWED_MODELS } from './metering.js';
 import { handleReleases } from './releases.js';
+import { CONFIG, applyForceModel } from './config.js';
 
 /**
  * WT-PROXY-CORE — Anthropic-shaped passthrough Worker (Phase 5 §A-2).
@@ -179,6 +180,13 @@ export default {
     if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/releases/')) {
       return handleReleases(req, env);
     }
+    // §G-? — the runtime config the client fetches ONCE per launch and caches to disk (never on the
+    // per-request path). Unauthenticated like `/releases/*`, and for the same reasons: the values are
+    // non-secret (a model id + loop-tuning numbers) and the app must be able to read them BEFORE sign-in.
+    // `FORCE_MODEL` is deliberately NOT served — it is applied server-side below, never advertised.
+    if (req.method === 'GET' && url.pathname === '/config') {
+      return json(CONFIG, 200);
+    }
     if (req.method !== 'POST' || url.pathname !== '/v1/messages') {
       return json({ type: 'error', error: { type: 'not_found', message: 'POST /v1/messages only' } }, 404);
     }
@@ -235,13 +243,20 @@ export default {
     // Server-authoritative request bounds (applies to every path — app OR raw curl). Reject any model the
     // proxy can't price (ALLOWED_MODELS is derived from the pricing map), so nothing reaches Anthropic
     // without a known meter rate; then clamp max_tokens so one call can't request a huge (expensive) output.
-    const model = typeof body.model === 'string' ? body.model : undefined;
-    if (!model || !ALLOWED_MODELS.has(model)) {
+    const requestedModel = typeof body.model === 'string' ? body.model : undefined;
+    if (!requestedModel || !ALLOWED_MODELS.has(requestedModel)) {
       return errorResponse('invalid_request_error', 'unsupported model', 400);
     }
     if (typeof body.max_tokens === 'number') {
       body.max_tokens = Math.min(body.max_tokens, MAX_OUTPUT_TOKENS);
     }
+    // §G-? emergency brake: when FORCE_MODEL is set the Worker overrides the client's choice server-side
+    // (+ that model's `thinking` preset). It is the one model control that reaches every user on the NEXT
+    // request with no relaunch — the config channel takes two launches. Applied AFTER the allowlist check,
+    // and `model` is re-read from the body so metering prices what we actually SENT, not what was asked
+    // for. FORCE_MODEL is asserted to be in ALLOWED_MODELS by tests/config.test.ts, so it is always priced.
+    applyForceModel(body);
+    const model = typeof body.model === 'string' ? body.model : requestedModel;
 
     // Gate passed — forward. An agent call gets the crown jewels injected; a UTILITY call (e.g. the
     // compaction summary, flagged `x-cubic-request: utility`) forwards the client body as-is (its own

@@ -30,6 +30,15 @@
 - `src/releases.ts` — `handleReleases`: serves the electron-updater feed at `GET|HEAD /releases/*`
   read-only from the private R2 `RELEASES` bucket (range-aware for blockmap/differential downloads).
   **Unauthenticated by design** — the updater holds no JWT — so it runs before the auth gate.
+- `src/config.ts` (§G-?) — the **Worker-override** half of the prod config. `CONFIG` is a hardcoded
+  typed const served at `GET /config` (also unauthenticated: non-secret values, and the app must read
+  them before sign-in); the client caches it to disk and applies it at its NEXT launch, so this is never
+  on the per-request path. Change a value = `npm run deploy` — which runs `npm test` first, so
+  `tests/config.test.ts` gates every push against the sanity `BOUNDS` (the repo has no CI; that npm gate
+  is the whole safety net). `BOUNDS` mirrors `app/src/main/remoteConfig.ts`, same duplicate-plus-guard
+  pattern as `MODEL_PRICING`. **`FORCE_MODEL`** is the emergency brake: normally `undefined`, never
+  served, applied server-side by `applyForceModel` (rewrites `body.model` + that model's `thinking`
+  preset) so it lands on the very next request with no relaunch. Must be in `ALLOWED_MODELS`.
 - `src/metering.ts` + `src/usage-parse.ts` — `meterResponse`: parse token counts from the teed
   response (JSON now, SSE forward-compat) → cost-cents (proxy-side pricing map, which is ALSO the
   `ALLOWED_MODELS` source — the gate rejects anything unpriced) → `record_usage` RPC. `recordUsage`
@@ -75,6 +84,7 @@
 npm install                       # wrangler + @cloudflare/workers-types + zod (+ vitest)
 npm test                          # vitest: injection + secret tests + drift guard (no API spend)
 npm run gen:command-names         # regenerate the client names mirror after a registry change
+npm run deploy                    # npm test && wrangler deploy — the bounds test gates every config push
 npx wrangler dev --var MOCK_UPSTREAM:1   # full-stack-local, zero Anthropic spend
 ```
 Real upstream (spends Anthropic) only with explicit go-ahead: `npx wrangler dev` (no MOCK_UPSTREAM),

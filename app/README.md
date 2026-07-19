@@ -55,6 +55,26 @@ What to expect:
   Supabase JWT per request, so the Worker verifies auth, checks entitlement, and meters
   usage. Packaged builds bake the prod config, so a signed app needs no env vars.
 
+## Worker-served config
+
+A packaged app has an empty `process.env`, so the frozen public values are **baked** at build time
+(`.env.production` → electron-vite `define`). Five values instead come from the Worker so they can change
+without an app release: `CUBIC_MODEL` and the agent-loop tuning knobs (`CUBIC_MAX_ITERATIONS`,
+`CUBIC_COMPACT_THRESHOLD`, `CUBIC_KEEP_RECENT_TURNS`, `CUBIC_CONTEXT_WINDOW`). Owned by
+`src/main/remoteConfig.ts`; the Worker side is `proxy/src/config.ts`.
+
+Stale-while-revalidate, never on the request path: at launch the disk cache
+(`~/.cubic/remote-config.json`) is read **synchronously** and forwarded into `childEnv` before the backend
+spawns; a single background `GET /config` (12h floor) then writes the cache for the **next** launch. So a
+config change lands on a user's second relaunch — nothing blocks startup and nothing changes mid-session.
+
+- **Precedence:** local env var → cached Worker config → baked in-code default. An env var you set
+  yourself always wins, so `CUBIC_MODEL=haiku` stays Haiku in full-stack-local instead of being swapped
+  for the Worker's model mid-test. (Moot in real prod, where `process.env` is empty.)
+- **Bad values:** validated per key against generous sanity bounds on both fetch and read (the cache is a
+  hand-editable JSON file). Invalid → last known-good → baked default, and a `config_value_rejected`
+  analytics event fires. Only in dev does `CUBIC_ENV=local` skip the fetch entirely.
+
 ## Renderer architecture
 
 - **`protocol.ts`** — typed wire contract mirroring the backend (`AgentEvent`,

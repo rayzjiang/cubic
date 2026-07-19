@@ -25,6 +25,7 @@ const ALLOWED_EVENTS = new Set([
   'first_edit_succeeded',
   'paywall_hit',
   'command_run',
+  'config_value_rejected',
 ])
 
 // Per-event property whitelist — the privacy guarantee by construction: only these keys are forwarded,
@@ -35,6 +36,11 @@ const PROP_WHITELIST: Record<string, readonly string[]> = {
   paywall_hit: ['reason'],
   command_run: ['command', 'ok', 'error_code', 'noop', 'retried', 'via_batch', 'session_id', 'turn_id'],
   first_edit_succeeded: ['command'],
+  // §G-? — which Worker-override key was ignored and what value was rejected. Both are OUR OWN config
+  // (a model id or a tuning number), never user or project content, so this stays inside the privacy
+  // guarantee. `app_version` rides on every event automatically, which is the point: bounds are baked
+  // per version, so this is how a widened bound rejected by older installs becomes visible.
+  config_value_rejected: ['key', 'value'],
 }
 
 export class AnalyticsManager {
@@ -104,6 +110,16 @@ export class AnalyticsManager {
     // first_edit_succeeded is derived here so READ_ONLY_COMMANDS + the edit classification stay in the
     // backend (executeTool), while the "once per user" guard lives where identity + persistence are.
     if (event === 'command_run' && props?.is_edit === true) this.maybeFirstEdit(props.command)
+  }
+
+  /**
+   * §G-? — a Worker-override value this install refused (out of range / wrong type) and fell back from.
+   * The rejection happens on the USER's machine, so a console log is invisible to us; this is the only
+   * way it surfaces. Should be ~never: proxy/tests/config.test.ts gates a bad value before deploy.
+   */
+  onConfigRejected(rejections: readonly { key: string; value: unknown }[]): void {
+    if (!this.client) return
+    for (const r of rejections) this.capture('config_value_rejected', { key: r.key, value: r.value }, 'main')
   }
 
   /** Flush + stop the client (call on app quit before the process exits). */

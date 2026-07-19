@@ -12,6 +12,7 @@ import { AuthManager } from './auth.js'
 import { BillingManager } from './billing.js'
 import { AnalyticsManager } from './analytics.js'
 import { provisionBridge } from './installBridge.js'
+import { refreshRemoteConfig } from './remoteConfig.js'
 import { UpdateManager } from './updater.js'
 import type { AuthState, AuthStatus } from '../shared/ipc.js'
 
@@ -63,6 +64,9 @@ if (!app.requestSingleInstanceLock()) {
   // identity + sent. Off by default in dev (config.analyticsEnabled). Identity rides the same auth
   // transition guard: identify on sign-in (aliasing pre-sign-in anonymous events), rotate on real sign-out.
   const analytics = new AnalyticsManager(config)
+  // §G-? — loadConfig() runs before this manager exists, so any override value it had to ignore while
+  // building childEnv is reported here instead (a rejection on the user's machine is otherwise invisible).
+  analytics.onConfigRejected(config.configRejections)
   // §F auto-update — electron-updater in main; checks/downloads in the background and stages for the next
   // restart. No-op unless packaged (started below, after the window).
   const updater = new UpdateManager()
@@ -157,6 +161,13 @@ if (!app.requestSingleInstanceLock()) {
     // §F — begin background update checks (no-op unless packaged). After the window so a check never
     // competes with cold-start work; it downloads silently + stages the update for the next restart.
     updater.start()
+    // §G-? — ONE background GET /config, written to disk for the NEXT launch (stale-while-revalidate;
+    // this launch already ran on the cached values loadConfig() forwarded into childEnv). Placed after
+    // the window for the same reason as the updater: it must never compete with cold-start work. Self-
+    // throttled to one fetch per 12h, and every failure mode is a non-event — nothing awaits it.
+    if (config.cubicEnv === 'prod') {
+      void refreshRemoteConfig(config.proxyUrl).then((rejected) => analytics.onConfigRejected(rejected))
+    }
 
     // §B — restore any persisted session, then flush a deep link that arrived during cold start.
     void auth.init()
