@@ -6,11 +6,11 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "npm test && wrangler deploy",
     "gen:command-names": "node scripts/gen-command-names.mjs",
     "mint:test-jwt": "node scripts/mint-test-jwt.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json"
   },
   "dependencies": {
     "jose": "^5.9.6",
@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240000.0",
+    "@types/node": "^26.1.1",
     "typescript": "^5.2.2",
     "vitest": "^4.1.7",
     "wrangler": "^4.86.0"

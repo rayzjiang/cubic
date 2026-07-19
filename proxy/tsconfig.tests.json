@@ -1,0 +1,11 @@
+{
+  // Tests run in NODE (vitest), not the Workers runtime: drift-guard reads the ae-bridge handler
+  // sources off disk and shells out to the codegen script. So they need the node types — while the
+  // base config deliberately withholds them from src/ so Worker code can't reach for a Node API and
+  // still typecheck. They also need workers-types, since they import `Env` (R2Bucket, …) from src/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["tests/**/*.ts"]
+}

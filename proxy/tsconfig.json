@@ -11,5 +11,8 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  // src ONLY. `types` above deliberately omits node, so the Worker source can't use a Node API and
+  // still typecheck — the runtime has no Node. The tests DO run in Node (vitest reads files, execs
+  // scripts), so they typecheck separately via tsconfig.tests.json, which adds the node types.
+  "include": ["src/**/*.ts"]
 }
