@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import { appendLiveStateAndCacheBreakpoint, AnthropicProvider } from './anthropic.js';
+import { appendLiveStateAndCacheBreakpoint, applyModelRequestConfig, AnthropicProvider } from './anthropic.js';
 
 // These are free, offline checks of the prompt-cache request SHAPE (no API call):
 // the rolling breakpoint must land on the last REAL block, and live state must be an
@@ -63,6 +63,32 @@ describe('appendLiveStateAndCacheBreakpoint', () => {
     const msgs: Anthropic.MessageParam[] = [];
     expect(() => appendLiveStateAndCacheBreakpoint(msgs, 'x')).not.toThrow();
     expect(msgs).toHaveLength(0);
+  });
+});
+
+// Per-model request config: proves the default path is unchanged (no thinking param added) and that
+// Sonnet 5 gets its cost-safe explicit-off preset. This is the whole "adding Sonnet 5 changes nothing
+// for the current default" guarantee, locked as a test. Offline — no API call.
+type ReqParams = { model: string; thinking?: Anthropic.ThinkingConfigParam };
+describe('applyModelRequestConfig', () => {
+  it('is a no-op for the current default (Sonnet 4.6) — sends NO thinking param', () => {
+    const params: ReqParams = { model: 'claude-sonnet-4-6' };
+    applyModelRequestConfig(params);
+    expect(params.thinking).toBeUndefined();
+  });
+
+  it('is a no-op for Haiku (the dev default) and unknown ids', () => {
+    for (const model of ['claude-haiku-4-5', 'some-future-model']) {
+      const params: ReqParams = { model };
+      applyModelRequestConfig(params);
+      expect(params.thinking).toBeUndefined();
+    }
+  });
+
+  it('presets Sonnet 5 to explicit thinking:disabled (omitting it would enable adaptive-on)', () => {
+    const params: ReqParams = { model: 'claude-sonnet-5' };
+    applyModelRequestConfig(params);
+    expect(params.thinking).toEqual({ type: 'disabled' });
   });
 });
 

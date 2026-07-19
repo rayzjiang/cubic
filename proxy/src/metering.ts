@@ -28,6 +28,7 @@ export interface AnthropicUsage {
 // model = one row here (+ the client-side debug mirror in server/ai/src/llm/anthropic.ts).
 const MODEL_PRICING: Record<string, { inPerM: number; outPerM: number }> = {
   'claude-sonnet-4-6': { inPerM: 3, outPerM: 15 },
+  'claude-sonnet-5': { inPerM: 3, outPerM: 15 }, // same rate as 4-6; not yet the default (allowlisted so a future flip needs no redeploy)
   'claude-haiku-4-5': { inPerM: 1, outPerM: 5 },
 };
 

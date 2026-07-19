@@ -121,7 +121,7 @@ The app launches a native window, spawns the backend, and connects to After Effe
 | Variable | Purpose |
 |----------|---------|
 | `ANTHROPIC_API_KEY` | Required. Claude API key. |
-| `CUBIC_MODEL` | `sonnet` (default), `haiku`, or `opus` — switch models without rebuild. |
+| `CUBIC_MODEL` | `sonnet` (default), `sonnet5`, `haiku`, or `opus` — switch models without rebuild. |
 | `CUBIC_ENV` | `local` (default, direct Anthropic calls) or `prod` (routes through hosted proxy). |
 
 ### Run modes (direct vs. proxied)

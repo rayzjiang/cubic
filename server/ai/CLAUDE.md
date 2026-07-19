@@ -63,7 +63,7 @@ agent loop: tool calls → bridge → AE → repeat (built — see `src/agent/`)
 All dynamic context injected into prompts **must be wrapped in XML tags** so the model unambiguously knows what each section is — e.g. `<live_ae_state>{JSON}</live_ae_state>`. Never use plain-text headers like `[Live AE State]`.
 
 ## LLM wrapper rule
-All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@anthropic-ai/sdk` directly elsewhere — `src/llm/anthropic.ts` is the sole chokepoint that enables multi-provider support later. Supports `chat()` and `stream()`; default model `claude-sonnet-4-6`. `defaultModel()` reads `CUBIC_MODEL` (alias `sonnet|haiku|opus` or a full id) at call time, so flipping models needs no rebuild — just edit the env and restart.
+All Claude API calls go through `getLLM()` (from `src/llm/`). Never import `@anthropic-ai/sdk` directly elsewhere — `src/llm/anthropic.ts` is the sole chokepoint that enables multi-provider support later. Supports `chat()` and `stream()`; default model `claude-sonnet-4-6`. `defaultModel()` reads `CUBIC_MODEL` (alias `sonnet|sonnet5|haiku|opus` or a full id) at call time, so flipping models needs no rebuild — just edit the env and restart.
 
 **Env: one shared file — `server/.env`** (the single source of truth for `ANTHROPIC_API_KEY` + `CUBIC_MODEL`, gitignored). The running app loads it via `server/ae-bridge/src/startBackend.ts` → `loadLocalEnv()`; these tests load it via `tests/lib/loadEnv.mjs` (a side-effect import that replaced bare `dotenv/config`). Do NOT recreate per-package `server/ai/.env` or `server/ae-bridge/.env` — both were removed to end the "edited the wrong .env" drift.
 

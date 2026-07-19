@@ -24,6 +24,11 @@ describe('costCentsForUsage', () => {
     expect(costCentsForUsage('claude-sonnet-4-6', { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 })).toBeCloseTo(600, 4);
   });
 
+  it('prices Sonnet 5 on its own row (same rate as 4-6)', () => {
+    // 1M in @ $3 + 1M out @ $15 = $18 → 1800 cost-cents
+    expect(costCentsForUsage('claude-sonnet-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 })).toBeCloseTo(1800, 4);
+  });
+
   it('prices Haiku on its own row', () => {
     // 1M in @ $1 → 100 cost-cents
     expect(costCentsForUsage('claude-haiku-4-5', { input_tokens: 1_000_000, output_tokens: 0 })).toBeCloseTo(100, 4);

@@ -16,7 +16,7 @@ vi.mock('../src/entitlement.js', () => ({ getEntitlement: vi.fn() }));
 // or the model-allowlist gate throws on an undefined Set.
 vi.mock('../src/metering.js', () => ({
   meterResponse: vi.fn(),
-  ALLOWED_MODELS: new Set(['claude-sonnet-4-6', 'claude-haiku-4-5']),
+  ALLOWED_MODELS: new Set(['claude-sonnet-4-6', 'claude-sonnet-5', 'claude-haiku-4-5']),
 }));
 
 import worker, { type Env } from '../src/index.js';

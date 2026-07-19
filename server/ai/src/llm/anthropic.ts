@@ -8,6 +8,7 @@ const DEFAULT_MAX_TOKENS = 4096;
 /** Friendly aliases for the CUBIC_MODEL env var (so you can flip models without the full id). */
 const MODEL_ALIASES: Record<string, string> = {
   sonnet: 'claude-sonnet-4-6',
+  sonnet5: 'claude-sonnet-5',
   haiku: 'claude-haiku-4-5',
   opus: 'claude-opus-4-8',
 };
@@ -28,6 +29,7 @@ export function defaultModel(): string {
 const DEFAULT_CONTEXT_WINDOW = 200_000; // conservative fallback for an unmapped model id
 const CONTEXT_WINDOWS: Record<string, number> = {
   'claude-sonnet-4-6': 200_000,
+  'claude-sonnet-5': 200_000, // capped to match 4-6 (this is the compaction threshold, not the true 1M window)
   'claude-haiku-4-5': 200_000,
   // add Opus / future models here as they are wired up
 };
@@ -35,9 +37,27 @@ const CONTEXT_WINDOWS: Record<string, number> = {
 /** USD per 1M tokens. cache reads bill at ~0.1× input; cache writes at ~2× input (1-hour tier). */
 const MODEL_PRICING: Record<string, { inPerM: number; outPerM: number }> = {
   'claude-sonnet-4-6': { inPerM: 3, outPerM: 15 },
+  'claude-sonnet-5': { inPerM: 3, outPerM: 15 }, // same rate as 4-6; kept in sync with proxy/src/metering.ts
   'claude-haiku-4-5': { inPerM: 1, outPerM: 5 },
 };
 const DEFAULT_PRICING = { inPerM: 3, outPerM: 15 };
+
+/**
+ * Per-model request overrides. A model absent here (Sonnet 4-6, Haiku) sends NO `thinking` param —
+ * today's behavior. Sonnet 5 MUST set `{type:'disabled'}` explicitly: omitting it silently enables
+ * adaptive thinking at high effort, which burns extra output tokens every turn. Flip a model's entry
+ * to `{type:'adaptive'}` (+ optional effort) to opt it into thinking.
+ */
+const MODEL_REQUEST_CONFIG: Record<string, { thinking?: Anthropic.ThinkingConfigParam }> = {
+  'claude-sonnet-5': { thinking: { type: 'disabled' } },
+};
+
+/** Applies a model's preset thinking config to the request params (absent → omit, i.e. no thinking).
+ *  Exported for unit testing (free — asserts the per-model request shape without a real API call). */
+export function applyModelRequestConfig(params: { model: string; thinking?: Anthropic.ThinkingConfigParam }): void {
+  const thinking = MODEL_REQUEST_CONFIG[params.model]?.thinking;
+  if (thinking) params.thinking = thinking;
+}
 
 /** Rough USD cost of one call, accounting for the discounted cache tiers. */
 export function estimateCost(model: string | undefined, usage: ChatResponse['usage']): number {
@@ -251,6 +271,7 @@ export class AnthropicProvider implements LLMProvider {
       temperature: opts.temperature ?? 1,
       messages: apiMessages,
     };
+    applyModelRequestConfig(params); // per-model thinking (no-op unless the model presets it, e.g. Sonnet 5)
     // Proxy mode omits the system prompt — the Worker injects it server-side. Direct mode sends it.
     if (opts.systemPrompt !== undefined) params.system = toSystemParam(opts.systemPrompt);
 
@@ -299,6 +320,7 @@ export class AnthropicProvider implements LLMProvider {
       temperature: opts.temperature ?? 1,
       messages: messages.map(m => ({ role: m.role, content: toAnthropicContent(m.content) })),
     };
+    applyModelRequestConfig(params); // per-model thinking (no-op unless the model presets it, e.g. Sonnet 5)
     if (opts.systemPrompt !== undefined) params.system = toSystemParam(opts.systemPrompt);
     const stream = await this.client.messages.stream(params, this.requestOptions(opts));
 
