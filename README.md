@@ -28,12 +28,12 @@ Built for video editors, not developers: a standalone desktop app with a consume
 
 ## Project structure
 
-This is a monorepo of three independent packages (no root `package.json`).
+This is a monorepo of five independent packages (no root `package.json`).
 
 ```
 cubic/
 ├── app/                  # Electron desktop app — React + Zustand + Tailwind chat UI
-│   ├── src/main/         #   Electron main process: window, IPC, spawns the backend
+│   ├── src/main/         #   Electron main: window, IPC, auth/billing/updater/analytics, spawns the backend
 │   ├── src/preload/      #   IPC security boundary
 │   ├── src/renderer/     #   React chat UI (transcript, sidebar, live agent events)
 │   └── src/shared/       #   Shared IPC types
@@ -49,11 +49,15 @@ cubic/
 │   └── ai/               # Claude brain — the agent loop
 │       ├── src/agent/    #   Iteration loop, tool execution, self-healing, cancel/steer
 │       ├── src/context/  #   Live AE state fetching, caching, prompt formatting
-│       ├── src/llm/      #   Anthropic SDK wrapper
-│       ├── src/prompt/   #   System prompt + command catalog assembly
-│       └── src/tools/    #   Command registry
+│       ├── src/llm/      #   Anthropic SDK wrapper (direct + proxy modes)
+│       └── src/bridge/   #   Loopback client into the AE bridge
 │
-├── docs/                 # Product + architecture docs (PRD, ARCHITECTURE)
+├── proxy/                # Cloudflare Worker — hosted LLM proxy + billing gate + release feed
+│   └── src/secrets/      #   System prompt + tool catalog, injected server-side
+│
+├── supabase/             # Postgres schema + RPCs + Stripe/billing edge functions
+│
+├── docs/                 # Product + architecture docs (architecture.md, PRD.md, db-schema.md)
 └── TODOS/                # Phase roadmap and checklists
 ```
 
@@ -76,6 +80,9 @@ cubic/
 | Transport | WebSocket (`ws`, loopback + per-launch token auth), Electron IPC |
 | AI | Anthropic SDK (Claude Sonnet 4.6 default, configurable) |
 | AE scripting | ExtendScript via CEP extension |
+| Hosted proxy | Cloudflare Workers, Wrangler |
+| Auth / billing | Supabase (Postgres + Auth), Stripe |
+| Analytics | PostHog |
 | Validation / data | Zod, JSON/JSONL files |
 | Testing | Vitest + live tests against AE |
 
@@ -132,7 +139,7 @@ SUPABASE_ANON_KEY=<anon key from `supabase status`> \
 npm run dev
 ```
 
-**real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. (Baking these in as the shipped default so a signed app needs no env vars is **§A-8**, still pending.)
+**real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. Packaged/signed builds **bake** these public values (Supabase URL + anon key, proxy URL, PostHog key) at build time, so the shipped app needs no env vars; the invocation below is how to point a *dev* build at the prod backend.
 - Note: No proxy URL set means it goes to anthropic directly
 ```bash
 CUBIC_ENV=prod \
@@ -186,6 +193,6 @@ npm run release               # upload the signed artifacts + latest-mac.yml to 
 
 ## Status
 
-Cubic is in active development. The agent brain and AE bridge are working (Phase 2 complete); the standalone Electron app is being finished (Phase 4). Hosted API proxy, billing, and packaging for distribution come in Phase 5 — Cubic is not yet shipped to end users.
+Cubic is functionally complete: the agent brain, AE bridge, hosted proxy + billing gate, packaging (signed + notarized), and background auto-update are all built and working. It is **pre-launch** — not yet publicly released — with the remaining launch-gate work tracked in [`TODOS/TODO-phase5.md`](TODOS/TODO-phase5.md).
 
-See [`TODOS/TODO.md`](TODOS/TODO.md) for the full roadmap and [`docs/PRD.md`](docs/PRD.md) for the product vision.
+See [`docs/architecture.md`](docs/architecture.md) for the system design and [`docs/PRD.md`](docs/PRD.md) for the product vision.

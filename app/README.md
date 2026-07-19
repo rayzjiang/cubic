@@ -1,10 +1,11 @@
 # Cubic desktop app (`app/`)
 
-Standalone Electron + React desktop shell (Phase 4). It hosts the Node backend
+Standalone Electron + React desktop shell. It hosts the Node backend
 (AE bridge + agent loop) as a child process and connects the renderer to it over
-WebSocket. The renderer is a working chat client — message list, persistence-backed
-conversation list (Home view), and run controls (send / steer / queue / cancel /
-delete). Still deferred: connection-state UX (reconnect banners) and the Stop-button UI.
+WebSocket. The renderer is a full chat client — message list, persistence-backed
+conversation list (Home view), run controls (send / steer / queue / cancel / delete /
+stop), connection-state UX (an AE status dot with reconnect / "restart AE" banners),
+plus the auth, billing, and Settings surfaces.
 
 ## Prerequisite — build the backend first
 
@@ -44,13 +45,15 @@ What to expect:
 - `npm run start` — preview the built app
 - `npm run typecheck` — type-check main/preload (node) + renderer (web)
 
-## Backend env switch (§B7)
+## Backend env switch
 
 `CUBIC_ENV` (read in `src/main/config.ts`, forwarded to the spawned backend):
 - `local` (default) — the agent loop calls Anthropic directly using your
   `ANTHROPIC_API_KEY` (inherited from the shell).
-- `prod` — **stub** until the Phase-5 proxy exists; forwards `ANTHROPIC_BASE_URL`
-  (from `CUBIC_PROXY_URL`) so the loop routes through the hosted proxy.
+- `prod` — routes through the hosted Cloudflare Worker proxy: main forwards
+  `ANTHROPIC_BASE_URL` (from `CUBIC_PROXY_URL`) and the renderer attaches the user's
+  Supabase JWT per request, so the Worker verifies auth, checks entitlement, and meters
+  usage. Packaged builds bake the prod config, so a signed app needs no env vars.
 
 ## Renderer architecture
 
@@ -61,16 +64,19 @@ What to expect:
 - **`store.ts`** — Zustand store; folds streamed `agentEvent`s into the render model
   (shares one render path with loaded history).
 - **`ws.ts`** — the single backend socket (one-shot startup retry).
-- **`analytics.ts`** — no-op `track()` seam (vendor TBD, eg. this for tracking user actions so Id eventually hook up like PostHog).
+- **`analytics.ts`** — forwards user-action events over IPC to the main-process PostHog
+  client (`src/main/analytics.ts`), which stamps identity + a strict property whitelist.
+  Off unless a PostHog key is present.
 
 ## Notes / seams
 
-- **Port + token are owned by the backend** (§???): the backend OS-assigns its WS port
+- **Port + token are owned by the backend**: the backend OS-assigns its WS port
   (`bind 127.0.0.1:0`, overridable via `AE_BRIDGE_PORT` for tests) and mints a per-launch session
   token, then reports `{port, token}` UP to main over the child IPC channel. `getBackendPort()`
   relays them to the renderer, which echoes the token in its first `hello` frame. The backend also
   writes `~/.cubic/conn.json` for the independently-launched CEP/loopback clients.
 - **ESM main**: with `"type":"module"`, electron-vite emits ESM for the main process.
   If a CJS-only native dep ever forces it, drop `"type":"module"` to flip to CJS.
-- **Packaging** (signing, electron-builder) is Phase 5; `backend.ts` has an
-  `app.isPackaged` path branch as the seam, not implemented here.
+- **Packaging** (signing, notarization, electron-builder, auto-update) is implemented in
+  `scripts/dist.mjs` + `electron-builder.yml`; `backend.ts` has the `app.isPackaged` path
+  branch for the bundled backend. See the root README's "Releasing & shipping updates".
