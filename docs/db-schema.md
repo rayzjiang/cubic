@@ -1,7 +1,6 @@
 # Cubic — Database Schema (Data Model Design)
 
-> **Date:** 2026-06-26 (refreshed after the WT-BILLING fix pass)
-> **Status:** Implementing **Wave 1 of Phase 5** (paid-backend infra). This documents the billing/auth data model that WT-BILLING creates and WT-PROXY-GATING (Wave 2) reads (entitlement) + writes (usage).
+> The billing/auth data model: the tables the Supabase backend creates and the hosted proxy reads (entitlement) + writes (usage).
 >
 > **Source of truth:** the SQL migrations under `supabase/migrations/` are authoritative for the actual DDL (column types, constraints, indexes). This file is the human-readable design/diagram view — if it ever disagrees with the migrations, the migrations win.
 
@@ -9,7 +8,7 @@
 
 ## Stack
 
-Supabase (Postgres + Auth). Stripe is the source of truth for *money*; Postgres holds a fast local mirror of paid-state. The proxy (Cloudflare Worker, Wave 2) reads entitlement from here on every request.
+Supabase (Postgres + Auth). Stripe is the source of truth for *money*; Postgres holds a fast local mirror of paid-state. The proxy (Cloudflare Worker) reads entitlement from here on every request.
 
 ---
 
@@ -56,7 +55,7 @@ Relationships:
 
 ### `auth.users` *(built-in — do not create or write)*
 
-Supabase Auth manages this automatically when a user signs in via Google/Apple OAuth (WT-AUTH). We only ever **read** it.
+Supabase Auth manages this automatically when a user signs in via Google/Apple OAuth. We only ever **read** it.
 
 | Field | Meaning |
 |---|---|
@@ -83,13 +82,13 @@ Two tiers at launch (Pro, Max). Seeded by migration; at runtime written **only**
 
 **Price / allowance versioning (`20260706000002`).** A tier holds **multiple** price rows — one active plus any retired ones. To change a tier's price and/or allowance, `change-plan` creates a new Stripe Price + a new `plans` row, flips it active (`set_active_plan_version`), and schedules existing subscribers to migrate at their **own next renewal** via Stripe Subscription Schedules — so old + new prices coexist during the ~1-month drain. `get_entitlement` resolves allowance by `price_id` and **ignores `active`**, so a not-yet-migrated customer keeps the old row's allowance until their schedule flips (at which point the webhook rewrites their `price_id`).
 
-> Numbers are placeholders until locked at launch gate **§G-1**. For a not-yet-live tier that's a seed edit; for a **live** tier, price/allowance changes go through the `change-plan` tool (versioned + staggered), never an in-place edit (which would 0-out not-yet-renewed customers).
+> Numbers are placeholders/sandbox until locked for launch. For a not-yet-live tier that's a seed edit; for a **live** tier, price/allowance changes go through the `change-plan` tool (versioned + staggered), never an in-place edit (which would 0-out not-yet-renewed customers).
 
 ---
 
 ### `subscriptions` — entitlement source of truth
 
-The single answer to "is this user allowed to use the app right now?" **Written only by Stripe webhooks**, and only through the `apply_subscription()` function (never a raw write) — so it can never drift from Stripe's reality. Read by the proxy's entitlement check (cached ~30–60s, Wave 2 §A-5).
+The single answer to "is this user allowed to use the app right now?" **Written only by Stripe webhooks**, and only through the `apply_subscription()` function (never a raw write) — so it can never drift from Stripe's reality. Read by the proxy's entitlement check (cached ~30–60s).
 
 One row per user. The row is **upserted, never deleted** — on cancel we set `status = 'canceled'` but keep the row so the `stripe_customer_id` is never lost (prevents duplicate Stripe customers on resubscribe). `status` is a Postgres enum (`subscription_status`).
 
@@ -107,12 +106,12 @@ One row per user. The row is **upserted, never deleted** — on cancel we set `s
 | `last_event_at` | timestamptz | Stripe `event.created` of the last applied event — older events are ignored (out-of-order protection). |
 | `updated_at` | timestamptz | Last write. |
 
-> **The trial** lives in Stripe (`trial_period_days`) and surfaces here as `status = 'trialing'` — we don't store a separate `trial_end`. It is **built but OFF by default**; flip `TRIAL.enabled` in `functions/_shared/config.ts` to enable (§C-4).
+> **The trial** lives in Stripe (`trial_period_days`) and surfaces here as `status = 'trialing'` — we don't store a separate `trial_end`. It is **built but OFF by default**; flip `TRIAL.enabled` in `functions/_shared/config.ts` to enable.
 > **Out-of-order safety:** `apply_subscription()` is the sole webhook write path — a guarded upsert that applies an event only if its `event.created` ≥ the stored `last_event_at`, so a stale "active" can't resurrect a "canceled" row.
 
-**Entitlement rule (the product decision):** a user is entitled when
-`status IN ('active', 'trialing', 'past_due')`.
-`past_due` is included as a **grace window** — a failed renewal charge is usually a transient card issue (expired/reissued card, bank hold), and Stripe retries for a few days before flipping to `canceled`. The allowance cap still bounds spend during grace, so margin exposure is small and bounded. Everything else (`canceled`, `unpaid`, …) = blocked.
+**Entitlement rule (the product decision):** a user is entitled when they're **under the cap** AND in a live paid state within its time window:
+`spent_cents < allowance_cents` **AND** ( `status = 'active'` within `current_period_end + 48h`, **OR** `status = 'trialing'` within `current_period_end` ).
+The `+48h` on active is a tunable engineering-grace buffer against webhook lag — a frozen row (webhooks stopped) can't stay entitled forever. **`past_due` is fail-fast — NOT entitled** (a failed renewal is cut immediately; Cubic is high per-call COGS). Everything else (`canceled`, `unpaid`, `incomplete`, `paused`, …) is likewise blocked. The RPC still **returns** the real `status` even when blocked, so the proxy can route the right paywall message (`past_due` vs over-cap vs no-plan).
 
 ---
 
@@ -131,20 +130,20 @@ One row per user per billing cycle. Reset = a new row each cycle (old rows are f
 
 Key: `(user_id, period_start)`.
 
-> **Future (not now):** an append-only per-request *ledger* (tokens/cost/model/timestamp) for billing forensics/disputes. Deferred until real money disputes are possible — the counter above is the hot-path source of truth; PostHog (§H) covers product analytics but is **not** a billing-grade financial record.
+> **Future (not now):** an append-only per-request *ledger* (tokens/cost/model/timestamp) for billing forensics/disputes. Deferred until real money disputes are possible — the counter above is the hot-path source of truth; PostHog covers product analytics but is **not** a billing-grade financial record.
 
 ---
 
 ## The read path: `get_entitlement` RPC
 
-The Wave-2 proxy makes **one** call per request and gets back everything it needs. In plain terms, the RPC:
+The proxy makes **one** call per request and gets back everything it needs. In plain terms, the RPC:
 
 1. **Access check** — only `service_role` (the proxy) may read another user's row; a logged-in user may read only their own (`auth.uid()`); signed-out/anon is rejected.
-2. Looks up the user's `subscriptions` row → reads `status` and `price_id`.
-3. Checks `status IN ('active', 'trialing', 'past_due')` → if not, returns **blocked**.
-4. Joins `plans` on `price_id` → reads `allowance_cents`.
-5. **Sums** the user's `usage` across the current billing window `[current_period_start, current_period_end)` → `spent_cents`.
-6. Returns `{ entitled, plan, price_id, allowance_cents, spent_cents, period_start, period_end, status }` — where `entitled` = status-ok **AND** `spent_cents < allowance_cents` (over-cap blocks even with a good status).
+2. Looks up the user's `subscriptions` row → reads `status` and `price_id` (a missing row = "no plan").
+3. Joins `plans` on `price_id` → reads `allowance_cents` (unknown price → 0 → blocked).
+4. **Sums** the user's `usage` across the current billing window `[current_period_start, current_period_end)` → `spent_cents`.
+5. Applies the entitlement predicate — `active` within `current_period_end + 48h`, or `trialing` within `current_period_end`, AND under the cap (`past_due` and all other statuses are not entitled).
+6. Returns `{ entitled, plan, price_id, allowance_cents, spent_cents, period_start, period_end, status, cancel_at_period_end }` — the real `status` + `cancel_at_period_end` come back even when blocked (the proxy routes the paywall; the client gates account-deletion on the cancel flag).
 
 Because the allowance comes back inside the RPC result, the proxy never needs its own copy of the price→allowance map — the `plans` table is the only place that number lives. It is a `SECURITY DEFINER` function so the predicate can't be re-implemented (and diverge) elsewhere.
 
@@ -152,7 +151,7 @@ Because the allowance comes back inside the RPC result, the proxy never needs it
 
 ## The write path: `record_usage` RPC
 
-The proxy's counterpart to the read. After each LLM response it converts Anthropic's token counts to cost-cents and calls `record_usage(user_id, period_start, cents)` — a `SECURITY DEFINER`, `service_role`-only atomic increment (`insert … on conflict (user_id, period_start) do update set spent_cents = spent_cents + excluded`), stamped with the subscription's current `period_start` (from the entitlement read). It exists as an RPC (not a raw table write) because the proxy writes over PostgREST/HTTP, which can't express an atomic increment inline — only a replace. Written **async**, out of the response path, so metering never adds latency (WT-PROXY-GATING §A-6).
+The proxy's counterpart to the read. After each LLM response it converts Anthropic's token counts to cost-cents and calls `record_usage(user_id, period_start, cents)` — a `SECURITY DEFINER`, `service_role`-only atomic increment (`insert … on conflict (user_id, period_start) do update set spent_cents = spent_cents + excluded`), stamped with the subscription's current `period_start` (from the entitlement read). It exists as an RPC (not a raw table write) because the proxy writes over PostgREST/HTTP, which can't express an atomic increment inline — only a replace. Written **async**, out of the response path, so metering never adds latency.
 
 ---
 
