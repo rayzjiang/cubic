@@ -132,7 +132,7 @@ Refresh: AuthManager self-drives (on-demand within a 10-min skew in getAccessTok
 - **Cloudflare R2** `cubic-releases` — signed update artifacts, served read-only through the Worker's `/releases/*`.
 - **Adobe CEP dir** `~/Library/Application Support/Adobe/CEP/extensions/com.cubic.ae-bridge/` — the installed invisible panel.
 
-## Current constraints
+## Current constraints (as of 7/18/26, post phase 5 impl)
 
 Present-state facts, not roadmap:
 
