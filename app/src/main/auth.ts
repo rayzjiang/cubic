@@ -5,9 +5,10 @@
 // `change`, which ipc.ts broadcasts to the renderer.
 //
 // Flow (PKCE, system browser): signIn() → signInWithOAuth (we open the URL ourselves) → the browser
-// returns to `cubic://auth/callback?code=…` → handleCallback() exchanges the code for a session →
-// persist (safeStorage) + schedule a refresh. We drive token refresh ourselves (autoRefreshToken is
-// off — supabase-js's timer doesn't tick reliably in a headless main).
+// returns to the §B-5 hosted success page (`config.authRedirect`), which immediately fires
+// `cubic://auth/callback?code=…` → handleCallback() exchanges the code for a session → persist
+// (safeStorage) + schedule a refresh. We drive token refresh ourselves (autoRefreshToken is off —
+// supabase-js's timer doesn't tick reliably in a headless main).
 
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -17,9 +18,6 @@ import { createClient, isAuthRetryableFetchError, type Session, type SupabaseCli
 import type { BackendConfig } from './config.js'
 import type { AuthProvider, AuthState, AuthStatus, AuthUser, BillingActionResult } from '../shared/ipc.js'
 
-// The deep link the OAuth flow returns to. Must match the redirect allow-list in the Supabase
-// dashboard (and the scheme registered via setAsDefaultProtocolClient in index.ts).
-export const AUTH_REDIRECT = 'cubic://auth/callback'
 // Refresh this far before expiry (and treat a token within this window as "needs refresh on demand").
 // 10 min (not 60s) so a token handed to a chat turn always has ≥10 min of life — longer than any
 // realistic multi-step turn — closing the mid-turn-expiry hole (#4A). Tunable.
@@ -79,6 +77,8 @@ export class AuthManager extends EventEmitter {
   private readonly client: SupabaseClient | null
   private readonly supabaseUrl: string
   private readonly anonKey: string
+  /** §B-5 — the hosted success page Supabase returns the browser to; it fires the cubic:// deep link. */
+  private readonly authRedirect: string
   private session: Session | null = null
   private status: AuthStatus = 'loading'
   private errorMsg: string | undefined
@@ -88,6 +88,7 @@ export class AuthManager extends EventEmitter {
     super()
     this.supabaseUrl = config.supabaseUrl
     this.anonKey = config.supabaseAnonKey
+    this.authRedirect = config.authRedirect
     // No Supabase configured (e.g. a local-dev machine without SUPABASE_URL) → auth is simply
     // unavailable: the app stays usable signed-out, signIn() reports a friendly error, no throw.
     this.client = config.supabaseUrl && config.supabaseAnonKey
@@ -131,7 +132,8 @@ export class AuthManager extends EventEmitter {
   }
 
   /** Begin the OAuth flow: get the provider authorize URL and open it in the system browser. The flow
-   *  completes asynchronously when the browser returns to cubic://auth/callback (→ handleCallback). */
+   *  completes asynchronously when the browser lands on the hosted success page (`authRedirect`) and
+   *  that page bounces to cubic://auth/callback (→ handleCallback). */
   async signIn(provider: AuthProvider): Promise<void> {
     if (!this.client) return this.setError('Sign-in isn’t configured on this build.')
     this.status = 'signingIn'
@@ -140,7 +142,7 @@ export class AuthManager extends EventEmitter {
     try {
       const { data, error } = await this.client.auth.signInWithOAuth({
         provider,
-        options: { redirectTo: AUTH_REDIRECT, skipBrowserRedirect: true },
+        options: { redirectTo: this.authRedirect, skipBrowserRedirect: true },
       })
       if (error || !data?.url) return this.setError(friendlyAuthError(error?.message ?? 'no url'))
       await shell.openExternal(data.url)

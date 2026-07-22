@@ -34,6 +34,13 @@ export interface BackendConfig {
    *  design (safe to ship), so it is baked into the prod build; dev reads both from the shell env. */
   supabaseUrl: string
   supabaseAnonKey: string
+  /** §B-5 — where Supabase returns the BROWSER after OAuth: the hosted success page at
+   *  `usecubic.com/auth/callback`, which fires the `cubic://auth/callback?code=…` deep link back into
+   *  the app. Must match an entry in the Supabase dashboard's redirect allow-list, or sign-in is
+   *  rejected before it reaches Google. Not baked: it's a frozen public constant, and the
+   *  `CUBIC_AUTH_REDIRECT` override is dev-only BY CONSTRUCTION — a packaged build has no shell env
+   *  (see the note above), so prod can only ever get the default. */
+  authRedirect: string
   /** §H — PostHog product analytics, fired from main (the AnalyticsManager). The project key is a
    *  PUBLIC, write-only ingest key (safe to bake, like `supabaseAnonKey`). `analyticsEnabled` is the
    *  kill switch: on only when a key is set AND `CUBIC_ANALYTICS !== 'off'` — so dev is OFF by default
@@ -99,6 +106,13 @@ export function loadConfig(): BackendConfig {
   const supabaseUrl = typeof __CUBIC_SUPABASE_URL__ !== 'undefined' ? __CUBIC_SUPABASE_URL__ : (process.env.SUPABASE_URL ?? '')
   const supabaseAnonKey = typeof __CUBIC_SUPABASE_ANON_KEY__ !== 'undefined' ? __CUBIC_SUPABASE_ANON_KEY__ : (process.env.SUPABASE_ANON_KEY ?? '')
 
+  // §B-5 OAuth return URL. The default is the shipped value — the hosted success page on the marketing
+  // site, whose only job is to fire the cubic:// deep link so the browser tab doesn't dead-end on a raw
+  // supabase.co URL. `CUBIC_AUTH_REDIRECT` exists so dev can point at a locally-served copy
+  // (`npx serve out` on :3000) without editing source; a packaged build's process.env is empty, so the
+  // override cannot ship. Whatever this resolves to must be in Supabase's redirect allow-list.
+  const authRedirect = process.env.CUBIC_AUTH_REDIRECT?.trim() || 'https://usecubic.com/auth/callback'
+
   // §H analytics. Dev leaves POSTHOG_KEY unset by default (off → zero dev pollution) and sets it only
   // for a verify session; prod bakes the key at build. `CUBIC_ANALYTICS=off` hard-mutes even a keyed
   // build. Fired from MAIN only — NOT forwarded to the child (the child relays events up over IPC).
@@ -106,5 +120,5 @@ export function loadConfig(): BackendConfig {
   const posthogHost = process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'
   const analyticsEnabled = !!posthogKey && process.env.CUBIC_ANALYTICS !== 'off'
 
-  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey, posthogKey, posthogHost, analyticsEnabled, proxyUrl, configRejections }
+  return { cubicEnv, childEnv, supabaseUrl, supabaseAnonKey, authRedirect, posthogKey, posthogHost, analyticsEnabled, proxyUrl, configRejections }
 }
