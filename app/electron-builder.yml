@@ -65,6 +65,12 @@ mac:
   notarize: true # electron-builder-native notarytool; reads APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
   extendInfo:
     NSHighResolutionCapable: true
+    # The OS-enforced floor: macOS refuses to launch the app below this. Electron 41's own binary ships
+    # 12.0, so WITHOUT this line we'd be shipping to 12+ — a range that has never been tested (dev has
+    # only ever run on Sonoma 14). Set to 14.0 to match what the site advertises, so the claim is
+    # enforced rather than aspirational. AE 2024 needs macOS 12+ anyway, so this only excludes 12–13.
+    # Lower it to '12.0' if those users are worth testing for.
+    LSMinimumSystemVersion: '14.0'
 
 dmg:
   title: Cubic ${version}
