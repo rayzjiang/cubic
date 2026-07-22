@@ -219,6 +219,8 @@ Deferred improvements (roughly in priority order):
   (already branched in `installBridge.ts`), the normal Windows window frame (already guarded — Mac-only chrome), and
   **ACL hardening for `~/.cubic/conn.json`** (the POSIX `chmod` from Plan 3 #11 is inert on Windows — see Resilience /
   hardening above). Audit + close any other `process.platform === 'darwin'`-guarded seams before shipping Windows.
+    - [ ] Font: make sure it adapts to windows
+    - [ ] make sure the buttons/locations are good (since the close window button is in the top right now instead of top left)
 
 ---
 
