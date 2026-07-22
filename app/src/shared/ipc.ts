@@ -13,6 +13,7 @@ export const CHANNELS = {
   // §B auth — main owns the Supabase session; the renderer drives sign-in and reads state over these.
   getCubicEnv: 'cubic:getCubicEnv',
   authSignIn: 'cubic:auth:signIn',
+  authCancelSignIn: 'cubic:auth:cancelSignIn',
   authSignOut: 'cubic:auth:signOut',
   authGetState: 'cubic:auth:getState',
   authGetAccessToken: 'cubic:auth:getAccessToken',
@@ -211,6 +212,10 @@ export interface CubicApi {
   getCubicEnv(): Promise<CubicEnvName>
   /** Start the OAuth flow for a provider (opens the system browser). Resolves once the browser opens. */
   authSignIn(provider: AuthProvider): Promise<void>
+  /** Abandon an in-flight sign-in (the user closed/gave up on the browser tab) → back to a clickable
+   *  signed-out state. The system browser is external, so its tab can't be observed; this is the manual
+   *  escape hatch out of the 'signingIn' wait. */
+  authCancelSignIn(): Promise<void>
   /** Sign out — clears the persisted session and returns to signed-out. */
   authSignOut(): Promise<void>
   /** Permanently delete the account (P2): cancels the Stripe sub + deletes the Supabase user server-side,

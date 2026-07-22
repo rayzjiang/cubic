@@ -18,6 +18,7 @@ const api: CubicApi = {
   getAppVersion: () => ipcRenderer.invoke(CHANNELS.getAppVersion),
   getCubicEnv: () => ipcRenderer.invoke(CHANNELS.getCubicEnv),
   authSignIn: (provider) => ipcRenderer.invoke(CHANNELS.authSignIn, provider),
+  authCancelSignIn: () => ipcRenderer.invoke(CHANNELS.authCancelSignIn),
   authSignOut: () => ipcRenderer.invoke(CHANNELS.authSignOut),
   deleteAccount: () => ipcRenderer.invoke(CHANNELS.authDeleteAccount),
   getAuthState: () => ipcRenderer.invoke(CHANNELS.authGetState),

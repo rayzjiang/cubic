@@ -151,6 +151,16 @@ export class AuthManager extends EventEmitter {
     }
   }
 
+  /** Abandon an in-flight OAuth attempt (the user closed the browser tab / gave up). The system browser
+   *  is external, so we can't observe the tab closing — this is the manual escape hatch that returns the
+   *  UI from 'signingIn' to a clickable signed-out state, instead of orphaning it forever. No-op unless
+   *  we're actually mid-sign-in, so a late but genuine callback still wins. Nothing to revoke
+   *  server-side: signInWithOAuth only minted a URL + a local PKCE verifier. */
+  cancelSignIn(): void {
+    if (this.status !== 'signingIn') return
+    this.setStatus('signedOut')
+  }
+
   /** Handle the cubic://auth/callback deep link: exchange the PKCE code for a session. Tolerant of a
    *  user-denied consent (error params) and of non-auth cubic:// links (ignored). */
   async handleCallback(url: string): Promise<void> {

@@ -32,6 +32,7 @@ export function registerIpc(config: BackendConfig, backend: BackendSupervisor, a
   // §B auth. The renderer drives sign-in/out and reads state; main owns the Supabase session.
   ipcMain.handle(CHANNELS.getCubicEnv, () => config.cubicEnv)
   ipcMain.handle(CHANNELS.authSignIn, (_e, provider: AuthProvider) => auth.signIn(provider))
+  ipcMain.handle(CHANNELS.authCancelSignIn, () => auth.cancelSignIn())
   ipcMain.handle(CHANNELS.authSignOut, () => auth.signOut())
   ipcMain.handle(CHANNELS.authDeleteAccount, () => auth.deleteAccount())
   ipcMain.handle(CHANNELS.authGetState, () => auth.state)

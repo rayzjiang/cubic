@@ -71,7 +71,17 @@ export function AuthScreen() {
           </button>
 
           {signingIn && (
-            <p className="text-[12px] text-white/45">Complete sign-in in your browser, then come back.</p>
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-[12px] text-white/45">Complete sign-in in your browser, then come back.</p>
+              {/* Escape hatch: the OAuth tab lives in the system browser, so we can't detect it closing.
+                  Cancel returns to a clickable signed-out state instead of orphaning the wait forever. */}
+              <button
+                onClick={() => void window.cubic.authCancelSignIn()}
+                className="text-[12px] text-white/45 underline-offset-2 transition hover:text-white/75 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
           )}
           {status === 'error' && error && <p className="max-w-xs text-[12px] text-red-400">{error}</p>}
         </div>
