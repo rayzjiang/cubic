@@ -1,8 +1,0 @@
-{
-    "mcpServers": {
-      "AfterEffectsMCP": {
-        "command": "node",                                                  
-        "args": ["/Users/raymondjiang/Desktop/Coding/repos/cubic/server/ae-bridge/build/index.js"]
-      } 
-    } 
-  } 
