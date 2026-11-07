@@ -99,4 +99,4 @@ config change lands on a user's second relaunch — nothing blocks startup and n
   If a CJS-only native dep ever forces it, drop `"type":"module"` to flip to CJS.
 - **Packaging** (signing, notarization, electron-builder, auto-update) is implemented in
   `scripts/dist.mjs` + `electron-builder.yml`; `backend.ts` has the `app.isPackaged` path
-  branch for the bundled backend. See the root README's "Releasing & shipping updates".
+  branch for the bundled backend. See [`docs/updates.md`](../docs/updates.md).
