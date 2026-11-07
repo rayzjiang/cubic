@@ -76,6 +76,14 @@ cubic/
 - **Steer & cancel** — queue follow-up messages mid-run; cancel at iteration boundaries (Esc).
 - **Context-window safety** — auto-compacts old turns near the limit; full history always preserved on disk.
 
+## Engineering highlights
+
+- **The prompt never ships to users.** The system prompt and tool catalog live only in a Cloudflare Worker and are injected server-side. The desktop build swaps in a stub, and a test fails if the real prompt ever leaks into the bundle.
+- **Locked-down local bridge.** The app, backend, and AE panel share one WebSocket bound to `127.0.0.1` on an OS-assigned port, with a per-launch auth token, so a malicious webpage can't drive After Effects.
+- **Self-healing agent loop.** ExtendScript errors are fed back to the model, which fixes and retries (up to 15 iterations per turn), with a pre-turn `.aep` snapshot as a safety net.
+- **Gated, metered proxy.** Every call passes IP and per-user rate limits, Supabase JWT verification, and a fail-closed entitlement check. Usage is metered by teeing the response stream, so billing adds no latency.
+- **One-click install and updates.** A single signed, notarized app installs the AE panel itself. Updates download in the background, apply on restart, and re-copy the panel only when its content hash changes.
+
 ## Tech stack
 
 | Layer | Tech |
