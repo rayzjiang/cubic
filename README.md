@@ -1,5 +1,7 @@
 # Cubic
 
+![Cubic building an animation in After Effects from a chat prompt](docs/assets/demo.jpg)
+
 **Motion Copilot for After Effects.** Cubic is an AI agent that builds native After Effects animations and motion graphics from natural language. Ask it to "make this text pop in" or "add a smooth slide transition," and it reads your live AE project, reasons about the motion, and writes the animation directly into your comp — self-healing through any errors along the way.
 
 Built for video editors, not developers: a standalone desktop app with a consumer-style chat UI, no scripting required.
@@ -104,15 +106,6 @@ cd ../ae-bridge && npm install && npm run build:serve && npm run install-plugin
 cd ../../app && npm install && npm run dev
 ```
 
-Shortcut:
-```bash
-# The "rebuild everything, don't think" version
-cd server/ai        && npm run build
-cd server/ae-bridge && npm run build            # build:server + build:serve + build:plugin
-cd server/ae-bridge && npm run install-plugin   # only if AE plugin changed (+restart AE)
-cd app              && npm run dev              # restart this to pick up fresh backend
-```
-
 The app launches a native window, spawns the backend, and connects to After Effects. Open a project in AE, and start chatting.
 
 ### Configuration
@@ -142,8 +135,7 @@ SUPABASE_ANON_KEY=<anon key from `supabase status`> \
 npm run dev
 ```
 
-**real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. Packaged/signed builds **bake** these public values (Supabase URL + anon key, proxy URL, PostHog key) at build time, so the shipped app needs no env vars; the invocation below is how to point a *dev* build at the prod backend.
-- Note: No proxy URL set means it goes to anthropic directly
+**real-prod** — the identical path, pointed at your deployed Worker + cloud Supabase. Packaged/signed builds **bake** these public values (Supabase URL + anon key, proxy URL, PostHog key) at build time, so the shipped app needs no env vars; the invocation below is how to point a *dev* build at the prod backend. If `CUBIC_PROXY_URL` is unset, calls go directly to Anthropic.
 ```bash
 CUBIC_ENV=prod \
 CUBIC_PROXY_URL=https://YOUR-WORKER.workers.dev \
@@ -162,6 +154,6 @@ npm run start    # preview the build
 
 ## Status
 
-Cubic is functionally complete: the agent brain, AE bridge, hosted proxy + billing gate, packaging (signed + notarized), and background auto-update are all built and working.
+Cubic is functionally complete: the agent brain, AE bridge, hosted proxy + billing gate, packaging (signed + notarized), and background auto-update are all built and working. It is no longer actively maintained.
 
 See [`docs/architecture.md`](docs/architecture.md) for the system design and [`docs/updates.md`](docs/updates.md) for releasing and auto-updates.
