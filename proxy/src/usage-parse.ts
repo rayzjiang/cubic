@@ -17,7 +17,7 @@ export async function parseUsageFromResponse(
   // `messages.create` always completes), but once streaming lands (`chat()`→`stream()`) a client abort
   // mid-stream means `message_delta` never arrives → this records ZERO usage. When streaming ships,
   // parse incrementally as chunks arrive (reuse parseSse's running output_tokens accumulator) so an
-  // aborted stream still meters what was generated. Tracked in TODOS/POSTMVP.md.
+  // aborted stream still meters what was generated.
   const text = await new Response(body).text();
   return contentType.includes('text/event-stream') ? parseSse(text) : parseJson(text);
 }

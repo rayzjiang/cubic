@@ -1,7 +1,7 @@
 # CLAUDE.md — server/ae-bridge
 Keep Claude.md under 150 lines. Concise, high-signal content preferred.
 
-> **Scope:** AE bridge — WS transport (`wsBridge.ts`), ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them, plus an optional MCP-server dev entrypoint. Hosts the `cubic-ai` agent loop in-process but does NOT reimplement the brain (that lives in `server/ai`). End goal: Motion Copilot — an AI agent that writes animations natively in After Effects; see [`docs/PRD.md`](../../docs/PRD.md) (vision).
+> **Scope:** AE bridge — WS transport (`wsBridge.ts`), ExtendScript handlers (`src/scripts/*.jsx`), and the CEP extension that runs them, plus an optional MCP-server dev entrypoint. Hosts the `cubic-ai` agent loop in-process but does NOT reimplement the brain (that lives in `server/ai`). End goal: an AI agent that writes animations natively in After Effects.
 
 ## Project structure
 The `app/` (Electron shell) and `server/ai` (the `cubic-ai` brain this package hosts) siblings are documented in [`app/README.md`](../../app/README.md) and [`server/ai/CLAUDE.md`](../ai/CLAUDE.md); the whole-system picture is in [`docs/architecture.md`](../../docs/architecture.md). This package:

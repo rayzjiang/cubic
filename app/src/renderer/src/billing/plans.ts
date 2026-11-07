@@ -5,11 +5,8 @@ import type { PlanId } from '@shared/ipc'
  *
  * WHY this lives client-side: the `plans` table stores only `plan` + `price_id` + `allowance_cents` — NO
  * display price, currency, or tier rank. So the renderer owns the human-facing numbers, and Stripe's
- * hosted Checkout page shows the authoritative price as the backstop.
- *
- * ⚠️ §G-1 FINALIZE POINT: the `priceLabel`s below are SANDBOX placeholders (they mirror the seeded test
- * prices, Pro $29 / Max $89). When the real launch numbers are locked (§C-8/§G-1), update them HERE and
- * in Stripe — this constant is the one place the client shows a dollar amount.
+ * hosted Checkout page shows the authoritative price as the backstop. The `priceLabel`s mirror the Stripe
+ * prices — this constant is the one place the client shows a dollar amount.
  */
 export interface PlanDisplay {
   id: PlanId
@@ -19,8 +16,7 @@ export interface PlanDisplay {
   priceLabel: string
   /** One-line value prop for the picker card. */
   tagline: string
-  /** 2–4 value bullets for the fullscreen-paywall card. Placeholder copy — finalized in P3c's §D-4 pass;
-   *  the Max usage-multiplier bullet is tied to the final §G-1 allowance numbers. */
+  /** 2–4 value bullets for the fullscreen-paywall card. */
   highlights: string[]
 }
 

@@ -82,7 +82,7 @@ Two tiers at launch (Pro, Max). Seeded by migration; at runtime written **only**
 
 **Price / allowance versioning (`20260706000002`).** A tier holds **multiple** price rows — one active plus any retired ones. To change a tier's price and/or allowance, `change-plan` creates a new Stripe Price + a new `plans` row, flips it active (`set_active_plan_version`), and schedules existing subscribers to migrate at their **own next renewal** via Stripe Subscription Schedules — so old + new prices coexist during the ~1-month drain. `get_entitlement` resolves allowance by `price_id` and **ignores `active`**, so a not-yet-migrated customer keeps the old row's allowance until their schedule flips (at which point the webhook rewrites their `price_id`).
 
-> Numbers are placeholders/sandbox until locked for launch. For a not-yet-live tier that's a seed edit; for a **live** tier, price/allowance changes go through the `change-plan` tool (versioned + staggered), never an in-place edit (which would 0-out not-yet-renewed customers).
+> For a tier with subscribers, price/allowance changes go through the `change-plan` tool (versioned + staggered), never an in-place edit (which would 0-out not-yet-renewed customers).
 
 ---
 

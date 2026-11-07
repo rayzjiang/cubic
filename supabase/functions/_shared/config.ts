@@ -14,7 +14,7 @@
 export const TRIAL = {
   enabled: false, // SHIP OFF
   days: 7,
-  capCents: 5_000, // ~$50 trial cost budget (unused while OFF) — LOCK AT §G-1
+  capCents: 5_000, // trial cost budget in cost-cents (unused while OFF)
 } as const;
 
 // Dunning expectation — the actual schedule is configured in the Stripe dashboard

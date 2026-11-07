@@ -70,7 +70,7 @@ Or step through it manually — see the script; the key steps are:
 
 - **Customer Portal** must be enabled + configured with Pro + Max as switchable
   products (Settings → Billing → Customer portal), or `create-portal` fails.
-- **Dunning emails** + the failed-renewal retry schedule → tracked in `TODOS/POSTMVP.md`. No code.
+- **Dunning emails** + the failed-renewal retry schedule are configured in the Stripe dashboard. No code.
 
 ## What lives elsewhere (not in this package)
 

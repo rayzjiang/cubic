@@ -6,8 +6,6 @@
 -- allowance_cents is an internal cost-cents budget per billing cycle, denominated
 -- the same way as server/ai/src/llm/anthropic.ts estimateCost() x 100. Users never
 -- see this number raw — the paywall renders spent/allowance as a % bar.
---
--- !!! PLACEHOLDER NUMBERS + PRICE IDS — LOCK AT LAUNCH GATE §G-1 (§C-8 economics) !!!
 
 create table public.plans (
   price_id        text primary key,              -- Stripe Price id (test now, live at §G-1)
@@ -24,5 +22,5 @@ comment on table public.plans is
 -- once the products exist (see test harness), and the live ids + final allowances
 -- at §G-1.
 insert into public.plans (price_id, plan, allowance_cents, active) values
-  ('price_pro_PLACEHOLDER', 'pro',  50000.0000, true),   -- ~$500 cost budget (PLACEHOLDER)
-  ('price_max_PLACEHOLDER', 'max', 150000.0000, true);   -- ~$1500 cost budget (PLACEHOLDER)
+  ('price_pro_PLACEHOLDER', 'pro',  50000.0000, true),
+  ('price_max_PLACEHOLDER', 'max', 150000.0000, true);

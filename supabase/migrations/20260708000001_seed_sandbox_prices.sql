@@ -6,9 +6,6 @@
 -- and applies identically to local + cloud. Idempotent: the RPC upserts by price_id and the
 -- delete is a no-op once the placeholders are gone.
 --
--- Economics (user-locked; still PLACEHOLDER-until-§G-1 for the LIVE cutover):
---   pro -> $29/mo  price, allowance 1500 cost-cents ($15 usage cap)
---   max -> $89/mo  price, allowance 5000 cost-cents ($50 usage cap)
 -- allowance_cents is the internal AI-cost budget (estimateCost() x 100), not the price.
 
 select public.set_active_plan_version('pro', 'price_1TsOlvLVfKmA9khS877OB9r8', 1500);

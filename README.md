@@ -61,7 +61,7 @@ cubic/
 │
 ├── supabase/             # Postgres schema + RPCs + Stripe/billing edge functions
 │
-└── docs/                 # Product + architecture docs (architecture.md, PRD.md, db-schema.md)
+└── docs/                 # Architecture + schema docs (architecture.md, db-schema.md)
 ```
 
 ## Features
@@ -146,8 +146,8 @@ npm run dev
 - Note: No proxy URL set means it goes to anthropic directly
 ```bash
 CUBIC_ENV=prod \
-CUBIC_PROXY_URL=https://cubic-proxy.raymondj.workers.dev \
-SUPABASE_URL=https://igdbwihwvksraoqghswr.supabase.co \
+CUBIC_PROXY_URL=https://YOUR-WORKER.workers.dev \
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co \
 SUPABASE_ANON_KEY=<anon_key> \
 npm run dev
 ```
@@ -196,6 +196,6 @@ npm run release               # upload the signed artifacts + latest-mac.yml to 
 
 ## Status
 
-Cubic is functionally complete: the agent brain, AE bridge, hosted proxy + billing gate, packaging (signed + notarized), and background auto-update are all built and working. It is **pre-launch** — not yet publicly released.
+Cubic is functionally complete: the agent brain, AE bridge, hosted proxy + billing gate, packaging (signed + notarized), and background auto-update are all built and working.
 
-See [`docs/architecture.md`](docs/architecture.md) for the system design and [`docs/PRD.md`](docs/PRD.md) for the product vision.
+See [`docs/architecture.md`](docs/architecture.md) for the system design.
