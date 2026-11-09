@@ -2,7 +2,9 @@
 
 ![Cubic building an animation in After Effects from a chat prompt](docs/assets/demo.jpg)
 
-**Motion Copilot for After Effects.** Cubic is an AI agent that builds native After Effects animations and motion graphics from natural language. Ask it to "make this text pop in" or "add a smooth slide transition," and it reads your live AE project, reasons about the motion, and writes the animation directly into your comp — self-healing through any errors along the way.
+**An agent harness for After Effects.** Cubic runs a tool-using Claude loop against a live After Effects project: it reads project state, writes ExtendScript, executes it inside AE, and self-corrects from execution errors until the animation is built.
+
+Ask it to "make this text pop in" or "add a smooth slide transition," and the animation appears natively in your After Effects project.
 
 Built for video editors, not developers: a standalone desktop app with a consumer-style chat UI, no scripting required.
 
@@ -66,15 +68,13 @@ cubic/
 └── docs/                 # Architecture, schema + release docs (architecture.md, db-schema.md, updates.md)
 ```
 
-## Features
+## Agent harness
 
-- **Natural-language motion design** — describe the animation, get it built natively in AE.
-- **Live project awareness** — reads the active comp, selected layers, and assets before acting.
-- **Self-healing code loop** — catches ExtendScript errors and retries by reasoning over the error, up to 15 iterations per turn.
-- **Pre-turn snapshots** — auto-saves an `.aep` backup before each turn for restore.
-- **Stateful sessions** — append-only JSONL transcripts per project; survive crashes and app reloads.
-- **Steer & cancel** — queue follow-up messages mid-run; cancel at iteration boundaries (Esc).
-- **Context-window safety** — auto-compacts old turns near the limit; full history always preserved on disk.
+- **Loop** — multi-step tool use, capped at 15 iterations per turn; steer with queued follow-ups mid-run, or cancel at iteration boundaries (Esc).
+- **Context** — live AE state (active comp, selected layers, assets) is fetched and injected before each turn.
+- **Feedback** — ExtendScript errors are returned to the model as tool results, and it fixes the script and retries.
+- **State** — pre-turn `.aep` snapshots for restore; auto-compaction near the context limit.
+- **Traces** — every session is an append-only JSONL trajectory of the full message history, including tool calls and results; it survives crashes and reloads.
 
 ## Engineering highlights
 
