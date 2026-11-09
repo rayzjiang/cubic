@@ -76,7 +76,7 @@ cubic/
 - **State** — pre-turn `.aep` snapshots for restore; auto-compaction near the context limit.
 - **Traces** — every session is an append-only JSONL trajectory of the full message history, including tool calls and results; it survives crashes and reloads.
 
-## Engineering highlights
+## Design decisions
 
 - **The prompt never ships to users.** The system prompt and tool catalog live only in a Cloudflare Worker and are injected server-side. The desktop build swaps in a stub, and a test fails if the real prompt ever leaks into the bundle.
 - **Locked-down local bridge.** The app, backend, and AE panel share one WebSocket bound to `127.0.0.1` on an OS-assigned port, with a per-launch auth token, so a malicious webpage can't drive After Effects.
